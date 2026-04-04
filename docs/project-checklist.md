@@ -220,16 +220,16 @@ SUPABASE_SERVICE_ROLE_KEY=...
   - 카카오톡 메세지 포맷 확정 및 가이드 작성
   - Node.js + Figma MCP 설정
   - docs/ 폴더 문서 정리
+  - GitHub 저장소 생성 및 초기 커밋 업로드
+  - Vercel / Supabase 플랫폼 계정 가입 완료
 
 🔄 진행중
-  - Figma Make로 UI 디자인
+  - Figma Make로 UI 디자인 (완성 후 PRD와 크로스체크 예정)
 
 ⏳ 대기중
-  - GitHub 저장소 생성
-  - Vercel / Supabase 계정 생성
-  - Figma 디자인 완성 → MCP로 PRD 최종 크로스체크
-  - 개발 계획서 작성
-  - 웹앱 개발
+  - Figma 디자인 완성 시 MCP 연동하여 교차 검증
+  - 개발 계획서 작성 및 프로젝트 구조화
+  - Vercel, Supabase 프로젝트 생성, DB 스키마 작업 등
 
 📋 현장 담당자 확인 필요
   - 박스 규격 (초기 배포 후 설정 UI로 직접 입력 가능)
