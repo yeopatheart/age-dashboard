@@ -420,7 +420,9 @@ export function DashboardClient({
 
   const dashboardUrl = (mode: string, date: string) =>
     `/dashboard?monitor=${mode}${date === today ? '' : `&date=${date}`}`;
-  const setMonitorMode = (mode: string) => router.push(dashboardUrl(mode, orderDate));
+  // 모니터 전환은 데이터가 그대로이고 배치만 바뀌므로 서버에 다시 요청하지 않는다 — 주소만 바꾸면
+  // useSearchParams가 즉시 따라온다(날짜 변경은 다른 데이터라 router.push로 서버에서 다시 조회).
+  const setMonitorMode = (mode: string) => window.history.pushState(null, '', dashboardUrl(mode, orderDate));
   const setDate = (date: string) => {
     if (!date || date > today) return;
     router.push(dashboardUrl(monitorMode, date));

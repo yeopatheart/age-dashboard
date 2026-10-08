@@ -19,28 +19,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const { date } = await searchParams;
   const orderDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today ? date : today;
 
-  const { data: allTerminals } = await supabase.from('terminals').select('id, name').order('name');
-
-  // "새 주문 추가"에서 업체명만으로 터미널을 자동 매핑하려면(고객사 관리에 이미 등록된 값),
-  // 오늘 주문이 없는 업체도 포함해 전체 목록이 필요하다 — 아래 businessRows(오늘자 한정)와는 별개.
-  const { data: businessDirectory } = await supabase.from('businesses').select('id, name, terminal_id').order('name');
-
-  const { data: dailyBusinesses, error: dailyError } = await supabase
-    .from('daily_businesses')
-    .select('id, business_id, business_number, total_boxes, memo')
-    .eq('order_date', orderDate)
-    .order('business_number');
+  // 서로 의존하지 않는 조회는 한 번에 보낸다 — 순서대로 await하면 DB 왕복 시간이 그대로 더해진다.
+  // businessDirectory는 "새 주문 추가" 검색용이자(전체 업체), 오늘 카드의 업체명/터미널 조회용이기도 해서
+  // 오늘 업체만 따로 다시 조회하지 않는다.
+  const [{ data: allTerminals }, { data: businessDirectory }, { data: dailyBusinesses, error: dailyError }] =
+    await Promise.all([
+      supabase.from('terminals').select('id, name').order('name'),
+      supabase.from('businesses').select('id, name, terminal_id').order('name'),
+      supabase
+        .from('daily_businesses')
+        .select('id, business_id, business_number, total_boxes, memo')
+        .eq('order_date', orderDate)
+        .order('business_number'),
+    ]);
 
   // 조회 오류(예: 아직 적용 안 된 마이그레이션의 컬럼)를 빈 화면으로 삼키면 "주문이 사라진 것"처럼 보인다.
   if (dailyError) throw new Error(`대시보드 조회 실패: ${dailyError.message}`);
   const dailyBusinessRows = dailyBusinesses ?? [];
-  const businessIds = [...new Set(dailyBusinessRows.map((d) => d.business_id))];
-
-  const { data: businesses } =
-    businessIds.length > 0
-      ? await supabase.from('businesses').select('id, name, terminal_id').in('id', businessIds)
-      : { data: [] };
-  const businessRows = businesses ?? [];
+  const businessRows = businessDirectory ?? [];
 
   const terminalNameById = new Map((allTerminals ?? []).map((t) => [t.id, t.name]));
   const businessById = new Map(businessRows.map((b) => [b.id, b]));
