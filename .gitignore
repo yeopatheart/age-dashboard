@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# env 예시 파일은 키 이름만 있으므로 커밋한다
+!.env.example
