@@ -2,9 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { colorComboKey, pickUnusedColor } from '@/lib/color-palette';
 import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from '@/lib/kakao-parser';
 import { repairFailedLine } from '@/lib/kakao-ai-repair';
-import { findClosestMatch } from '@/lib/fuzzy-match';
 
 // parseLine이 "터미널/업체명/상품" 3분할 자체에 실패했을 때만 붙는 고정 reviewReason —
 // AI fallback은 이 줄 단위 실패 케이스만 대상으로 한다(상품 단위 사소한 오류는 그대로
@@ -145,8 +145,9 @@ export async function suggestOrderLines(rawText: string, orderDate: string): Pro
   const suggestions: SuggestedLine[] = [];
 
   for (const { line, source } of resolvedLines) {
-    const exact = businessList.find((b) => b.name === line.businessName);
-    const matched = exact ?? findClosestMatch(line.businessName, businessList, (b) => b.name);
+    // 업체명은 정확히 같을 때만 같은 업체로 본다 — 한두 글자 다른 이름(스시고유/스시고본)이 실제로
+    // 서로 다른 업체라서, 비슷하다고 자동으로 합치면 다른 업체의 주문이 섞인다.
+    const matched = businessList.find((b) => b.name === line.businessName);
     const catalogBusinessId = matched?.id ?? null;
     const dailyBusinessId = catalogBusinessId ? dailyIdByBusinessId.get(catalogBusinessId) ?? null : null;
     const existingItems = dailyBusinessId ? existingItemsByDailyBusiness.get(dailyBusinessId) ?? [] : [];
@@ -257,6 +258,23 @@ export interface LineDecision {
   memo?: string;
 }
 
+// 상품 목록에 없는 이름은 주문입력 출처로 자동 등록하고, 기존 상품이 쓰는 색과 겹치지 않는 색을 배정한다.
+async function registerNewProducts(supabase: Awaited<ReturnType<typeof createClient>>, names: string[]) {
+  if (names.length === 0) return;
+  const { data: existing } = await supabase.from('products').select('name, fill_color, border_color');
+  const known = new Set((existing ?? []).map((p) => p.name));
+  const used = new Set((existing ?? []).filter((p) => p.fill_color || p.border_color).map((p) => colorComboKey(p.fill_color, p.border_color)));
+
+  const rows = names
+    .filter((n) => !known.has(n))
+    .map((name) => {
+      const color = pickUnusedColor(used);
+      used.add(colorComboKey(color.fill_color, color.border_color));
+      return { name, created_via: 'order' as const, ...color };
+    });
+  if (rows.length > 0) await supabase.from('products').upsert(rows, { onConflict: 'name', ignoreDuplicates: true });
+}
+
 // 사람이 확인 화면에서 확정한 대로 실제로 반영한다. 업체번호/상품순서는 여기서 처음이자
 // 한 번만 assign_*_number RPC로 발급한다(append-only, 재사용 없음).
 //
@@ -355,6 +373,8 @@ export async function commitOrderLines(orderDate: string, decisions: LineDecisio
     }
   }
 
+  const productRegistration = registerNewProducts(supabase, [...new Set(resolved.map((r) => r.decision.product.productName))]);
+
   // 4) 상품 — 수정은 병렬로, 신규는 업체별 순번을 순서대로 발급(업체끼리는 병렬)한 뒤 한 번에 삽입한다.
   const memoByDaily = new Map<string, string>();
   const updates: Promise<unknown>[] = [];
@@ -431,9 +451,10 @@ export async function commitOrderLines(orderDate: string, decisions: LineDecisio
     const { error } = await supabase.from('order_items').insert(newRows);
     if (error) throw new Error(`상품 저장 실패: ${error.message}`);
   }
-  await Promise.all(updates);
+  await Promise.all([...updates, productRegistration]);
 
   revalidatePath('/dashboard');
   revalidatePath('/terminals');
   revalidatePath('/businesses');
+  revalidatePath('/products');
 }

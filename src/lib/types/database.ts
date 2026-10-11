@@ -22,6 +22,8 @@ type Terminal = {
   name: string;
   created_at: string;
   created_via: CreatedVia;
+  fill_color: string | null;
+  border_color: string | null;
 };
 
 type Business = {
@@ -40,6 +42,10 @@ type Product = {
   default_unit: string | null;
   notes: string | null;
   created_at: string;
+  // 색상은 src/lib/color-palette.ts의 key. null이면 기본 모양.
+  fill_color: string | null;
+  border_color: string | null;
+  created_via: CreatedVia;
 };
 
 type OrderDayCounter = {
@@ -162,7 +168,10 @@ export type Database = {
         AccessLog,
         Pick<AccessLog, "user_id"> & { id?: string; event?: string; created_at?: string }
       >;
-      terminals: TableDef<Terminal, Pick<Terminal, "name"> & { id?: string; created_at?: string; created_via?: CreatedVia }>;
+      terminals: TableDef<
+        Terminal,
+        Pick<Terminal, "name"> & { id?: string; created_at?: string; created_via?: CreatedVia; fill_color?: string | null; border_color?: string | null }
+      >;
       businesses: TableDef<
         Business,
         Pick<Business, "name"> & {
@@ -181,6 +190,9 @@ export type Database = {
           default_unit?: string | null;
           notes?: string | null;
           created_at?: string;
+          fill_color?: string | null;
+          border_color?: string | null;
+          created_via?: CreatedVia;
         }
       >;
       order_day_counters: TableDef<
@@ -278,6 +290,11 @@ export type Database = {
       assign_product_sequence: {
         Args: { p_daily_business_id: string };
         Returns: number;
+      };
+      // 기간 리포트 집계(0017). 반환 JSON의 모양은 src/lib/report.ts의 ReportSummary.
+      report_summary: {
+        Args: { p_from: string; p_to: string };
+        Returns: unknown;
       };
     };
     Enums: Record<string, never>;

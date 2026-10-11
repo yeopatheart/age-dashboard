@@ -2,13 +2,17 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Pencil, Trash2, Check, X, MapPinned } from 'lucide-react';
-import { createTerminal, updateTerminal, deleteTerminal } from './actions';
+import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor } from './actions';
+import { ColorPicker } from '@/components/color-picker';
+import { terminalBadgeProps } from '@/lib/terminal-color';
 
 interface Terminal {
   id: string;
   name: string;
   created_at: string;
   created_via: 'order' | 'manual';
+  fill_color: string | null;
+  border_color: string | null;
 }
 
 const formatDate = (iso: string) => iso.slice(0, 10).replace(/-/g, '.');
@@ -20,6 +24,16 @@ export function TerminalsClient({ terminals }: { terminals: Terminal[] }) {
   const [editingName, setEditingName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [colorOpenId, setColorOpenId] = useState<string | null>(null);
+  // 색 선택은 누르는 즉시 저장하고 화면에도 바로 반영한다(서버 갱신을 기다리지 않는다).
+  const [localColors, setLocalColors] = useState<Record<string, { fill: string | null; border: string | null }>>({});
+
+  const colorOf = (t: Terminal) => localColors[t.id] ?? { fill: t.fill_color, border: t.border_color };
+  const handleColor = async (t: Terminal, fill: string | null, border: string | null) => {
+    setLocalColors((prev) => ({ ...prev, [t.id]: { fill, border } }));
+    await setTerminalColor(t.id, fill, border);
+    router.refresh();
+  };
 
   const handleAdd = async () => {
     if (busy || !newName.trim()) return;
@@ -116,9 +130,15 @@ export function TerminalsClient({ terminals }: { terminals: Terminal[] }) {
               </>
             ) : (
               <>
-                <span className="terminal-name">{t.name}</span>
+                <span className="terminal-name">
+                  <span
+                    className={`terminal-badge ${terminalBadgeProps(t.name, { [t.name]: colorOf(t) }).className}`}
+                    style={terminalBadgeProps(t.name, { [t.name]: colorOf(t) }).style}
+                  >{t.name}</span>
+                </span>
                 <span className={`via-tag via-tag-${t.created_via}`}>{t.created_via === 'order' ? '주문입력' : '수기입력'}</span>
                 <span className="via-date">{formatDate(t.created_at)} 등록</span>
+                <button className="color-btn" onClick={() => setColorOpenId(colorOpenId === t.id ? null : t.id)}>색상</button>
                 <button className="icon-btn icon-btn-edit" onClick={() => startEdit(t)} title="수정">
                   <Pencil size={13} />
                 </button>
@@ -126,6 +146,11 @@ export function TerminalsClient({ terminals }: { terminals: Terminal[] }) {
                   <Trash2 size={13} />
                 </button>
               </>
+            )}
+            {colorOpenId === t.id && editingId !== t.id && (
+              <div className="color-panel">
+                <ColorPicker fill={colorOf(t).fill} border={colorOf(t).border} onChange={(f, b) => handleColor(t, f, b)} sample={t.name} />
+              </div>
             )}
           </div>
         ))}
@@ -147,6 +172,7 @@ export function TerminalsClient({ terminals }: { terminals: Terminal[] }) {
         .terminal-list { display: flex; flex-direction: column; gap: 0.5rem; }
         .terminal-row {
           display: flex;
+          flex-wrap: wrap;
           align-items: center;
           gap: 0.625rem;
           padding: 0.75rem 1rem;
@@ -161,6 +187,9 @@ export function TerminalsClient({ terminals }: { terminals: Terminal[] }) {
         .via-tag-order { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
         .via-tag-manual { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
         .via-date { font-size: 0.75rem; color: var(--muted-foreground); white-space: nowrap; }
+        .terminal-badge { display: inline-block; border: 1px solid; border-radius: 6px; padding: 0.15rem 0.7rem; font-size: 0.875rem; font-weight: 700; }
+        .color-btn { font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer; flex-shrink: 0; }
+        .color-panel { flex-basis: 100%; }
         .terminal-name { flex: 1; font-size: 0.9rem; font-weight: 600; color: var(--foreground); }
         .icon-btn {
           width: 28px;

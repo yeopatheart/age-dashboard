@@ -16,6 +16,8 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  Tag,
+  BarChart3,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -23,8 +25,10 @@ const NAV_ITEMS = [
   { href: '/orders/new', label: '주문 입력', icon: Sparkles },
   { href: '/businesses', label: '고객사 관리', icon: Building2 },
   { href: '/terminals', label: '터미널 관리', icon: MapPinned },
+  { href: '/products', label: '상품 관리', icon: Tag },
   { href: '/boxes', label: '박스 관리', icon: Package },
   { href: '/packing-log', label: '박스 기록', icon: ClipboardList },
+  { href: '/reports', label: '리포트', icon: BarChart3 },
 ];
 
 const COLLAPSE_STORAGE_KEY = 'age-dashboard-sidebar-collapsed';

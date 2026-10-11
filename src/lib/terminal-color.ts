@@ -1,3 +1,5 @@
+import { resolveColors } from './color-palette';
+
 // 터미널마다 다른 색을 일관되게 배정한다. 터미널 목록이 사용자가 직접 등록하는 동적 값이라
 // 이름을 미리 알 수 없으므로, 이름을 해시해서 고정 팔레트 중 하나를 결정적으로 고른다 —
 // 같은 이름은 항상 같은 색이 나오고(새로고침해도 안 바뀜), 대시보드와 고객사 관리 화면에서
@@ -30,4 +32,24 @@ export function terminalColorSet(name: string) {
 export function terminalColor(name: string): string {
   const c = terminalColorSet(name);
   return `${c.bg} ${c.border} ${c.text}`;
+}
+
+// 터미널 관리에서 색을 직접 지정한 터미널은 그 색을, 지정하지 않은 터미널은 위의 자동(해시) 색을 쓴다.
+export type TerminalColorMap = Record<string, { fill: string | null; border: string | null }>;
+
+export function terminalBadgeProps(name: string, map: TerminalColorMap = {}): { className: string; style?: React.CSSProperties } {
+  const custom = map[name];
+  if (custom && (custom.fill || custom.border)) {
+    const c = resolveColors(custom.fill, custom.border);
+    return { className: '', style: { backgroundColor: c.fill, borderColor: c.border, color: c.text } };
+  }
+  return { className: terminalColor(name) };
+}
+
+export function terminalDotProps(name: string, map: TerminalColorMap = {}): { className: string; style?: React.CSSProperties } {
+  const custom = map[name];
+  if (custom && (custom.fill || custom.border)) {
+    return { className: '', style: { backgroundColor: resolveColors(custom.fill, custom.border).border } };
+  }
+  return { className: terminalColorSet(name).dot };
 }
