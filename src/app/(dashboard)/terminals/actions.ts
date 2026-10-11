@@ -31,3 +31,14 @@ export async function deleteTerminal(id: string): Promise<{ error: string | null
   revalidatePath('/dashboard');
   return { error: null };
 }
+
+// 색상은 palette key(src/lib/color-palette.ts)로만 저장한다. 둘 다 null이면 자동(이름 해시) 색으로 돌아간다.
+export async function setTerminalColor(id: string, fill: string | null, border: string | null): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { error } = await supabase.from('terminals').update({ fill_color: fill, border_color: border }).eq('id', id);
+  if (error) return { error: error.message };
+  revalidatePath('/terminals');
+  revalidatePath('/dashboard');
+  revalidatePath('/businesses');
+  return { error: null };
+}

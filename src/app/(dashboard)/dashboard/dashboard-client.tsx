@@ -3,7 +3,8 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getProductSummary, getTerminalBoxTotals, type OrderItem, type OrderRow, type ChangeStatus } from '@/lib/orders';
-import { terminalColor, terminalColorSet } from '@/lib/terminal-color';
+import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
+import { resolveColors } from '@/lib/color-palette';
 import {
   togglePacked,
   updateTotalBoxes,
@@ -50,17 +51,11 @@ function productGridTemplate(slotCount: number) {
   return `40px 80px 144px 56px repeat(${slotCount}, minmax(130px, 1fr))`;
 }
 
-function getItemStyle(status: ChangeStatus, isPacked: boolean) {
-  if (isPacked && status !== 'cancelled') {
-    return { bg: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-400' };
-  }
-  switch (status) {
-    case 'new':       return { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700' };
-    case 'modified':  return { bg: 'bg-amber-50',   border: 'border-amber-300',   text: 'text-amber-700' };
-    case 'cancelled': return { bg: 'bg-rose-50',    border: 'border-rose-300',    text: 'text-rose-600 line-through' };
-    // 최초주문(변경 없음) — 빈 칸(+ 점선 박스)과 뚜렷이 구분되도록 진한 테두리+검은 글씨로 표시한다.
-    default:          return { bg: 'bg-slate-50',   border: 'border-slate-800',   text: 'text-slate-900' };
-  }
+// 상품 팁의 색은 상품 관리에서 정한 상품 색(안쪽/테두리)이다. 변경 상태는 색이 아니라 배지(NEW/수정)와
+// 취소선으로 구분한다. 포장 완료는 회색으로 바꿔 "끝난 것"이 한눈에 보이게 한다.
+function getPillColors(productColor: { fill: string | null; border: string | null } | undefined, status: ChangeStatus, isPacked: boolean) {
+  if (isPacked && status !== 'cancelled') return { fill: '#f1f5f9', border: '#cbd5e1', text: '#94a3b8' };
+  return resolveColors(productColor?.fill, productColor?.border);
 }
 
 const STATUS_LABEL: Record<ChangeStatus, string> = {
@@ -88,7 +83,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 // ─── 새 주문 추가/수정 모달 ─────────────────────────────────────────────────────
-interface Terminal { id: string; name: string }
+interface Terminal { id: string; name: string; fill_color: string | null; border_color: string | null }
 interface BusinessDirectoryEntry { id: string; name: string; terminal_id: string | null }
 
 const SUGGESTION_ROW_HEIGHT = 36;
@@ -111,6 +106,7 @@ function OrderFormModal({
   onClose: () => void;
 }) {
   const isEdit = Boolean(initial);
+  const modalColors: TerminalColorMap = Object.fromEntries(terminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
   const [businessName, setBusinessName] = useState(initial?.businessName ?? '');
   const [terminalId, setTerminalId] = useState(initial?.terminalId ?? terminals[0]?.id ?? '');
   const [totalBoxes, setTotalBoxes] = useState(initial?.totalBoxes?.toString() ?? '1');
@@ -209,7 +205,8 @@ function OrderFormModal({
             ) : (
               <div className="relative">
                 <span
-                  className={`absolute left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full pointer-events-none ${terminalColorSet(terminals.find((t) => t.id === terminalId)?.name ?? '').dot}`}
+                  className={`absolute left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full pointer-events-none ${terminalDotProps(terminals.find((t) => t.id === terminalId)?.name ?? '', modalColors).className}`}
+                  style={terminalDotProps(terminals.find((t) => t.id === terminalId)?.name ?? '', modalColors).style}
                 />
                 <select
                   value={terminalId}
@@ -227,7 +224,7 @@ function OrderFormModal({
             <p className="text-xs text-slate-400 py-2">고객을 선택하면 등록된 터미널이 자동으로 표시됩니다.</p>
           ) : matchedTerminal ? (
             <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50">
-              <span className={`w-2 h-2 rounded-full ${terminalColorSet(matchedTerminal.name).dot}`} />
+              <span className={`w-2 h-2 rounded-full ${terminalDotProps(matchedTerminal.name, modalColors).className}`} style={terminalDotProps(matchedTerminal.name, modalColors).style} />
               <span className="text-sm font-semibold text-slate-700">{matchedTerminal.name}</span>
               <span className="text-[11px] text-slate-400 ml-auto">자동 매핑</span>
             </div>
@@ -403,6 +400,7 @@ export function DashboardClient({
   businessDirectory,
   orderDate,
   today,
+  productColors,
 }: {
   rows: OrderRow[];
   items: OrderItem[];
@@ -410,6 +408,7 @@ export function DashboardClient({
   businessDirectory: BusinessDirectoryEntry[];
   orderDate: string;
   today: string;
+  productColors: Record<string, { fill: string | null; border: string | null }>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -439,6 +438,7 @@ export function DashboardClient({
   const [editItemModal, setEditItemModal] = useState<OrderItem | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'order' | 'item'; dailyBusinessId?: string; itemId?: string } | null>(null);
 
+  const terminalColors: TerminalColorMap = Object.fromEntries(allTerminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
   const rows = sortRows(rawRows, items);
   const columns = getProductSummary(items);
   const terminalBoxTotals = getTerminalBoxTotals(rows);
@@ -545,10 +545,18 @@ export function DashboardClient({
   };
 
   // 품목별 수량: 모니터 2는 오른쪽 세로 패널, 전체보기(모바일 포함)는 표 위 카드로 보여준다.
+  const chipStyle = (name: string): React.CSSProperties => {
+    const c = resolveColors(productColors[name]?.fill, productColors[name]?.border);
+    return { backgroundColor: c.fill, borderColor: c.border, color: c.text };
+  };
   const productChips = columns.map((product) => (
-    <div key={product.productName} className="flex items-center gap-1.5 bg-sky-50 border border-sky-200 rounded-lg px-3 py-1.5">
-      <span className="text-xs font-bold text-sky-700">{product.productName}</span>
-      <span className="text-xs font-black text-sky-800">{product.total}{product.unit}</span>
+    <div
+      key={product.productName}
+      className="flex items-center gap-1.5 border rounded-lg px-3 py-1.5"
+      style={chipStyle(product.productName)}
+    >
+      <span className="text-xs font-bold">{product.productName}</span>
+      <span className="text-xs font-black">{product.total}{product.unit}</span>
     </div>
   ));
   const summaryCard = (
@@ -572,11 +580,11 @@ export function DashboardClient({
         {columns.map((product) => (
           <div
             key={product.productName}
-            className="flex items-center justify-between gap-1 px-1.5 rounded bg-sky-50 border border-sky-200 mb-px overflow-hidden"
-            style={{ height: panelItemHeight - 1, fontSize: Math.min(12, panelItemHeight - 6) }}
+            className="flex items-center justify-between gap-1 px-1.5 rounded border mb-px overflow-hidden"
+            style={{ ...chipStyle(product.productName), height: panelItemHeight - 1, fontSize: Math.min(12, panelItemHeight - 6) }}
           >
-            <span className="font-bold text-sky-700 truncate leading-none">{product.productName}</span>
-            <span className="font-black text-sky-800 shrink-0 leading-none">{product.total}{product.unit}</span>
+            <span className="font-bold truncate leading-none">{product.productName}</span>
+            <span className="font-black shrink-0 leading-none">{product.total}{product.unit}</span>
           </div>
         ))}
       </div>
@@ -610,21 +618,27 @@ export function DashboardClient({
           </div>
           <div className="w-px h-4 bg-slate-200 mx-1.5" />
           <span className="text-xs font-bold text-slate-500">상태</span>
-          {[
-            { bg: 'bg-slate-50 border-2 border-slate-800', label: '최초주문', tc: 'text-slate-900' },
-            { bg: 'bg-emerald-50 border border-emerald-300', label: '추가됨', tc: 'text-emerald-700' },
-            { bg: 'bg-amber-50 border border-amber-300', label: '수정됨', tc: 'text-amber-700' },
-            { bg: 'bg-rose-50 border border-rose-300', label: '취소', tc: 'text-rose-600 line-through' },
-          ].map(({ bg, label, tc }) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <div className={`w-3.5 h-3.5 rounded ${bg}`}></div>
-              <span className={`text-xs font-medium ${tc}`}>{label}</span>
-            </div>
-          ))}
+          <div className="flex items-center gap-1.5">
+            <div className="w-6 h-3.5 rounded border-2 border-slate-400 bg-slate-50" />
+            <span className="text-xs font-medium text-slate-700">최초주문</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-bold leading-none px-1 py-0.5 rounded bg-emerald-500 text-white">NEW</span>
+            <span className="text-xs font-medium text-emerald-700">추가됨</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-bold leading-none px-1 py-0.5 rounded bg-amber-500 text-white">수정</span>
+            <span className="text-xs font-medium text-amber-700">수정됨</span>
+          </div>
+          <span className="text-xs font-medium text-rose-600 line-through">취소</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-6 h-3.5 rounded border border-slate-300 bg-slate-100" />
+            <span className="text-xs font-medium text-slate-400">포장완료</span>
+          </div>
           <div className="w-px h-4 bg-slate-200 mx-1.5" />
           <span className="text-xs font-bold text-slate-500">터미널별 박스</span>
           {terminalBoxTotals.map(({ terminal, boxes }) => (
-            <div key={terminal} className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold ${terminalColor(terminal)}`}>
+            <div key={terminal} className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold ${terminalBadgeProps(terminal, terminalColors).className}`} style={terminalBadgeProps(terminal, terminalColors).style}>
               <span>{terminal || '(터미널 없음)'}</span>
               <span className="font-black">{boxes}</span>
             </div>
@@ -657,7 +671,7 @@ export function DashboardClient({
       <div className="flex-1 min-w-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden relative">
         {/* 전체 주문이 0건일 땐 어느 모니터를 보든 이유가 같으므로(범위 문제가 아니라 주문
             자체가 없는 것) 병합보기와 같은 일반 문구를 쓴다. 전체엔 주문이 있는데 이 모니터
-            범위범위(모니터 1에 들어간 줄 수 이후)에만 없을 때만 안내한다. */}
+            범위(모니터 1에 들어간 줄 수 이후)에만 없을 때만 안내한다. */}
         {isSplitMode && monitorSlice.length === 0 && rows.length > 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 pointer-events-none z-10">
             <Inbox className="w-7 h-7 text-slate-300" strokeWidth={1.5} />
@@ -725,7 +739,7 @@ export function DashboardClient({
                       {index + startIndex + 1}
                     </div>
                     <div className="border-r border-slate-100 px-2 flex items-center justify-center">
-                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalColor(row.terminal)}`}>
+                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>
                         {row.terminal || '-'}
                       </span>
                     </div>
@@ -798,7 +812,7 @@ export function DashboardClient({
                         );
                       }
 
-                      const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked);
+                      const pc = getPillColors(productColors[item.productName], item.changeStatus, item.isPacked);
                       const suffixParts: string[] = [];
                       if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
                       if (item.sizeRequest) suffixParts.push(item.sizeRequest);
@@ -806,7 +820,16 @@ export function DashboardClient({
 
                       return (
                         <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[2px] flex min-w-0">
-                          <div className={`relative w-full flex items-center justify-center px-1.5 rounded-lg border overflow-hidden ${bg} ${border} transition-all group shadow-sm`}>
+                          <div
+                            className={`relative w-full flex items-center justify-center px-1.5 rounded-lg border overflow-hidden transition-all group shadow-sm ${item.changeStatus === 'cancelled' ? 'opacity-60' : ''}`}
+                            style={{ backgroundColor: pc.fill, borderColor: pc.border, color: pc.text, boxShadow: `inset 0 0 0 1px ${pc.border}` }}
+                          >
+                            {item.changeStatus === 'new' && (
+                              <span className="absolute top-0 left-0 z-20 text-[9px] font-bold leading-none px-1 py-[2px] rounded-br bg-emerald-500 text-white">NEW</span>
+                            )}
+                            {item.changeStatus === 'modified' && (
+                              <span className="absolute top-0 left-0 z-20 text-[9px] font-bold leading-none px-1 py-[2px] rounded-br bg-amber-500 text-white">수정</span>
+                            )}
                             {item.isPacked && item.changeStatus !== 'cancelled' && (
                               <Check className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-slate-400/30" strokeWidth={4} />
                             )}
@@ -815,10 +838,10 @@ export function DashboardClient({
                               className="w-full min-w-0 flex flex-wrap items-center justify-center gap-x-1 z-10 cursor-pointer select-none overflow-hidden break-keep [overflow-wrap:anywhere]"
                               style={{ lineHeight: `${pillLineHeight}px`, maxHeight: pillLineHeight * 2 }}
                             >
-                              <span className={`font-bold ${text}`} style={{ fontSize: pillNameFont }}>{item.productName}</span>
+                              <span className={`font-bold ${item.changeStatus === 'cancelled' ? 'line-through' : ''}`} style={{ fontSize: pillNameFont }}>{item.productName}</span>
                               <span className="whitespace-nowrap">
-                                <span className={`font-black ${text}`} style={{ fontSize: pillQtyFont }}>{item.quantity}</span>
-                                <span className={`ml-0.5 font-semibold ${text}`} style={{ fontSize: pillNameFont }}>{item.unit}</span>
+                                <span className={`font-black ${item.changeStatus === 'cancelled' ? 'line-through' : ''}`} style={{ fontSize: pillQtyFont }}>{item.quantity}</span>
+                                <span className={`ml-0.5 font-semibold ${item.changeStatus === 'cancelled' ? 'line-through' : ''}`} style={{ fontSize: pillNameFont }}>{item.unit}</span>
                               </span>
                               {suffix && <span className="font-semibold text-sky-600" style={{ fontSize: pillNameFont }}>{suffix.trim()}</span>}
                             </div>

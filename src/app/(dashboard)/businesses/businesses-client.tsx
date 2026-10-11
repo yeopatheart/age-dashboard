@@ -3,15 +3,16 @@ import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Pencil, Trash2, Check, X, Building2, Search } from 'lucide-react';
 import { createBusiness, updateBusiness, deleteBusiness } from './actions';
-import { terminalColorSet } from '@/lib/terminal-color';
+import { terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 
-interface Terminal { id: string; name: string }
+interface Terminal { id: string; name: string; fill_color: string | null; border_color: string | null }
 interface Business { id: string; name: string; terminal_id: string | null; notes: string | null; created_at: string; created_via: 'order' | 'manual' }
 
 const formatDate = (iso: string) => iso.slice(0, 10).replace(/-/g, '.');
 
 export function BusinessesClient({ businesses, terminals }: { businesses: Business[]; terminals: Terminal[] }) {
   const router = useRouter();
+  const terminalColors: TerminalColorMap = Object.fromEntries(terminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
   const [search, setSearch] = useState('');
 
   const [newName, setNewName] = useState('');
@@ -99,7 +100,7 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
             onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAdd()}
           />
           <div className="terminal-field">
-            <span className={`terminal-dot ${terminalColorSet(terminalName(newTerminalId)).dot}`} />
+            <span className={`terminal-dot ${terminalDotProps(terminalName(newTerminalId), terminalColors).className}`} style={terminalDotProps(terminalName(newTerminalId), terminalColors).style} />
             <select className="input-field select-field terminal-select" value={newTerminalId} onChange={(e) => setNewTerminalId(e.target.value)}>
               <option value="">터미널 미지정</option>
               {terminals.map((t) => (
@@ -169,7 +170,7 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
                 <span className={`via-tag via-tag-${b.created_via}`}>{b.created_via === 'order' ? '주문입력' : '수기입력'}</span>
                 <span className="via-date">{formatDate(b.created_at)} 등록</span>
                 <div className="terminal-field">
-                  <span className={`terminal-dot ${terminalColorSet(terminalName(b.terminal_id ?? '')).dot}`} />
+                  <span className={`terminal-dot ${terminalDotProps(terminalName(b.terminal_id ?? ''), terminalColors).className}`} style={terminalDotProps(terminalName(b.terminal_id ?? ''), terminalColors).style} />
                   <select
                     className="input-field select-field terminal-select"
                     value={b.terminal_id ?? ''}
