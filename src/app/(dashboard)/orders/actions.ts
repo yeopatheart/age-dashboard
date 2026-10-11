@@ -4,7 +4,6 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from '@/lib/kakao-parser';
 import { repairFailedLine } from '@/lib/kakao-ai-repair';
-import { findClosestMatch } from '@/lib/fuzzy-match';
 
 // parseLine이 "터미널/업체명/상품" 3분할 자체에 실패했을 때만 붙는 고정 reviewReason —
 // AI fallback은 이 줄 단위 실패 케이스만 대상으로 한다(상품 단위 사소한 오류는 그대로
@@ -145,8 +144,9 @@ export async function suggestOrderLines(rawText: string, orderDate: string): Pro
   const suggestions: SuggestedLine[] = [];
 
   for (const { line, source } of resolvedLines) {
-    const exact = businessList.find((b) => b.name === line.businessName);
-    const matched = exact ?? findClosestMatch(line.businessName, businessList, (b) => b.name);
+    // 업체명은 정확히 같을 때만 같은 업체로 본다 — 한두 글자 다른 이름(스시고유/스시고본)이 실제로
+    // 서로 다른 업체라서, 비슷하다고 자동으로 합치면 다른 업체의 주문이 섞인다.
+    const matched = businessList.find((b) => b.name === line.businessName);
     const catalogBusinessId = matched?.id ?? null;
     const dailyBusinessId = catalogBusinessId ? dailyIdByBusinessId.get(catalogBusinessId) ?? null : null;
     const existingItems = dailyBusinessId ? existingItemsByDailyBusiness.get(dailyBusinessId) ?? [] : [];
