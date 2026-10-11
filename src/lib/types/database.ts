@@ -291,6 +291,11 @@ export type Database = {
         Args: { p_daily_business_id: string };
         Returns: number;
       };
+      // 기간 리포트 집계(0017). 반환 JSON의 모양은 src/lib/report.ts의 ReportSummary.
+      report_summary: {
+        Args: { p_from: string; p_to: string };
+        Returns: unknown;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
