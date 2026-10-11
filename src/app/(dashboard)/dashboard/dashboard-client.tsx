@@ -443,11 +443,6 @@ export function DashboardClient({
   const columns = getProductSummary(items);
   const terminalBoxTotals = getTerminalBoxTotals(rows);
 
-  // 각 업체 행에서 상품을 왼쪽부터 배치할 때, 오늘 전체 주문량이 가장 많은 상품이 항상
-  // 먼저 오도록 한다 — columns가 이미 total 내림차순으로 정렬돼 있으므로 그 순위를
-  // 그대로 참고표로 쓴다(등록 순서가 아니라 수요 순으로 정렬).
-  const totalByProductName = new Map(columns.map((c) => [c.productName, c.total]));
-
   // 표의 상품 열은 더 이상 "오늘 등록된 품목 종류"(columns) 기준이 아니라 "업체 한 곳이
   // 가장 많이 주문한 상품 수 + 1"(마지막은 항상 추가 버튼) 기준이다 — 열 개수가 품목 종류
   // 수에 비례하던 예전 방식은 품목이 늘어날수록 표가 한없이 넓어져 가로 스크롤이 생겼다.
@@ -706,15 +701,11 @@ export function DashboardClient({
                   ) : null;
                 }
 
-                // 오늘 전체 주문량이 가장 많은 상품이 왼쪽에 오도록 정렬한다 — 열이 더 이상
-                // 고정 품목이 아니라 "이 업체의 n번째 상품" 자리라서, 표시 순서가 곧 열 배치
-                // 순서다. 총량이 같으면 등록 순서(productSequence)로 안정적으로 고정한다.
+                // 상품은 주문 입력(등록)된 순서 그대로 왼쪽부터 배치한다 — 입력하는 사람이 순서를 의도해서
+                // 쓰므로 시스템이 다시 정렬하지 않는다(productSequence = 입력 순서).
                 const rowItems = items
                   .filter((i) => i.dailyBusinessId === row.dailyBusinessId)
-                  .sort((a, b) => {
-                    const totalDiff = (totalByProductName.get(b.productName) ?? 0) - (totalByProductName.get(a.productName) ?? 0);
-                    return totalDiff !== 0 ? totalDiff : a.productSequence - b.productSequence;
-                  });
+                  .sort((a, b) => a.productSequence - b.productSequence);
 
                 return (
                   <div
