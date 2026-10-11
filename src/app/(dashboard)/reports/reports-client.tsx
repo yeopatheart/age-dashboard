@@ -211,7 +211,7 @@ export function ReportsClient({
                     {Object.keys(metricLabels).map((k) => <td key={k} className="num">{fmtNum(r.metrics[k] ?? 0)}</td>)}
                     <td>
                       <div className="unit-chips">
-                        {sortUnits(Object.keys(r.units)).map((u) => (
+                        {sortUnits(Object.keys(r.units)).filter((u) => u !== '' || r.units[u].qty > 0).map((u) => (
                           <span key={u} className="unit-chip">
                             <strong>{fmtNum(r.units[u].qty)}</strong>{u}
                             {r.units[u].extra > 0 && <em>(+{fmtNum(r.units[u].extra)}kg)</em>}
