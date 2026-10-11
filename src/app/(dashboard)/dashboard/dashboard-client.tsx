@@ -494,7 +494,15 @@ export function DashboardClient({
   const monitorSlice = isSplitMode ? rows.slice(startIndex, startIndex + ownCapacity) : rows;
   const displayedRows = monitorSlice;
   const rowSlotCount = isSplitMode ? ownCapacity : displayedRows.length;
-  const rowStyle = { height: rowHeight };
+  // gridTemplateRows를 고정하지 않으면 내용이 긴 칸 하나가 행 전체를 키워서 행 높이 규칙이 깨진다.
+  const rowStyle = { height: rowHeight, gridTemplateRows: `${rowHeight}px` };
+  // 상품 팁은 한 줄에 다 들어가면 한 줄, 아니면 같은 행 높이 안에서 2줄로 나눠 보여준다(상품명을 말줄임하지
+  // 않는다). 2줄이 팁 안에 들어가도록 글자 크기·줄 높이를 행 높이 단계에 맞춰 정한다 — 행이 높은 단계(40/36px)
+  // 에서는 기본 크기(상품명 11px / 수량 14px) 그대로이고, 가장 촘촘한 30px 단계에서만 10px / 12px까지 줄어든다.
+  // 팁 안쪽 높이 = 행 높이 − 테두리 1 − 칸 여백 4 − 팁 테두리 2.
+  const pillLineHeight = Math.floor((rowHeight - 7) / 2);
+  const pillNameFont = Math.min(11, pillLineHeight - 1);
+  const pillQtyFont = Math.min(14, pillLineHeight + 1);
 
   // 열 개수는 "이 화면에 실제로 보이는 행" 중 상품이 가장 많은 업체 기준 + 1(추가 버튼 열)이다.
   // 모니터마다 다른 업체가 보이므로 전체 기준이 아니라 화면에 표시되는 행 기준으로 센다.
@@ -788,7 +796,7 @@ export function DashboardClient({
                           return <div key={slotIndex} className="border-r border-slate-100 last:border-r-0" />;
                         }
                         return (
-                          <div key={slotIndex} className="border-r border-slate-100 last:border-r-0 p-[3px] flex min-w-0">
+                          <div key={slotIndex} className="border-r border-slate-100 last:border-r-0 p-[2px] flex min-w-0">
                             <div
                               onClick={() => setAddItemModal({ row })}
                               className="w-full flex items-center justify-center rounded-lg border border-dashed border-slate-200 cursor-pointer hover:border-sky-400 hover:bg-sky-50/40 transition-all group"
@@ -806,19 +814,22 @@ export function DashboardClient({
                       const suffix = suffixParts.length ? ` (${suffixParts.join(', ')})` : '';
 
                       return (
-                        <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[3px] flex min-w-0">
+                        <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[2px] flex min-w-0">
                           <div className={`relative w-full flex items-center justify-center px-1.5 rounded-lg border overflow-hidden ${bg} ${border} transition-all group shadow-sm`}>
                             {item.isPacked && item.changeStatus !== 'cancelled' && (
                               <Check className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-slate-400/30" strokeWidth={4} />
                             )}
                             <div
                               onClick={() => !readOnly && handleTogglePacked(item)}
-                              className="w-full min-w-0 flex items-center justify-center gap-1 z-10 cursor-pointer select-none whitespace-nowrap leading-[1.4]"
+                              className="w-full min-w-0 flex flex-wrap items-center justify-center gap-x-1 z-10 cursor-pointer select-none overflow-hidden break-keep [overflow-wrap:anywhere]"
+                              style={{ lineHeight: `${pillLineHeight}px`, maxHeight: pillLineHeight * 2 }}
                             >
-                              <span className={`min-w-0 truncate py-0.5 text-[11px] font-bold ${text}`}>{item.productName}</span>
-                              <span className={`shrink-0 text-sm font-black ${text}`}>{item.quantity}</span>
-                              <span className={`shrink-0 py-0.5 text-[11px] font-semibold ${text}`}>{item.unit}</span>
-                              {suffix && <span className="shrink-0 text-[11px] font-semibold text-sky-600">{suffix}</span>}
+                              <span className={`font-bold ${text}`} style={{ fontSize: pillNameFont }}>{item.productName}</span>
+                              <span className="whitespace-nowrap">
+                                <span className={`font-black ${text}`} style={{ fontSize: pillQtyFont }}>{item.quantity}</span>
+                                <span className={`ml-0.5 font-semibold ${text}`} style={{ fontSize: pillNameFont }}>{item.unit}</span>
+                              </span>
+                              {suffix && <span className="font-semibold text-sky-600" style={{ fontSize: pillNameFont }}>{suffix.trim()}</span>}
                             </div>
                             <div className={`absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity z-20`}>
                               <button
