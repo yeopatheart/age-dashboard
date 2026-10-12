@@ -1,8 +1,19 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Pencil, Trash2, Check, X, Package } from 'lucide-react';
+import { Package, Plus, Trash2 } from 'lucide-react';
 import { createBox, updateBox, deleteBox, setBoxActive, type BoxFields } from './actions';
+import {
+  AdminHeader,
+  ColumnMenu,
+  DataTable,
+  FilterSelect,
+  SearchInput,
+  SidePanel,
+  Toggle,
+  useHiddenColumns,
+  type Column,
+} from '@/components/admin/admin-kit';
 
 interface Box {
   id: string;
@@ -45,310 +56,189 @@ function formatDims(b: Box) {
   return `${inner_width_cm ?? '?'} × ${inner_depth_cm ?? '?'} × ${inner_height_cm ?? '?'} cm`;
 }
 
+const toForm = (b: Box): BoxForm => ({
+  name: b.name,
+  width: b.inner_width_cm?.toString() ?? '',
+  depth: b.inner_depth_cm?.toString() ?? '',
+  height: b.inner_height_cm?.toString() ?? '',
+  isMulbongBox: b.is_mulbong_box,
+  isActive: b.is_active,
+  notes: b.notes ?? '',
+});
+
 export function BoxesClient({ boxes }: { boxes: Box[] }) {
   const router = useRouter();
-  const [newForm, setNewForm] = useState<BoxForm>(EMPTY_FORM);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<BoxForm>(EMPTY_FORM);
+  const [search, setSearch] = useState('');
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [kindFilter, setKindFilter] = useState('all');
+  // panel: null=닫힘, 'new'=새 박스, 그 외=수정할 박스 id
+  const [panel, setPanel] = useState<string | null>(null);
+  const [form, setForm] = useState<BoxForm>(EMPTY_FORM);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [hidden, setHidden] = useHiddenColumns('ak-cols-boxes');
+  // 사용 여부 토글은 누르는 즉시 반영한다.
+  const [localActive, setLocalActive] = useState<Record<string, boolean>>({});
 
-  const handleAdd = async () => {
-    if (busy || !newForm.name.trim()) return;
+  const isActive = (b: Box) => localActive[b.id] ?? b.is_active;
+  const filtered = useMemo(() => {
+    const k = search.trim().toLowerCase();
+    return boxes
+      .filter((b) => (k ? b.name.toLowerCase().includes(k) || (b.notes ?? '').toLowerCase().includes(k) : true))
+      .filter((b) => (activeFilter === 'all' ? true : activeFilter === 'active' ? (localActive[b.id] ?? b.is_active) : !(localActive[b.id] ?? b.is_active)))
+      .filter((b) => (kindFilter === 'all' ? true : kindFilter === 'mulbong' ? b.is_mulbong_box : !b.is_mulbong_box));
+  }, [boxes, localActive, search, activeFilter, kindFilter]);
+  const editing = panel && panel !== 'new' ? boxes.find((b) => b.id === panel) ?? null : null;
+
+  const run = async (fn: () => Promise<{ error: string | null }>) => {
+    if (busy) return false;
     setBusy(true);
     setError(null);
-    const result = await createBox(toFields(newForm));
+    const result = await fn();
     setBusy(false);
     if (result.error) {
       setError(result.error);
-      return;
+      return false;
     }
-    setNewForm(EMPTY_FORM);
     router.refresh();
+    return true;
   };
 
-  const startEdit = (b: Box) => {
-    setEditingId(b.id);
-    setEditForm({
-      name: b.name,
-      width: b.inner_width_cm?.toString() ?? '',
-      depth: b.inner_depth_cm?.toString() ?? '',
-      height: b.inner_height_cm?.toString() ?? '',
-      isMulbongBox: b.is_mulbong_box,
-      isActive: b.is_active,
-      notes: b.notes ?? '',
-    });
+  const openNew = () => {
+    setPanel('new');
+    setForm(EMPTY_FORM);
+    setConfirmDelete(false);
     setError(null);
   };
-
-  const handleSaveEdit = async () => {
-    if (busy || !editingId || !editForm.name.trim()) return;
-    setBusy(true);
+  const openEdit = (b: Box) => {
+    setPanel(b.id);
+    setForm(toForm(b));
+    setConfirmDelete(false);
     setError(null);
-    const result = await updateBox(editingId, toFields(editForm));
-    setBusy(false);
+  };
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    const ok = await run(() => (panel === 'new' ? createBox(toFields(form)) : updateBox(panel as string, toFields(form))));
+    if (ok) setPanel(null);
+  };
+  const handleToggleActive = async (b: Box, value: boolean) => {
+    setLocalActive((p) => ({ ...p, [b.id]: value }));
+    const result = await setBoxActive(b.id, value);
     if (result.error) {
-      setError(result.error);
-      return;
-    }
-    setEditingId(null);
-    router.refresh();
-  };
-
-  const handleToggleActive = async (b: Box) => {
-    setError(null);
-    const result = await setBoxActive(b.id, !b.is_active);
-    if (result.error) {
+      setLocalActive((p) => ({ ...p, [b.id]: !value }));
       setError(result.error);
       return;
     }
     router.refresh();
   };
 
-  const handleDelete = async (id: string) => {
-    setBusy(true);
-    setError(null);
-    const result = await deleteBox(id);
-    setBusy(false);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    router.refresh();
-  };
+  const columns: Column<Box>[] = [
+    { key: 'name', label: '박스', hideable: false, render: (b) => <span className="ak-name">{b.name}</span> },
+    { key: 'dims', label: '내측 크기 (가로×세로×높이)', render: (b) => formatDims(b) ?? <span className="ak-muted">미입력</span> },
+    {
+      key: 'mulbong',
+      label: '용도',
+      render: (b) => <span className={`ak-tag ${b.is_mulbong_box ? 'ak-tag-order' : 'ak-tag-manual'}`}>{b.is_mulbong_box ? '물봉용' : '일반'}</span>,
+    },
+    {
+      key: 'active',
+      label: '사용',
+      render: (b) => <Toggle checked={isActive(b)} onChange={(v) => handleToggleActive(b, v)} label={`${b.name} 사용 여부`} />,
+    },
+    { key: 'notes', label: '메모', render: (b) => (b.notes ? <span className="ak-ellipsis ak-muted">{b.notes}</span> : <span className="ak-muted">—</span>) },
+  ];
 
   return (
-    <div className="boxes-root">
-      <div className="page-header">
-        <div className="page-header-icon"><Package size={20} /></div>
-        <div>
-          <h1 className="page-title">박스 관리</h1>
-          <p className="page-sub">가게에서 쓰는 박스 종류와 내측 치수를 등록합니다. 치수를 아직 모르면 이름만 먼저 등록하고 나중에 채워도 됩니다. 사용 중으로 표시된 박스만 포장 추천 후보가 됩니다.</p>
-        </div>
+    <div className="ak-page">
+      <AdminHeader icon={<Package size={20} />} title="박스 관리" sub="가게에서 쓰는 박스 종류와 내측 크기입니다. 사용 중인 박스만 포장 추천에 쓰입니다. 행을 누르면 수정할 수 있습니다." />
+
+      <div className="ak-toolbar">
+        <SearchInput value={search} onChange={setSearch} placeholder="박스·메모 검색" />
+        <FilterSelect
+          value={activeFilter}
+          onChange={setActiveFilter}
+          options={[{ value: 'all', label: '사용: 전체' }, { value: 'active', label: '사용중' }, { value: 'inactive', label: '미사용' }]}
+        />
+        <FilterSelect
+          value={kindFilter}
+          onChange={setKindFilter}
+          options={[{ value: 'all', label: '용도: 전체' }, { value: 'mulbong', label: '물봉용' }, { value: 'normal', label: '일반' }]}
+        />
+        <span className="ak-count">{filtered.length}개{filtered.length !== boxes.length ? ` / 전체 ${boxes.length}개` : ''}</span>
+        <span className="ak-spacer" />
+        <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
+        <button className="ak-btn ak-btn-primary" onClick={openNew}><Plus size={14} /> 박스 추가</button>
       </div>
 
-      <div className="add-card">
-        <div className="add-row">
-          <input
-            className="input-field name-input"
-            placeholder="박스 이름 (예: 5호)"
-            value={newForm.name}
-            onChange={(e) => setNewForm({ ...newForm, name: e.target.value })}
-            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAdd()}
-          />
-          <input
-            className="input-field dim-input"
-            type="number" min="0" step="any"
-            placeholder="가로(cm)"
-            value={newForm.width}
-            onChange={(e) => setNewForm({ ...newForm, width: e.target.value })}
-          />
-          <input
-            className="input-field dim-input"
-            type="number" min="0" step="any"
-            placeholder="세로(cm)"
-            value={newForm.depth}
-            onChange={(e) => setNewForm({ ...newForm, depth: e.target.value })}
-          />
-          <input
-            className="input-field dim-input"
-            type="number" min="0" step="any"
-            placeholder="높이(cm)"
-            value={newForm.height}
-            onChange={(e) => setNewForm({ ...newForm, height: e.target.value })}
-          />
-          <label className="mulbong-check">
-            <input
-              type="checkbox"
-              checked={newForm.isMulbongBox}
-              onChange={(e) => setNewForm({ ...newForm, isMulbongBox: e.target.checked })}
-            />
-            물봉용
-          </label>
-          <label className="mulbong-check">
-            <input
-              type="checkbox"
-              checked={newForm.isActive}
-              onChange={(e) => setNewForm({ ...newForm, isActive: e.target.checked })}
-            />
-            사용중
-          </label>
-          <input
-            className="input-field notes-input"
-            placeholder="메모 (선택)"
-            value={newForm.notes}
-            onChange={(e) => setNewForm({ ...newForm, notes: e.target.value })}
-            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAdd()}
-          />
-          <button className="btn-primary add-btn" onClick={handleAdd} disabled={busy || !newForm.name.trim()}>
-            <Plus size={16} /> 추가
-          </button>
-        </div>
-      </div>
+      {error && !panel && <p className="ak-error">{error}</p>}
 
-      {error && <p className="error-text">{error}</p>}
+      <DataTable
+        columns={columns}
+        hidden={hidden}
+        rows={filtered}
+        rowKey={(b) => b.id}
+        onRowClick={openEdit}
+        activeKey={editing?.id ?? null}
+        emptyText={boxes.length === 0 ? '등록된 박스가 없습니다.' : '조건에 맞는 박스가 없습니다.'}
+      />
 
-      <div className="box-list">
-        {boxes.length === 0 && <p className="empty-text">등록된 박스가 없습니다.</p>}
-        {boxes.map((b) => (
-          <div key={b.id} className={`box-row ${b.is_active ? '' : 'box-row-inactive'}`}>
-            {editingId === b.id ? (
+      {panel && (
+        <SidePanel
+          title={panel === 'new' ? '박스 추가' : '박스 상세'}
+          onClose={() => setPanel(null)}
+          footer={
+            confirmDelete ? (
               <>
-                <input
-                  className="input-field name-input"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleSaveEdit()}
-                  autoFocus
-                />
-                <input
-                  className="input-field dim-input"
-                  type="number" min="0" step="any"
-                  placeholder="가로"
-                  value={editForm.width}
-                  onChange={(e) => setEditForm({ ...editForm, width: e.target.value })}
-                />
-                <input
-                  className="input-field dim-input"
-                  type="number" min="0" step="any"
-                  placeholder="세로"
-                  value={editForm.depth}
-                  onChange={(e) => setEditForm({ ...editForm, depth: e.target.value })}
-                />
-                <input
-                  className="input-field dim-input"
-                  type="number" min="0" step="any"
-                  placeholder="높이"
-                  value={editForm.height}
-                  onChange={(e) => setEditForm({ ...editForm, height: e.target.value })}
-                />
-                <label className="mulbong-check">
-                  <input
-                    type="checkbox"
-                    checked={editForm.isMulbongBox}
-                    onChange={(e) => setEditForm({ ...editForm, isMulbongBox: e.target.checked })}
-                  />
-                  물봉용
-                </label>
-                <label className="mulbong-check">
-                  <input
-                    type="checkbox"
-                    checked={editForm.isActive}
-                    onChange={(e) => setEditForm({ ...editForm, isActive: e.target.checked })}
-                  />
-                  사용중
-                </label>
-                <input
-                  className="input-field notes-input"
-                  placeholder="메모"
-                  value={editForm.notes}
-                  onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-                  onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleSaveEdit()}
-                />
-                <button className="icon-btn icon-btn-save" onClick={handleSaveEdit} disabled={busy} title="저장">
-                  <Check size={14} />
-                </button>
-                <button className="icon-btn icon-btn-cancel" onClick={() => setEditingId(null)} title="취소">
-                  <X size={14} />
-                </button>
+                <span className="ak-error" style={{ flex: 1 }}>정말 삭제할까요?</span>
+                <button className="ak-btn" onClick={() => setConfirmDelete(false)}>취소</button>
+                <button
+                  className="ak-btn ak-btn-primary"
+                  style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
+                  disabled={busy}
+                  onClick={async () => {
+                    if (await run(() => deleteBox(panel))) setPanel(null);
+                    else setConfirmDelete(false);
+                  }}
+                >삭제</button>
               </>
             ) : (
               <>
-                <div className="box-info">
-                  <span className="box-name">{b.name}</span>
-                  {b.is_mulbong_box && <span className="badge badge-info">물봉용</span>}
-                  <button
-                    type="button"
-                    className={`badge active-toggle ${b.is_active ? 'badge-success' : 'badge-muted'}`}
-                    onClick={() => handleToggleActive(b)}
-                    title={b.is_active ? '클릭하면 사용 안 함으로 바꿉니다' : '클릭하면 사용 중으로 바꿉니다'}
-                  >
-                    {b.is_active ? '사용중' : '미사용'}
-                  </button>
-                  {formatDims(b) && <span className="box-dims">{formatDims(b)}</span>}
-                  {b.notes && <span className="box-notes">{b.notes}</span>}
-                </div>
-                <button className="icon-btn icon-btn-edit" onClick={() => startEdit(b)} title="수정">
-                  <Pencil size={13} />
-                </button>
-                <button className="icon-btn icon-btn-delete" onClick={() => handleDelete(b.id)} title="삭제">
-                  <Trash2 size={13} />
-                </button>
+                {panel !== 'new' && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
+                <span className="ak-spacer" />
+                <button className="ak-btn" onClick={() => setPanel(null)}>취소</button>
+                <button className="ak-btn ak-btn-primary" disabled={busy || !form.name.trim()} onClick={handleSave}>저장</button>
               </>
-            )}
+            )
+          }
+        >
+          <div className="ak-field">
+            <label>박스 이름 *</label>
+            <input className="ak-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus placeholder="예) 4호 스티로폼" />
           </div>
-        ))}
-      </div>
-
-      <style>{`
-        .boxes-root { display: flex; flex-direction: column; gap: 1.25rem; }
-        .add-card {
-          background: #fff;
-          border: 1px solid var(--border);
-          border-radius: var(--radius-lg);
-          box-shadow: var(--shadow-sm);
-          padding: 1rem;
-        }
-        .add-row { display: flex; gap: 0.625rem; flex-wrap: wrap; align-items: center; }
-        .name-input { width: auto; flex: 1 1 160px; }
-        .dim-input { width: auto; flex: 0 1 90px; }
-        .notes-input { width: auto; flex: 1 1 140px; }
-        .mulbong-check {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          height: 2.5rem;
-          font-size: 0.875rem;
-          font-weight: 500;
-          color: var(--foreground);
-          white-space: nowrap;
-          flex-shrink: 0;
-          cursor: pointer;
-        }
-        .mulbong-check input { width: 1.125rem; height: 1.125rem; accent-color: var(--primary); cursor: pointer; }
-        .add-btn { display: flex; align-items: center; gap: 0.375rem; height: 2.5rem; padding: 0 1.1rem; white-space: nowrap; flex-shrink: 0; }
-        .error-text { color: var(--danger); font-size: 0.8125rem; font-weight: 500; }
-        .empty-text { color: var(--muted-foreground); font-size: 0.875rem; padding: 1.5rem 0; text-align: center; }
-        .box-list { display: flex; flex-direction: column; gap: 0.5rem; }
-        .box-row {
-          display: flex;
-          align-items: center;
-          gap: 0.625rem;
-          padding: 0.75rem 1rem;
-          border: 1px solid var(--border);
-          border-radius: var(--radius-lg);
-          background: #fff;
-          box-shadow: var(--shadow-sm);
-          transition: box-shadow 0.15s ease;
-          flex-wrap: wrap;
-        }
-        .box-row:hover { box-shadow: var(--shadow-md); }
-        .box-row-inactive .box-name, .box-row-inactive .box-dims { color: var(--muted-foreground); }
-        .active-toggle { border: none; cursor: pointer; font-family: inherit; }
-        .active-toggle:hover { opacity: 0.8; }
-        .box-info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
-        .box-name { font-size: 0.9rem; font-weight: 600; color: var(--foreground); }
-        .box-dims { font-size: 0.8125rem; color: var(--muted-foreground); font-weight: 500; }
-        .box-notes { font-size: 0.75rem; color: var(--muted-foreground); }
-        .icon-btn {
-          width: 28px;
-          height: 28px;
-          border-radius: 7px;
-          border: none;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          flex-shrink: 0;
-          transition: opacity 0.15s ease, transform 0.1s ease;
-        }
-        .icon-btn:hover { opacity: 0.85; }
-        .icon-btn:active { transform: scale(0.94); }
-        .icon-btn-edit { background: var(--muted); color: var(--foreground); }
-        .icon-btn-delete { background: var(--danger-bg); color: var(--danger); }
-        .icon-btn-save { background: var(--success-bg); color: var(--success); }
-        .icon-btn-cancel { background: var(--muted); color: var(--muted-foreground); }
-      `}</style>
+          <div className="ak-field">
+            <span className="ak-field-label">내측 크기 (cm)</span>
+            <div className="ak-row2">
+              <input className="ak-input" type="number" min="0" step="0.1" placeholder="가로" value={form.width} onChange={(e) => setForm({ ...form, width: e.target.value })} />
+              <input className="ak-input" type="number" min="0" step="0.1" placeholder="세로" value={form.depth} onChange={(e) => setForm({ ...form, depth: e.target.value })} />
+              <input className="ak-input" type="number" min="0" step="0.1" placeholder="높이" value={form.height} onChange={(e) => setForm({ ...form, height: e.target.value })} />
+            </div>
+          </div>
+          <div className="ak-setting">
+            <span>물봉용 박스<small>산소 포장(물봉) 전용 박스입니다</small></span>
+            <Toggle checked={form.isMulbongBox} onChange={(v) => setForm({ ...form, isMulbongBox: v })} label="물봉용" />
+          </div>
+          <div className="ak-setting">
+            <span>사용중<small>꺼두면 포장 추천에서 제외됩니다</small></span>
+            <Toggle checked={form.isActive} onChange={(v) => setForm({ ...form, isActive: v })} label="사용중" />
+          </div>
+          <div className="ak-field">
+            <label>메모</label>
+            <textarea className="ak-input ak-textarea" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          </div>
+          {error && <p className="ak-error">{error}</p>}
+        </SidePanel>
+      )}
     </div>
   );
 }
