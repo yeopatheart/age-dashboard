@@ -42,11 +42,26 @@ export interface OrderItem {
   totalBoxes: number;
 }
 
-export function getProductSummary(items: OrderItem[]) {
-  const map = new Map<string, { productName: string; total: number; mulbong: number; unit: string; packed: number }>();
+export interface ProductSummaryRow {
+  key: string;
+  productName: string;
+  size: string; // 사이즈/종류 요청(예: "선별", "6-800"). 없으면 빈 문자열
+  label: string; // 화면 표시용: "보리새우 (선별)"
+  total: number;
+  unit: string;
+  mulbong: number;
+  packed: number;
+}
+
+// 같은 품목이라도 사이즈·종류(선별/일반, 하모 6-800 등)와 단위(미/kg)가 다르면 따로 센다 — 한 줄로 합치면
+// 어떤 크기를 얼마나 준비해야 하는지 알 수 없고, 마릿수와 kg가 한 숫자로 더해지는 문제도 있다.
+// 정렬은 같은 품목의 줄이 붙어 있도록 품목 합계가 큰 순서로 묶고, 그 안에서는 수량 순이다.
+export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
+  const map = new Map<string, ProductSummaryRow>();
   for (const item of items) {
     if (item.changeStatus === 'cancelled') continue;
-    const key = item.productId ?? item.productName;
+    const size = (item.sizeRequest ?? '').trim();
+    const key = `${item.productId ?? item.productName}|${size}|${item.unit}`;
     const existing = map.get(key);
     if (existing) {
       existing.total += item.quantity;
@@ -54,15 +69,26 @@ export function getProductSummary(items: OrderItem[]) {
       if (item.isPacked) existing.packed += item.quantity;
     } else {
       map.set(key, {
+        key,
         productName: item.productName,
+        size,
+        label: size ? `${item.productName} (${size})` : item.productName,
         total: item.quantity,
-        mulbong: item.isMulbong ? item.quantity : 0,
         unit: item.unit,
+        mulbong: item.isMulbong ? item.quantity : 0,
         packed: item.isPacked ? item.quantity : 0,
       });
     }
   }
-  return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  const rows = Array.from(map.values());
+  const productTotal = new Map<string, number>();
+  for (const r of rows) productTotal.set(r.productName, (productTotal.get(r.productName) ?? 0) + r.total);
+  return rows.sort(
+    (a, b) =>
+      (productTotal.get(b.productName) ?? 0) - (productTotal.get(a.productName) ?? 0) ||
+      a.productName.localeCompare(b.productName, 'ko') ||
+      b.total - a.total,
+  );
 }
 
 // rows(daily_business) 기준으로 집계한다 — 상품이 하나도 없는 업체도 박스 수는 갖고 있으므로

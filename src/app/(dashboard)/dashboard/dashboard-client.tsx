@@ -580,11 +580,11 @@ export function DashboardClient({
   };
   const productChips = columns.map((product) => (
     <div
-      key={product.productName}
+      key={product.key}
       className="flex items-center gap-1.5 border rounded-lg px-3 py-1.5"
       style={chipStyle(product.productName)}
     >
-      <span className="text-xs font-bold">{product.productName}</span>
+      <span className="text-xs font-bold">{product.label}</span>
       <span className="text-xs font-black">{product.total}{product.unit}</span>
     </div>
   ));
@@ -611,14 +611,14 @@ export function DashboardClient({
         return ctx.measureText(text).width;
       };
       const available = 108 - 4; // 이름과 수량 사이 간격(gap-1)
-      setLongNames(new Set(columns.filter((c) => width(c.productName, 700) + width(`${c.total}${c.unit}`, 900) > available).map((c) => c.productName)));
+      setLongNames(new Set(columns.filter((c) => width(c.label, 700) + width(`${c.total}${c.unit}`, 900) > available).map((c) => c.key)));
     };
     measure();
     // 웹폰트가 늦게 로드되면 폭이 달라지므로 로드 후 한 번 더 잰다.
     void document.fonts?.ready.then(measure);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
-  const panelColumns = [...columns.filter((c) => !longNames.has(c.productName)), ...columns.filter((c) => longNames.has(c.productName))];
+  const panelColumns = [...columns.filter((c) => !longNames.has(c.key)), ...columns.filter((c) => longNames.has(c.key))];
   const shortCount = columns.length - longNames.size;
 
   // 세로 패널: 품목이 늘어도 스크롤이 생기지 않게 2열 그리드의 줄 높이·글자 크기를 패널 높이에 맞춰 줄인다.
@@ -632,11 +632,11 @@ export function DashboardClient({
       <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-2 content-start gap-x-1 p-1.5">
         {panelColumns.map((product) => (
           <div
-            key={product.productName}
-            className={`flex items-center justify-between gap-1 px-1.5 rounded border mb-px overflow-hidden ${longNames.has(product.productName) ? 'col-span-2' : ''}`}
+            key={product.key}
+            className={`flex items-center justify-between gap-1 px-1.5 rounded border mb-px overflow-hidden ${longNames.has(product.key) ? 'col-span-2' : ''}`}
             style={{ ...chipStyle(product.productName), height: panelItemHeight - 1, fontSize: Math.min(12, panelItemHeight - 6) }}
           >
-            <span className="font-bold truncate leading-none">{product.productName}</span>
+            <span className="font-bold truncate leading-none">{product.label}</span>
             <span className="font-black shrink-0 leading-none">{product.total}{product.unit}</span>
           </div>
         ))}
