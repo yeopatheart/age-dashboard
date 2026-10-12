@@ -1,10 +1,22 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Pencil, Trash2, Check, X, MapPinned } from 'lucide-react';
+import { MapPinned, Plus, Trash2 } from 'lucide-react';
 import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate } from './actions';
 import { ColorPicker } from '@/components/color-picker';
 import { terminalBadgeProps } from '@/lib/terminal-color';
+import {
+  AdminHeader,
+  ColumnMenu,
+  DataTable,
+  FilterSelect,
+  SearchInput,
+  SidePanel,
+  Toggle,
+  ViaTag,
+  useHiddenColumns,
+  type Column,
+} from '@/components/admin/admin-kit';
 
 interface Terminal {
   id: string;
@@ -16,215 +28,183 @@ interface Terminal {
   is_separate: boolean;
 }
 
-const formatDate = (iso: string) => iso.slice(0, 10).replace(/-/g, '.');
-
-export function TerminalsClient({ terminals }: { terminals: Terminal[] }) {
+export function TerminalsClient({ terminals, businessCount }: { terminals: Terminal[]; businessCount: Record<string, number> }) {
   const router = useRouter();
+  const [search, setSearch] = useState('');
+  const [viaFilter, setViaFilter] = useState('all');
+  const [separateFilter, setSeparateFilter] = useState('all');
   const [newName, setNewName] = useState('');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [colorOpenId, setColorOpenId] = useState<string | null>(null);
-  // 색 선택은 누르는 즉시 저장하고 화면에도 바로 반영한다(서버 갱신을 기다리지 않는다).
-  const [localColors, setLocalColors] = useState<Record<string, { fill: string | null; border: string | null }>>({});
+  const [hidden, setHidden] = useHiddenColumns('ak-cols-terminals');
+  // 색·별도 주문은 누르는 즉시 저장하고 화면에도 바로 반영한다(서버 갱신을 기다리지 않는다).
+  const [local, setLocal] = useState<Record<string, Partial<Terminal>>>({});
 
-  const [localSeparate, setLocalSeparate] = useState<Record<string, boolean>>({});
-  const separateOf = (t: Terminal) => localSeparate[t.id] ?? t.is_separate;
-  const handleSeparate = async (t: Terminal, value: boolean) => {
-    setLocalSeparate((prev) => ({ ...prev, [t.id]: value }));
-    await setTerminalSeparate(t.id, value);
-    router.refresh();
-  };
+  const view = (t: Terminal): Terminal => ({ ...t, ...local[t.id] });
+  const filtered = useMemo(() => {
+    const k = search.trim().toLowerCase();
+    return terminals
+      .map(view)
+      .filter((t) => (k ? t.name.toLowerCase().includes(k) : true))
+      .filter((t) => (viaFilter === 'all' ? true : t.created_via === viaFilter))
+      .filter((t) => (separateFilter === 'all' ? true : separateFilter === 'separate' ? t.is_separate : !t.is_separate));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terminals, local, search, viaFilter, separateFilter]);
+  const open = openId ? terminals.map(view).find((t) => t.id === openId) ?? null : null;
 
-  const colorOf = (t: Terminal) => localColors[t.id] ?? { fill: t.fill_color, border: t.border_color };
-  const handleColor = async (t: Terminal, fill: string | null, border: string | null) => {
-    setLocalColors((prev) => ({ ...prev, [t.id]: { fill, border } }));
-    await setTerminalColor(t.id, fill, border);
+  const run = async (fn: () => Promise<{ error: string | null }>) => {
+    if (busy) return false;
+    setBusy(true);
+    setError(null);
+    const result = await fn();
+    setBusy(false);
+    if (result.error) {
+      setError(result.error);
+      return false;
+    }
     router.refresh();
+    return true;
   };
 
   const handleAdd = async () => {
-    if (busy || !newName.trim()) return;
-    setBusy(true);
-    setError(null);
-    const result = await createTerminal(newName.trim());
-    setBusy(false);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    setNewName('');
+    if (!newName.trim()) return;
+    if (await run(() => createTerminal(newName.trim()))) setNewName('');
+  };
+  const setSeparate = async (t: Terminal, value: boolean) => {
+    setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], is_separate: value } }));
+    await setTerminalSeparate(t.id, value);
     router.refresh();
   };
-
-  const startEdit = (t: Terminal) => {
-    setEditingId(t.id);
-    setEditingName(t.name);
-    setError(null);
-  };
-
-  const handleSaveEdit = async () => {
-    if (busy || !editingId || !editingName.trim()) return;
-    setBusy(true);
-    setError(null);
-    const result = await updateTerminal(editingId, editingName.trim());
-    setBusy(false);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    setEditingId(null);
+  const setColor = async (t: Terminal, fill: string | null, border: string | null) => {
+    setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], fill_color: fill, border_color: border } }));
+    await setTerminalColor(t.id, fill, border);
     router.refresh();
   };
-
-  const handleDelete = async (id: string) => {
-    setBusy(true);
+  const openPanel = (t: Terminal) => {
+    setOpenId(t.id);
+    setNameDraft(t.name);
+    setConfirmDelete(false);
     setError(null);
-    const result = await deleteTerminal(id);
-    setBusy(false);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    router.refresh();
   };
+
+  const columns: Column<Terminal>[] = [
+    {
+      key: 'name',
+      label: '터미널',
+      hideable: false,
+      render: (t) => {
+        const b = terminalBadgeProps(t.name, { [t.name]: { fill: t.fill_color, border: t.border_color } });
+        return <span className={`ak-badge ${b.className}`} style={b.style}>{t.name}</span>;
+      },
+    },
+    { key: 'businesses', label: '업체 수', render: (t) => <span className="ak-muted">{businessCount[t.id] ?? 0}곳</span> },
+    {
+      key: 'separate',
+      label: '별도 주문',
+      render: (t) => <Toggle checked={t.is_separate} onChange={(v) => setSeparate(t, v)} label={`${t.name} 별도 주문`} />,
+    },
+    { key: 'via', label: '등록', render: (t) => <ViaTag via={t.created_via} date={t.created_at} /> },
+  ];
 
   return (
-    <div className="terminals-root">
-      <div className="page-header">
-        <div className="page-header-icon"><MapPinned size={20} /></div>
-        <div>
-          <h1 className="page-title">터미널 관리</h1>
-          <p className="page-sub">주문을 배송하는 터미널·배송수단 목록입니다. 고객사 관리 화면과 대시보드의 업체 등록 시 여기서 고른 터미널이 쓰입니다.</p>
-        </div>
-      </div>
+    <div className="ak-page">
+      <AdminHeader icon={<MapPinned size={20} />} title="터미널 관리" sub="주문을 배송하는 터미널·배송수단입니다. 행을 누르면 색상과 이름을 바꿀 수 있습니다." />
 
-      <div className="add-card">
-        <div className="add-row">
+      <div className="ak-toolbar">
+        <SearchInput value={search} onChange={setSearch} placeholder="터미널 검색" />
+        <FilterSelect
+          value={viaFilter}
+          onChange={setViaFilter}
+          options={[{ value: 'all', label: '등록: 전체' }, { value: 'order', label: '주문입력' }, { value: 'manual', label: '수기입력' }]}
+        />
+        <FilterSelect
+          value={separateFilter}
+          onChange={setSeparateFilter}
+          options={[{ value: 'all', label: '주문표: 전체' }, { value: 'separate', label: '별도 주문' }, { value: 'main', label: '기본 주문표' }]}
+        />
+        <span className="ak-count">{filtered.length}개</span>
+        <span className="ak-spacer" />
+        <div className="ak-quick-add">
           <input
-            className="input-field"
-            placeholder="예) 대구, 택배, 퀵"
+            placeholder="새 터미널 (예: 대구, 택배)"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAdd()}
           />
-          <button className="btn-primary add-btn" onClick={handleAdd} disabled={busy || !newName.trim()}>
-            <Plus size={16} /> 추가
+          <button className="ak-btn ak-btn-primary" onClick={handleAdd} disabled={busy || !newName.trim()}>
+            <Plus size={14} /> 추가
           </button>
         </div>
+        <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
       </div>
 
-      {error && <p className="error-text">{error}</p>}
+      {error && !open && <p className="ak-error">{error}</p>}
 
-      <div className="terminal-list">
-        {terminals.length === 0 && <p className="empty-text">등록된 터미널이 없습니다.</p>}
-        {terminals.map((t) => (
-          <div key={t.id} className="terminal-row">
-            {editingId === t.id ? (
+      <DataTable
+        columns={columns}
+        hidden={hidden}
+        rows={filtered}
+        rowKey={(t) => t.id}
+        onRowClick={openPanel}
+        activeKey={openId}
+        emptyText={terminals.length === 0 ? '등록된 터미널이 없습니다.' : '조건에 맞는 터미널이 없습니다.'}
+      />
+
+      {open && (
+        <SidePanel
+          title="터미널 상세"
+          onClose={() => setOpenId(null)}
+          footer={
+            confirmDelete ? (
               <>
-                <input
-                  className="input-field"
-                  value={editingName}
-                  onChange={(e) => setEditingName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleSaveEdit()}
-                  autoFocus
-                />
-                <button className="icon-btn icon-btn-save" onClick={handleSaveEdit} disabled={busy} title="저장">
-                  <Check size={14} />
-                </button>
-                <button className="icon-btn icon-btn-cancel" onClick={() => setEditingId(null)} title="취소">
-                  <X size={14} />
-                </button>
+                <span className="ak-error" style={{ flex: 1 }}>정말 삭제할까요?</span>
+                <button className="ak-btn" onClick={() => setConfirmDelete(false)}>취소</button>
+                <button
+                  className="ak-btn ak-btn-primary"
+                  style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
+                  disabled={busy}
+                  onClick={async () => {
+                    if (await run(() => deleteTerminal(open.id))) setOpenId(null);
+                    else setConfirmDelete(false);
+                  }}
+                >삭제</button>
               </>
             ) : (
               <>
-                <span className="terminal-name">
-                  <span
-                    className={`terminal-badge ${terminalBadgeProps(t.name, { [t.name]: colorOf(t) }).className}`}
-                    style={terminalBadgeProps(t.name, { [t.name]: colorOf(t) }).style}
-                  >{t.name}</span>
-                </span>
-                <span className={`via-tag via-tag-${t.created_via}`}>{t.created_via === 'order' ? '주문입력' : '수기입력'}</span>
-                <span className="via-date">{formatDate(t.created_at)} 등록</span>
-                <label className="separate-check" title="체크하면 대시보드 기본 주문표에서 빼고 '별도 주문'으로 따로 봅니다">
-                  <input type="checkbox" checked={separateOf(t)} onChange={(e) => handleSeparate(t, e.target.checked)} />
-                  별도 주문
-                </label>
-                <button className="color-btn" onClick={() => setColorOpenId(colorOpenId === t.id ? null : t.id)}>색상</button>
-                <button className="icon-btn icon-btn-edit" onClick={() => startEdit(t)} title="수정">
-                  <Pencil size={13} />
-                </button>
-                <button className="icon-btn icon-btn-delete" onClick={() => handleDelete(t.id)} title="삭제">
-                  <Trash2 size={13} />
-                </button>
+                <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>
+                <span className="ak-spacer" />
+                <button className="ak-btn" onClick={() => setOpenId(null)}>닫기</button>
+                <button
+                  className="ak-btn ak-btn-primary"
+                  disabled={busy || !nameDraft.trim() || nameDraft.trim() === open.name}
+                  onClick={() => run(() => updateTerminal(open.id, nameDraft.trim()))}
+                >이름 저장</button>
               </>
-            )}
-            {colorOpenId === t.id && editingId !== t.id && (
-              <div className="color-panel">
-                <ColorPicker fill={colorOf(t).fill} border={colorOf(t).border} onChange={(f, b) => handleColor(t, f, b)} sample={t.name} />
-              </div>
-            )}
+            )
+          }
+        >
+          <div className="ak-field">
+            <label>터미널 이름</label>
+            <input className="ak-input" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} />
           </div>
-        ))}
-      </div>
-
-      <style>{`
-        .terminals-root { display: flex; flex-direction: column; gap: 1.25rem; }
-        .add-card {
-          background: #fff;
-          border: 1px solid var(--border);
-          border-radius: var(--radius-lg);
-          box-shadow: var(--shadow-sm);
-          padding: 1rem;
-        }
-        .add-row { display: flex; gap: 0.625rem; }
-        .add-btn { display: flex; align-items: center; gap: 0.375rem; height: 2.5rem; padding: 0 1.1rem; white-space: nowrap; flex-shrink: 0; }
-        .error-text { color: var(--danger); font-size: 0.8125rem; font-weight: 500; }
-        .empty-text { color: var(--muted-foreground); font-size: 0.875rem; padding: 1.5rem 0; text-align: center; }
-        .terminal-list { display: flex; flex-direction: column; gap: 0.5rem; }
-        .terminal-row {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 0.625rem;
-          padding: 0.75rem 1rem;
-          border: 1px solid var(--border);
-          border-radius: var(--radius-lg);
-          background: #fff;
-          box-shadow: var(--shadow-sm);
-          transition: box-shadow 0.15s ease;
-        }
-        .terminal-row:hover { box-shadow: var(--shadow-md); }
-        .via-tag { font-size: 0.75rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 999px; border: 1px solid; white-space: nowrap; }
-        .via-tag-order { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
-        .via-tag-manual { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
-        .via-date { font-size: 0.75rem; color: var(--muted-foreground); white-space: nowrap; }
-        .terminal-badge { display: inline-block; border: 1px solid; border-radius: 6px; padding: 0.15rem 0.7rem; font-size: 0.875rem; font-weight: 700; }
-        .separate-check { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; font-weight: 700; color: var(--muted-foreground); cursor: pointer; white-space: nowrap; }
-        .separate-check input { width: 16px; height: 16px; accent-color: var(--primary); }
-        .color-btn { font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer; flex-shrink: 0; }
-        .color-panel { flex-basis: 100%; }
-        .terminal-name { flex: 1; font-size: 0.9rem; font-weight: 600; color: var(--foreground); }
-        .icon-btn {
-          width: 28px;
-          height: 28px;
-          border-radius: 7px;
-          border: none;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          flex-shrink: 0;
-          transition: opacity 0.15s ease, transform 0.1s ease;
-        }
-        .icon-btn:hover { opacity: 0.85; }
-        .icon-btn:active { transform: scale(0.94); }
-        .icon-btn-edit { background: var(--muted); color: var(--foreground); }
-        .icon-btn-delete { background: var(--danger-bg); color: var(--danger); }
-        .icon-btn-save { background: var(--success-bg); color: var(--success); }
-        .icon-btn-cancel { background: var(--muted); color: var(--muted-foreground); }
-      `}</style>
+          <div className="ak-setting">
+            <span>
+              별도 주문
+              <small>켜면 대시보드 기본 주문표에서 빼고 &apos;별도 주문&apos; 팝업에서 봅니다 (택배, 직배송 등)</small>
+            </span>
+            <Toggle checked={open.is_separate} onChange={(v) => setSeparate(open, v)} label="별도 주문" />
+          </div>
+          <div className="ak-field">
+            <span className="ak-field-label">색상</span>
+            <ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => setColor(open, f, b)} sample={open.name} />
+          </div>
+          <p className="ak-meta">연결된 업체 {businessCount[open.id] ?? 0}곳 · {open.created_via === 'order' ? '주문입력' : '수기입력'}으로 {open.created_at.slice(0, 10).replace(/-/g, '.')} 등록</p>
+          {error && <p className="ak-error">{error}</p>}
+        </SidePanel>
+      )}
     </div>
   );
 }

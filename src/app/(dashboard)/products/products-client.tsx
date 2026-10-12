@@ -1,10 +1,21 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Trash2, Tag, Search, Wand2 } from 'lucide-react';
+import { Plus, Tag, Trash2, Wand2 } from 'lucide-react';
 import { createProduct, setProductColors, autoAssignProductColors, deleteProducts } from './actions';
 import { ColorPicker } from '@/components/color-picker';
 import { resolveColors } from '@/lib/color-palette';
+import {
+  AdminHeader,
+  ColumnMenu,
+  DataTable,
+  FilterSelect,
+  SearchInput,
+  SidePanel,
+  ViaTag,
+  useHiddenColumns,
+  type Column,
+} from '@/components/admin/admin-kit';
 
 interface Product {
   id: string;
@@ -15,30 +26,42 @@ interface Product {
   border_color: string | null;
 }
 
-const formatDate = (iso: string) => iso.slice(0, 10).replace(/-/g, '.');
-
 export function ProductsClient({ products }: { products: Product[] }) {
   const router = useRouter();
-  const [newName, setNewName] = useState('');
   const [search, setSearch] = useState('');
+  const [viaFilter, setViaFilter] = useState('all');
+  const [colorFilter, setColorFilter] = useState('all');
+  const [newName, setNewName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [openId, setOpenId] = useState<string | null>(null);
   const [bulk, setBulk] = useState<{ fill: string | null; border: string | null }>({ fill: null, border: null });
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [hidden, setHidden] = useHiddenColumns('ak-cols-products');
   // 색 선택은 누르는 즉시 저장하고 화면에도 바로 반영한다.
-  const [localColors, setLocalColors] = useState<Record<string, { fill: string | null; border: string | null }>>({});
+  const [local, setLocal] = useState<Record<string, { fill: string | null; border: string | null }>>({});
 
-  const colorOf = (p: Product) => localColors[p.id] ?? { fill: p.fill_color, border: p.border_color };
+  const view = (p: Product): Product => {
+    const l = local[p.id];
+    return l ? { ...p, fill_color: l.fill, border_color: l.border } : p;
+  };
+  const hasColor = (p: Product) => !!(p.fill_color || p.border_color);
+  const uncolored = products.map(view).filter((p) => !hasColor(p)).length;
   const filtered = useMemo(() => {
     const k = search.trim().toLowerCase();
-    return k ? products.filter((p) => p.name.toLowerCase().includes(k)) : products;
-  }, [products, search]);
-  const uncolored = products.filter((p) => !colorOf(p).fill && !colorOf(p).border).length;
+    return products
+      .map(view)
+      .filter((p) => (k ? p.name.toLowerCase().includes(k) : true))
+      .filter((p) => (viaFilter === 'all' ? true : p.created_via === viaFilter))
+      .filter((p) => (colorFilter === 'all' ? true : colorFilter === 'none' ? !hasColor(p) : hasColor(p)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, local, search, viaFilter, colorFilter]);
+  const open = openId ? products.map(view).find((p) => p.id === openId) ?? null : null;
 
   const run = async (fn: () => Promise<{ error: string | null }>, okNotice?: string) => {
-    if (busy) return;
+    if (busy) return false;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -57,13 +80,11 @@ export function ProductsClient({ products }: { products: Product[] }) {
     if (!newName.trim()) return;
     if (await run(() => createProduct(newName, null, null))) setNewName('');
   };
-
   const handleColor = async (p: Product, fill: string | null, border: string | null) => {
-    setLocalColors((prev) => ({ ...prev, [p.id]: { fill, border } }));
+    setLocal((prev) => ({ ...prev, [p.id]: { fill, border } }));
     await setProductColors([p.id], fill, border);
     router.refresh();
   };
-
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -71,17 +92,18 @@ export function ProductsClient({ products }: { products: Product[] }) {
       else next.add(id);
       return next;
     });
-  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
-
+  const toggleAll = () => {
+    const all = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
+    setSelected(all ? new Set() : new Set(filtered.map((p) => p.id)));
+  };
   const applyBulk = async () => {
     const ids = [...selected];
     const ok = await run(() => setProductColors(ids, bulk.fill, bulk.border), `${ids.length}개 상품에 색을 적용했습니다.`);
     if (ok) {
-      setLocalColors((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, { fill: bulk.fill, border: bulk.border }])) }));
+      setLocal((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, { fill: bulk.fill, border: bulk.border }])) }));
       setSelected(new Set());
     }
   };
-
   const handleAuto = async () => {
     if (busy) return;
     setBusy(true);
@@ -89,131 +111,154 @@ export function ProductsClient({ products }: { products: Product[] }) {
     const result = await autoAssignProductColors();
     setBusy(false);
     if (result.error) return setError(result.error);
-    setLocalColors({});
+    setLocal({});
     setNotice(`색이 없는 상품 ${result.assigned}개에 겹치지 않는 색을 배정했습니다.`);
     router.refresh();
   };
 
-  return (
-    <div className="products-root">
-      <div className="page-header">
-        <div className="page-header-icon"><Tag size={20} /></div>
-        <div>
-          <h1 className="page-title">상품 관리</h1>
-          <p className="page-sub">상품마다 대시보드 팁의 안쪽색과 테두리색을 정합니다. 주문 입력에서 처음 나온 상품은 겹치지 않는 색으로 자동 등록됩니다.</p>
-        </div>
-      </div>
+  const columns: Column<Product>[] = [
+    {
+      key: 'name',
+      label: '상품',
+      hideable: false,
+      render: (p) => {
+        const c = resolveColors(p.fill_color, p.border_color);
+        return <span className="ak-pill" style={{ backgroundColor: c.fill, borderColor: c.border, color: c.text }}>{p.name}</span>;
+      },
+    },
+    {
+      key: 'color',
+      label: '색상',
+      render: (p) =>
+        hasColor(p) ? (
+          <span style={{ display: 'inline-flex', gap: 4 }}>
+            <span className="ak-swatch" style={{ backgroundColor: resolveColors(p.fill_color, null).fill, borderColor: resolveColors(null, p.border_color).border }} title="안쪽색" />
+            <span className="ak-swatch" style={{ backgroundColor: resolveColors(null, p.border_color).border, borderColor: resolveColors(null, p.border_color).border }} title="테두리색" />
+          </span>
+        ) : (
+          <span className="ak-muted">미지정</span>
+        ),
+    },
+    { key: 'via', label: '등록', render: (p) => <ViaTag via={p.created_via} date={p.created_at} /> },
+  ];
 
-      <div className="add-card">
-        <div className="add-row">
+  return (
+    <div className="ak-page">
+      <AdminHeader icon={<Tag size={20} />} title="상품 관리" sub="상품마다 '품목별 수량' 칩의 안쪽색과 테두리색을 정합니다. 주문 입력에서 처음 나온 상품은 겹치지 않는 색으로 자동 등록됩니다." />
+
+      <div className="ak-toolbar">
+        <SearchInput value={search} onChange={setSearch} placeholder="상품 검색" />
+        <FilterSelect
+          value={colorFilter}
+          onChange={setColorFilter}
+          options={[{ value: 'all', label: '색상: 전체' }, { value: 'set', label: '지정됨' }, { value: 'none', label: '미지정' }]}
+        />
+        <FilterSelect
+          value={viaFilter}
+          onChange={setViaFilter}
+          options={[{ value: 'all', label: '등록: 전체' }, { value: 'order', label: '주문입력' }, { value: 'manual', label: '수기입력' }]}
+        />
+        <span className="ak-count">{filtered.length}개{filtered.length !== products.length ? ` / 전체 ${products.length}개` : ''}</span>
+        <span className="ak-spacer" />
+        <button className="ak-btn" onClick={handleAuto} disabled={busy || uncolored === 0} title="색이 없는 상품에 겹치지 않는 색을 자동으로 배정합니다">
+          <Wand2 size={14} /> 색상 자동 배정 ({uncolored})
+        </button>
+        <div className="ak-quick-add">
           <input
-            className="input-field"
-            placeholder="상품명 (예: 활전갱이) — 색은 겹치지 않게 자동 배정됩니다"
+            placeholder="새 상품 (예: 활전갱이)"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAdd()}
           />
-          <button className="btn-primary add-btn" onClick={handleAdd} disabled={busy || !newName.trim()}>
-            <Plus size={16} /> 추가
+          <button className="ak-btn ak-btn-primary" onClick={handleAdd} disabled={busy || !newName.trim()}>
+            <Plus size={14} /> 추가
           </button>
         </div>
-      </div>
-
-      <div className="tool-row">
-        <div className="search-box">
-          <Search size={14} />
-          <input placeholder="상품 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <span className="count-text">{filtered.length}개{search ? ` / 전체 ${products.length}개` : ''}</span>
-        <button className="auto-btn" onClick={handleAuto} disabled={busy || uncolored === 0}>
-          <Wand2 size={14} /> 색상 자동 배정 ({uncolored}개)
-        </button>
+        <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
       </div>
 
       {selected.size > 0 && (
-        <div className="bulk-card">
-          <div className="bulk-head">
+        <div className="ak-bulk">
+          <div className="ak-bulk-head">
             <strong>{selected.size}개 선택됨</strong>
-            <button className="bulk-clear" onClick={() => setSelected(new Set())}>선택 해제</button>
-            <button className="btn-primary bulk-apply" onClick={applyBulk} disabled={busy}>선택한 상품에 색 적용</button>
-            <button className="bulk-delete" onClick={() => run(async () => { const r = await deleteProducts([...selected]); setSelected(new Set()); return r; })} disabled={busy}>
-              <Trash2 size={13} /> 삭제
+            <button className="ak-btn" onClick={() => setSelected(new Set())}>선택 해제</button>
+            <button className="ak-btn ak-btn-primary" onClick={applyBulk} disabled={busy}>선택한 상품에 색 적용</button>
+            <span className="ak-spacer" />
+            <button
+              className="ak-btn ak-btn-danger"
+              disabled={busy}
+              onClick={() => run(async () => {
+                const r = await deleteProducts([...selected]);
+                setSelected(new Set());
+                return r;
+              })}
+            >
+              <Trash2 size={14} /> 삭제
             </button>
           </div>
           <ColorPicker fill={bulk.fill} border={bulk.border} onChange={(f, b) => setBulk({ fill: f, border: b })} sample="일괄 적용 미리보기" />
         </div>
       )}
 
-      {error && <p className="error-text">{error}</p>}
-      {notice && <p className="notice-text">{notice}</p>}
+      {error && !open && <p className="ak-error">{error}</p>}
+      {notice && <p className="ak-notice">{notice}</p>}
 
-      <div className="product-list">
-        {filtered.length > 0 && (
-          <label className="select-all">
-            <input
-              type="checkbox"
-              checked={allFilteredSelected}
-              onChange={() => setSelected(allFilteredSelected ? new Set() : new Set(filtered.map((p) => p.id)))}
-            />
-            현재 목록 전체 선택
-          </label>
-        )}
-        {filtered.length === 0 && <p className="empty-text">{products.length === 0 ? '등록된 상품이 없습니다.' : '검색 결과가 없습니다.'}</p>}
-        {filtered.map((p) => {
-          const c = colorOf(p);
-          const rc = resolveColors(c.fill, c.border);
-          return (
-            <div key={p.id} className="product-row">
-              <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
-              <span className="product-pill" style={{ backgroundColor: rc.fill, borderColor: rc.border, color: rc.text }}>{p.name}</span>
-              <span className={`via-tag via-tag-${p.created_via}`}>{p.created_via === 'order' ? '주문입력' : '수기입력'}</span>
-              <span className="via-date">{formatDate(p.created_at)} 등록</span>
-              <button className="color-btn" onClick={() => setOpenId(openId === p.id ? null : p.id)}>색상</button>
-              <button className="icon-btn icon-btn-delete" title="삭제" onClick={() => run(() => deleteProducts([p.id]))}>
-                <Trash2 size={13} />
-              </button>
-              {openId === p.id && (
-                <div className="color-panel">
-                  <ColorPicker fill={c.fill} border={c.border} onChange={(f, b) => handleColor(p, f, b)} sample={p.name} />
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <DataTable
+        columns={columns}
+        hidden={hidden}
+        rows={filtered}
+        rowKey={(p) => p.id}
+        onRowClick={(p) => {
+          setOpenId(p.id);
+          setConfirmDelete(false);
+          setError(null);
+        }}
+        activeKey={openId}
+        selected={selected}
+        onToggleRow={toggle}
+        onToggleAll={toggleAll}
+        emptyText={products.length === 0 ? '등록된 상품이 없습니다.' : '조건에 맞는 상품이 없습니다.'}
+      />
 
-      <style>{`
-        .products-root { display: flex; flex-direction: column; gap: 1rem; }
-        .add-card, .bulk-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 1rem; }
-        .add-row { display: flex; gap: 0.625rem; }
-        .add-btn { display: flex; align-items: center; gap: 0.375rem; height: 2.5rem; padding: 0 1.1rem; white-space: nowrap; flex-shrink: 0; }
-        .tool-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-        .search-box { display: flex; align-items: center; gap: 0.4rem; border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 0.4rem 0.9rem; color: var(--muted-foreground); }
-        .search-box input { border: none; outline: none; font-size: 0.875rem; background: transparent; min-width: 12rem; }
-        .count-text { font-size: 0.8125rem; color: var(--muted-foreground); }
-        .auto-btn { margin-left: auto; display: flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; font-weight: 700; padding: 0.45rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
-        .auto-btn:disabled { opacity: 0.45; cursor: default; }
-        .bulk-card { display: flex; flex-direction: column; gap: 0.75rem; }
-        .bulk-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: 0.875rem; }
-        .bulk-clear, .bulk-delete { font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer; display: flex; align-items: center; gap: 0.3rem; }
-        .bulk-delete { margin-left: auto; color: var(--danger); }
-        .bulk-apply { padding: 0.4rem 1rem; }
-        .error-text { color: var(--danger); font-size: 0.8125rem; font-weight: 500; }
-        .notice-text { color: var(--success); font-size: 0.8125rem; font-weight: 600; }
-        .empty-text { color: var(--muted-foreground); font-size: 0.875rem; padding: 1.5rem 0; text-align: center; }
-        .product-list { display: flex; flex-direction: column; gap: 0.4rem; }
-        .select-all { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--muted-foreground); padding: 0 0.25rem; }
-        .product-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.625rem; padding: 0.55rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-lg); background: #fff; box-shadow: var(--shadow-sm); }
-        .product-pill { border: 2px solid; border-radius: 8px; padding: 0.2rem 0.9rem; font-size: 0.875rem; font-weight: 700; min-width: 8rem; text-align: center; }
-        .via-tag { font-size: 0.75rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 999px; border: 1px solid; white-space: nowrap; margin-left: auto; }
-        .via-tag-order { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
-        .via-tag-manual { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
-        .via-date { font-size: 0.75rem; color: var(--muted-foreground); white-space: nowrap; }
-        .color-btn { font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer; flex-shrink: 0; }
-        .color-panel { flex-basis: 100%; }
-        .icon-btn { width: 28px; height: 28px; border-radius: 7px; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
-        .icon-btn-delete { background: var(--danger-bg); color: var(--danger); }
-      `}</style>
+      {open && (
+        <SidePanel
+          title="상품 상세"
+          onClose={() => setOpenId(null)}
+          footer={
+            confirmDelete ? (
+              <>
+                <span className="ak-error" style={{ flex: 1 }}>정말 삭제할까요? 이미 들어온 주문은 그대로 남습니다.</span>
+                <button className="ak-btn" onClick={() => setConfirmDelete(false)}>취소</button>
+                <button
+                  className="ak-btn ak-btn-primary"
+                  style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
+                  disabled={busy}
+                  onClick={async () => {
+                    if (await run(() => deleteProducts([open.id]))) setOpenId(null);
+                  }}
+                >삭제</button>
+              </>
+            ) : (
+              <>
+                <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>
+                <span className="ak-spacer" />
+                <button className="ak-btn ak-btn-primary" onClick={() => setOpenId(null)}>닫기</button>
+              </>
+            )
+          }
+        >
+          <div className="ak-field">
+            <span className="ak-field-label">상품명</span>
+            <div className="ak-name">{open.name}</div>
+          </div>
+          <div className="ak-field">
+            <span className="ak-field-label">색상 (누르면 바로 저장됩니다)</span>
+            <ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => handleColor(open, f, b)} sample={open.name} />
+          </div>
+          <p className="ak-meta">{open.created_via === 'order' ? '주문입력' : '수기입력'}으로 {open.created_at.slice(0, 10).replace(/-/g, '.')} 등록</p>
+          {error && <p className="ak-error">{error}</p>}
+        </SidePanel>
+      )}
     </div>
   );
 }

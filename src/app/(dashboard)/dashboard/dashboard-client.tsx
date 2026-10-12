@@ -26,23 +26,6 @@ const MIN_ROW_HEIGHT = ROW_HEIGHT_TIERS[ROW_HEIGHT_TIERS.length - 1];
 const MONITOR_COUNT = 2;
 const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 
-// 정렬: ① 터미널별 주문(업체) 수 많은 순 ② 같은 터미널 안에서는 상품 수 많은 업체 먼저.
-// 동률이면 터미널명/업체번호 순으로 고정해서 새로고침해도 순서가 흔들리지 않게 한다.
-function sortRows(rows: OrderRow[], items: OrderItem[]): OrderRow[] {
-  const itemCount = new Map<string, number>();
-  for (const item of items) itemCount.set(item.dailyBusinessId, (itemCount.get(item.dailyBusinessId) ?? 0) + 1);
-  const rowsPerTerminal = new Map<string, number>();
-  for (const row of rows) rowsPerTerminal.set(row.terminal, (rowsPerTerminal.get(row.terminal) ?? 0) + 1);
-
-  return [...rows].sort(
-    (a, b) =>
-      (rowsPerTerminal.get(b.terminal) ?? 0) - (rowsPerTerminal.get(a.terminal) ?? 0) ||
-      a.terminal.localeCompare(b.terminal, 'ko') ||
-      (itemCount.get(b.dailyBusinessId) ?? 0) - (itemCount.get(a.dailyBusinessId) ?? 0) ||
-      a.businessNumber - b.businessNumber,
-  );
-}
-
 // 헤더와 각 본문 행이 전부 독립된 flexbox였을 때는 같은 칸이라도 행마다 내용에 따라 폭이
 // 1~2px씩 미묘하게 달라져(브라우저의 flex 여유공간 분배가 셀 내용에 영향받는 경우가 있다)
 // 여러 줄에 걸쳐 누적되면 열 경계가 눈에 띄게 어긋났다. 헤더·모든 행이 똑같은 grid-template-
@@ -74,7 +57,7 @@ const STATUS_LABEL: Record<ChangeStatus, string> = {
 // ─── Modal wrapper (Figma Dashboard.tsx 포팅) ──────────────────────────────────
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-[70] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl" style={{ backgroundColor: '#003057' }}>
           <h3 className="text-sm font-bold text-white tracking-wide">{title}</h3>
@@ -447,11 +430,13 @@ export function DashboardClient({
   const terminalColors: TerminalColorMap = Object.fromEntries(allTerminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
   // 택배·직배송처럼 "별도 주문"으로 표시한 터미널은 기본 주문표에서 빼고, 별도 주문 보기에서만 모아 본다.
   const separateNames = new Set(allTerminals.filter((t) => t.is_separate).map((t) => t.name));
-  const allRows = sortRows(rawRows, items);
+  // 주문표 순서는 주문 입력된 순서 그대로다(업체 번호 = 입력 순서, 서버에서 업체 번호순으로 내려준다).
+  // 터미널·상품 수 등으로 다시 정렬하지 않는다.
+  const allRows = rawRows;
   const separateRows = allRows.filter((r) => separateNames.has(r.terminal));
   const mainRows = allRows.filter((r) => !separateNames.has(r.terminal));
-  const separateView = monitorMode === 'separate';
-  const rows = separateView ? separateRows : mainRows;
+  const rows = mainRows;
+  const [separateOpen, setSeparateOpen] = useState(false);
   const columns = getProductSummary(items);
   // 터미널별 박스는 별도 주문을 포함한 전체 기준이다(택배 박스도 세어야 하므로).
   const terminalBoxTotals = getTerminalBoxTotals(allRows);
@@ -472,7 +457,7 @@ export function DashboardClient({
     return () => mq.removeEventListener('change', update);
   }, []);
 
-  const effectiveMonitorMode = separateView ? 'separate' : isMobile ? 'all' : monitorMode;
+  const effectiveMonitorMode = isMobile ? 'all' : monitorMode;
   const isSplitMode = effectiveMonitorMode !== 'all';
   // 표 본문에 쓸 수 있는 높이(스크롤 영역 − 헤더)를 측정해서 행 높이 단계와 줄 수를 정한다.
   // 두 모니터가 같은 높이를 쓰므로 모니터 2는 모니터 1이 가져간 줄 수(ownCapacity) 다음부터 시작한다.
@@ -673,8 +658,8 @@ export function DashboardClient({
           </div>
           {separateNames.size > 0 && (
             <button
-              onClick={() => setMonitorMode(separateView ? '1' : 'separate')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors ${separateView ? 'bg-amber-500 border-amber-500 text-white' : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'}`}
+              onClick={() => setSeparateOpen(true)}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
               title="택배·직배송 등 별도 주문만 보기"
             >
               별도 주문 {separateRows.length}
@@ -713,10 +698,8 @@ export function DashboardClient({
         {isSplitMode && rows.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 pointer-events-none z-10">
             <Inbox className="w-8 h-8 text-slate-300" strokeWidth={1.5} />
-            <p className="text-sm font-medium">{separateView ? '별도 주문이 없습니다' : '주문이 없습니다'}</p>
-            <p className="text-xs text-slate-400">
-              {separateView ? '별도 주문으로 지정한 터미널(터미널 관리)의 주문이 여기에 모입니다' : "'새 주문 추가' 버튼을 누르거나, '주문 입력' 메뉴에서 카카오톡 메시지로 등록하세요"}
-            </p>
+            <p className="text-sm font-medium">주문이 없습니다</p>
+            <p className="text-xs text-slate-400">&apos;새 주문 추가&apos; 버튼을 누르거나, &apos;주문 입력&apos; 메뉴에서 카카오톡 메시지로 등록하세요</p>
           </div>
         )}
         <div ref={scrollRef} className={`flex-1 min-h-0 overflow-x-auto ${isSplitMode ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
@@ -905,6 +888,63 @@ export function DashboardClient({
       </div>
         {effectiveMonitorMode === '2' && productPanel}
       </div>
+
+      {separateOpen && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4" onClick={() => setSeparateOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[88vh] flex flex-col border border-slate-200" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl flex-shrink-0" style={{ backgroundColor: '#003057' }}>
+              <h3 className="text-sm font-bold text-white tracking-wide">별도 주문 ({separateRows.length}) — {[...separateNames].join(', ')}</h3>
+              <button onClick={() => setSeparateOpen(false)} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="overflow-y-auto p-4 flex flex-col gap-2">
+              {separateRows.length === 0 && (
+                <p className="text-sm text-slate-400 text-center py-10">별도 주문이 없습니다. 터미널 관리에서 &apos;별도 주문&apos;으로 지정한 터미널의 주문이 여기에 모입니다.</p>
+              )}
+              {separateRows.map((row) => {
+                const rowItems = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence);
+                return (
+                  <div key={row.dailyBusinessId} className="flex items-start gap-3 border border-slate-200 rounded-xl p-3 group">
+                    <div className="w-40 flex-shrink-0 flex flex-col gap-1">
+                      <span className={`inline-block self-start whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
+                      <span className="text-sm font-bold text-slate-800 break-keep">{row.businessName}</span>
+                      <span className="text-xs text-slate-500">박스 {row.totalBoxes}</span>
+                      {row.memo && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">메모: {row.memo}</span>}
+                    </div>
+                    <div className="flex-1 min-w-0 flex flex-wrap gap-1.5">
+                      {rowItems.map((item) => {
+                        const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked);
+                        const suffixParts: string[] = [];
+                        if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
+                        if (item.sizeRequest) suffixParts.push(item.sizeRequest);
+                        return (
+                          <div key={item.id} className={`relative group/pill flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
+                            <span className="font-bold">{item.productName}</span>
+                            <span className="font-black text-sm">{item.quantity}</span>
+                            <span className="font-semibold">{item.unit}</span>
+                            {suffixParts.length > 0 && <span className="font-semibold text-sky-600">({suffixParts.join(', ')})</span>}
+                            {!readOnly && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setEditItemModal(item); }}
+                                className="ml-1 w-4 h-4 rounded bg-slate-600 text-white items-center justify-center hidden group-hover/pill:flex"
+                                title="수정"
+                              ><Pencil className="w-2.5 h-2.5" /></button>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {!readOnly && (
+                        <button onClick={() => setAddItemModal({ row })} className="px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-sky-400 hover:text-sky-500 text-xs flex items-center">
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {addOrderModal && (
         <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registeredBusinessIds={rows.map((r) => r.businessId)} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
