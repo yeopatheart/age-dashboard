@@ -2,7 +2,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Tag, Trash2, Wand2 } from 'lucide-react';
-import { createProduct, setProductColors, setProductMulbong, autoAssignProductColors, deleteProducts } from './actions';
+import { createProduct, renameProduct, setProductColors, setProductMulbong, autoAssignProductColors, deleteProducts } from './actions';
 import { ColorPicker } from '@/components/color-picker';
 import { resolveColors } from '@/lib/color-palette';
 import {
@@ -38,6 +38,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<{ fill: string | null; border: string | null }>({ fill: null, border: null });
   const [openId, setOpenId] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -90,6 +91,17 @@ export function ProductsClient({ products }: { products: Product[] }) {
       return;
     }
     if (await run(() => createProduct(newName, null, null))) setNewName('');
+  };
+  const handleRename = async () => {
+    if (!open || busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const result = await renameProduct(open.id, nameDraft);
+    setBusy(false);
+    if (result.error) return setError(result.error);
+    setNotice(`'${nameDraft.trim()}'(으)로 바꿨습니다.${result.updatedItems > 0 ? ` 과거 주문 ${result.updatedItems}건도 함께 바뀌었습니다.` : ''}`);
+    router.refresh();
   };
   const handleColor = async (p: Product, fill: string | null, border: string | null) => {
     setLocal((prev) => ({ ...prev, [p.id]: { fill, border } }));
@@ -239,6 +251,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
         rowKey={(p) => p.id}
         onRowClick={(p) => {
           setOpenId(p.id);
+          setNameDraft(p.name);
           setConfirmDelete(false);
           setError(null);
         }}
@@ -271,14 +284,25 @@ export function ProductsClient({ products }: { products: Product[] }) {
               <>
                 <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>
                 <span className="ak-spacer" />
-                <button className="ak-btn ak-btn-primary" onClick={() => setOpenId(null)}>닫기</button>
+                <button className="ak-btn" onClick={() => setOpenId(null)}>닫기</button>
+                <button
+                  className="ak-btn ak-btn-primary"
+                  disabled={busy || !nameDraft.trim() || nameDraft.trim() === open.name}
+                  onClick={handleRename}
+                >이름 저장</button>
               </>
             )
           }
         >
           <div className="ak-field">
-            <span className="ak-field-label">상품명</span>
-            <div className="ak-name">{open.name}</div>
+            <label>상품명</label>
+            <input
+              className="ak-input"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && nameDraft.trim() && nameDraft.trim() !== open.name && handleRename()}
+            />
+            <span className="ak-meta">이름을 바꾸면 이 상품의 과거 주문 상품명도 함께 바뀝니다. 박스 기록은 당시 이름 그대로 남습니다.</span>
           </div>
           <div className="ak-setting">
             <span>
@@ -293,6 +317,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
           </div>
           <p className="ak-meta">{open.created_via === 'order' ? '주문입력' : '수기입력'}으로 {open.created_at.slice(0, 10).replace(/-/g, '.')} 등록</p>
           {error && <p className="ak-error">{error}</p>}
+          {notice && <p className="ak-notice">{notice}</p>}
         </SidePanel>
       )}
     </div>
