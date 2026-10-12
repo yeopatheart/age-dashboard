@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Pencil, Trash2, Check, X, MapPinned } from 'lucide-react';
-import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor } from './actions';
+import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate } from './actions';
 import { ColorPicker } from '@/components/color-picker';
 import { terminalBadgeProps } from '@/lib/terminal-color';
 
@@ -13,6 +13,7 @@ interface Terminal {
   created_via: 'order' | 'manual';
   fill_color: string | null;
   border_color: string | null;
+  is_separate: boolean;
 }
 
 const formatDate = (iso: string) => iso.slice(0, 10).replace(/-/g, '.');
@@ -27,6 +28,14 @@ export function TerminalsClient({ terminals }: { terminals: Terminal[] }) {
   const [colorOpenId, setColorOpenId] = useState<string | null>(null);
   // 색 선택은 누르는 즉시 저장하고 화면에도 바로 반영한다(서버 갱신을 기다리지 않는다).
   const [localColors, setLocalColors] = useState<Record<string, { fill: string | null; border: string | null }>>({});
+
+  const [localSeparate, setLocalSeparate] = useState<Record<string, boolean>>({});
+  const separateOf = (t: Terminal) => localSeparate[t.id] ?? t.is_separate;
+  const handleSeparate = async (t: Terminal, value: boolean) => {
+    setLocalSeparate((prev) => ({ ...prev, [t.id]: value }));
+    await setTerminalSeparate(t.id, value);
+    router.refresh();
+  };
 
   const colorOf = (t: Terminal) => localColors[t.id] ?? { fill: t.fill_color, border: t.border_color };
   const handleColor = async (t: Terminal, fill: string | null, border: string | null) => {
@@ -138,6 +147,10 @@ export function TerminalsClient({ terminals }: { terminals: Terminal[] }) {
                 </span>
                 <span className={`via-tag via-tag-${t.created_via}`}>{t.created_via === 'order' ? '주문입력' : '수기입력'}</span>
                 <span className="via-date">{formatDate(t.created_at)} 등록</span>
+                <label className="separate-check" title="체크하면 대시보드 기본 주문표에서 빼고 '별도 주문'으로 따로 봅니다">
+                  <input type="checkbox" checked={separateOf(t)} onChange={(e) => handleSeparate(t, e.target.checked)} />
+                  별도 주문
+                </label>
                 <button className="color-btn" onClick={() => setColorOpenId(colorOpenId === t.id ? null : t.id)}>색상</button>
                 <button className="icon-btn icon-btn-edit" onClick={() => startEdit(t)} title="수정">
                   <Pencil size={13} />
@@ -188,6 +201,8 @@ export function TerminalsClient({ terminals }: { terminals: Terminal[] }) {
         .via-tag-manual { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
         .via-date { font-size: 0.75rem; color: var(--muted-foreground); white-space: nowrap; }
         .terminal-badge { display: inline-block; border: 1px solid; border-radius: 6px; padding: 0.15rem 0.7rem; font-size: 0.875rem; font-weight: 700; }
+        .separate-check { display: flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; font-weight: 700; color: var(--muted-foreground); cursor: pointer; white-space: nowrap; }
+        .separate-check input { width: 16px; height: 16px; accent-color: var(--primary); }
         .color-btn { font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer; flex-shrink: 0; }
         .color-panel { flex-basis: 100%; }
         .terminal-name { flex: 1; font-size: 0.9rem; font-weight: 600; color: var(--foreground); }

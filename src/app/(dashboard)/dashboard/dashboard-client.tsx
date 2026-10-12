@@ -89,7 +89,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 // ─── 새 주문 추가/수정 모달 ─────────────────────────────────────────────────────
-interface Terminal { id: string; name: string; fill_color: string | null; border_color: string | null }
+interface Terminal { id: string; name: string; fill_color: string | null; border_color: string | null; is_separate?: boolean }
 interface BusinessDirectoryEntry { id: string; name: string; terminal_id: string | null }
 
 const SUGGESTION_ROW_HEIGHT = 36;
@@ -445,9 +445,16 @@ export function DashboardClient({
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'order' | 'item'; dailyBusinessId?: string; itemId?: string } | null>(null);
 
   const terminalColors: TerminalColorMap = Object.fromEntries(allTerminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
-  const rows = sortRows(rawRows, items);
+  // 택배·직배송처럼 "별도 주문"으로 표시한 터미널은 기본 주문표에서 빼고, 별도 주문 보기에서만 모아 본다.
+  const separateNames = new Set(allTerminals.filter((t) => t.is_separate).map((t) => t.name));
+  const allRows = sortRows(rawRows, items);
+  const separateRows = allRows.filter((r) => separateNames.has(r.terminal));
+  const mainRows = allRows.filter((r) => !separateNames.has(r.terminal));
+  const separateView = monitorMode === 'separate';
+  const rows = separateView ? separateRows : mainRows;
   const columns = getProductSummary(items);
-  const terminalBoxTotals = getTerminalBoxTotals(rows);
+  // 터미널별 박스는 별도 주문을 포함한 전체 기준이다(택배 박스도 세어야 하므로).
+  const terminalBoxTotals = getTerminalBoxTotals(allRows);
 
   // 표의 상품 열은 더 이상 "오늘 등록된 품목 종류"(columns) 기준이 아니라 "업체 한 곳이
   // 가장 많이 주문한 상품 수 + 1"(마지막은 항상 추가 버튼) 기준이다 — 열 개수가 품목 종류
@@ -465,7 +472,7 @@ export function DashboardClient({
     return () => mq.removeEventListener('change', update);
   }, []);
 
-  const effectiveMonitorMode = isMobile ? 'all' : monitorMode;
+  const effectiveMonitorMode = separateView ? 'separate' : isMobile ? 'all' : monitorMode;
   const isSplitMode = effectiveMonitorMode !== 'all';
   // 표 본문에 쓸 수 있는 높이(스크롤 영역 − 헤더)를 측정해서 행 높이 단계와 줄 수를 정한다.
   // 두 모니터가 같은 높이를 쓰므로 모니터 2는 모니터 1이 가져간 줄 수(ownCapacity) 다음부터 시작한다.
@@ -574,19 +581,43 @@ export function DashboardClient({
     </div>
   );
 
+  // 세로 패널은 2열인데, 칸 하나에 이름+수량이 안 들어가는 긴 이름(말줄임이 생길 품목)은 한 줄 전체를
+  // 쓰게 하고 맨 뒤로 보낸다 — 이름이 잘리면 현장에서 어떤 품목인지 알 수 없다. 칸 폭은 w-64(256) − 패널
+  // 여백(12) → 2열 사이 간격(4)을 뺀 열당 약 120px, 칩 안쪽 여백(12)을 뺀 약 108px이다.
+  const [longNames, setLongNames] = useState<Set<string>>(new Set());
+  useLayoutEffect(() => {
+    const measure = () => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (!ctx) return;
+      const family = getComputedStyle(document.body).fontFamily;
+      const width = (text: string, weight: number) => {
+        ctx.font = `${weight} 12px ${family}`;
+        return ctx.measureText(text).width;
+      };
+      const available = 108 - 4; // 이름과 수량 사이 간격(gap-1)
+      setLongNames(new Set(columns.filter((c) => width(c.productName, 700) + width(`${c.total}${c.unit}`, 900) > available).map((c) => c.productName)));
+    };
+    measure();
+    // 웹폰트가 늦게 로드되면 폭이 달라지므로 로드 후 한 번 더 잰다.
+    void document.fonts?.ready.then(measure);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+  const panelColumns = [...columns.filter((c) => !longNames.has(c.productName)), ...columns.filter((c) => longNames.has(c.productName))];
+  const shortCount = columns.length - longNames.size;
+
   // 세로 패널: 품목이 늘어도 스크롤이 생기지 않게 2열 그리드의 줄 높이·글자 크기를 패널 높이에 맞춰 줄인다.
   const panelItemHeight = Math.min(
     26,
-    Math.max(14, Math.floor((Math.max(availHeight, 300) - 8) / Math.max(1, Math.ceil(columns.length / 2)))),
+    Math.max(14, Math.floor((Math.max(availHeight, 300) - 8) / Math.max(1, Math.ceil(shortCount / 2) + longNames.size))),
   );
   const productPanel = (
     <aside className="w-64 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ borderTop: '3px solid #003057' }}>
       <div className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100 flex-shrink-0">품목별 수량</div>
       <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-2 content-start gap-x-1 p-1.5">
-        {columns.map((product) => (
+        {panelColumns.map((product) => (
           <div
             key={product.productName}
-            className="flex items-center justify-between gap-1 px-1.5 rounded border mb-px overflow-hidden"
+            className={`flex items-center justify-between gap-1 px-1.5 rounded border mb-px overflow-hidden ${longNames.has(product.productName) ? 'col-span-2' : ''}`}
             style={{ ...chipStyle(product.productName), height: panelItemHeight - 1, fontSize: Math.min(12, panelItemHeight - 6) }}
           >
             <span className="font-bold truncate leading-none">{product.productName}</span>
@@ -623,19 +654,6 @@ export function DashboardClient({
             )}
           </div>
           <div className="w-px h-4 bg-slate-200 mx-1.5" />
-          <span className="text-xs font-bold text-slate-500">상태</span>
-          {[
-            { bg: 'bg-slate-50 border-2 border-slate-800', label: '최초주문', tc: 'text-slate-900' },
-            { bg: 'bg-emerald-50 border border-emerald-300', label: '추가됨', tc: 'text-emerald-700' },
-            { bg: 'bg-amber-50 border border-amber-300', label: '수정됨', tc: 'text-amber-700' },
-            { bg: 'bg-rose-50 border border-rose-300', label: '취소', tc: 'text-rose-600 line-through' },
-          ].map(({ bg, label, tc }) => (
-            <div key={label} className="flex items-center gap-1.5">
-              <div className={`w-3.5 h-3.5 rounded ${bg}`}></div>
-              <span className={`text-xs font-medium ${tc}`}>{label}</span>
-            </div>
-          ))}
-          <div className="w-px h-4 bg-slate-200 mx-1.5" />
           <span className="text-xs font-bold text-slate-500">터미널별 박스</span>
           {terminalBoxTotals.map(({ terminal, boxes }) => (
             <div key={terminal} className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold ${terminalBadgeProps(terminal, terminalColors).className}`} style={terminalBadgeProps(terminal, terminalColors).style}>
@@ -653,6 +671,15 @@ export function DashboardClient({
             <button onClick={() => setMonitorMode('1')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${monitorMode === '1' ? 'bg-white shadow-sm text-[#003057]' : 'text-slate-500 hover:text-slate-700'}`}>모니터 1</button>
             <button onClick={() => setMonitorMode('2')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${monitorMode === '2' ? 'bg-white shadow-sm text-[#003057]' : 'text-slate-500 hover:text-slate-700'}`}>모니터 2</button>
           </div>
+          {separateNames.size > 0 && (
+            <button
+              onClick={() => setMonitorMode(separateView ? '1' : 'separate')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors ${separateView ? 'bg-amber-500 border-amber-500 text-white' : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'}`}
+              title="택배·직배송 등 별도 주문만 보기"
+            >
+              별도 주문 {separateRows.length}
+            </button>
+          )}
           {!readOnly && <button
             onClick={() => setAddOrderModal(true)}
             className="w-8 h-8 rounded-lg text-white shadow-sm hover:opacity-90 transition-opacity flex items-center justify-center"
@@ -686,8 +713,10 @@ export function DashboardClient({
         {isSplitMode && rows.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 pointer-events-none z-10">
             <Inbox className="w-8 h-8 text-slate-300" strokeWidth={1.5} />
-            <p className="text-sm font-medium">주문이 없습니다</p>
-            <p className="text-xs text-slate-400">&apos;새 주문 추가&apos; 버튼을 누르거나, &apos;주문 입력&apos; 메뉴에서 카카오톡 메시지로 등록하세요</p>
+            <p className="text-sm font-medium">{separateView ? '별도 주문이 없습니다' : '주문이 없습니다'}</p>
+            <p className="text-xs text-slate-400">
+              {separateView ? '별도 주문으로 지정한 터미널(터미널 관리)의 주문이 여기에 모입니다' : "'새 주문 추가' 버튼을 누르거나, '주문 입력' 메뉴에서 카카오톡 메시지로 등록하세요"}
+            </p>
           </div>
         )}
         <div ref={scrollRef} className={`flex-1 min-h-0 overflow-x-auto ${isSplitMode ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>

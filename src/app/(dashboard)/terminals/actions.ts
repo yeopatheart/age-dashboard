@@ -42,3 +42,13 @@ export async function setTerminalColor(id: string, fill: string | null, border: 
   revalidatePath('/businesses');
   return { error: null };
 }
+
+// 별도 주문 터미널(택배, 직배송 등)은 대시보드 기본 주문표에서 빠지고 "별도 주문" 보기에서만 보인다.
+export async function setTerminalSeparate(id: string, isSeparate: boolean): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { error } = await supabase.from('terminals').update({ is_separate: isSeparate }).eq('id', id);
+  if (error) return { error: error.message };
+  revalidatePath('/terminals');
+  revalidatePath('/dashboard');
+  return { error: null };
+}

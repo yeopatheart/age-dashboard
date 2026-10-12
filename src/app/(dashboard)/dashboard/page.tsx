@@ -24,7 +24,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // 오늘 업체만 따로 다시 조회하지 않는다.
   const [{ data: allTerminals, error: terminalError }, { data: businessDirectory }, { data: dailyBusinesses, error: dailyError }, { data: productRows, error: productError }] =
     await Promise.all([
-      supabase.from('terminals').select('id, name, fill_color, border_color').order('name'),
+      supabase.from('terminals').select('id, name, fill_color, border_color, is_separate').order('name'),
       supabase.from('businesses').select('id, name, terminal_id').order('name'),
       supabase
         .from('daily_businesses')
