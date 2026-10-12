@@ -5,7 +5,10 @@
 .ak-toolbar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.6rem 0.75rem; box-shadow: var(--shadow-sm); }
 .ak-search { display: flex; align-items: center; gap: 0.4rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 0.85rem; height: 2.25rem; color: var(--muted-foreground); background: #fff; }
 .ak-search input { border: none; outline: none; font-size: 0.875rem; background: transparent; width: 11rem; }
-.ak-select { height: 2.25rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 0.8rem; font-size: 0.8125rem; font-weight: 600; background: #fff; color: var(--foreground); cursor: pointer; }
+/* 드롭다운: 브라우저 기본 화살표를 끄고 같은 화살표를 오른쪽 안쪽에 그려서 글자와 겹치거나 떨어지지 않게 한다. */
+.ak-select, select.ak-input { appearance: none; -webkit-appearance: none; background-color: #fff; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right 0.7rem center; background-size: 1rem; cursor: pointer; }
+.ak-select { height: 2.25rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 2.25rem 0 1rem; font-size: 0.8125rem; font-weight: 600; color: var(--foreground); }
+select.ak-input { padding-right: 2.25rem; }
 .ak-count { font-size: 0.8125rem; color: var(--muted-foreground); white-space: nowrap; }
 .ak-spacer { flex: 1; }
 .ak-btn { display: inline-flex; align-items: center; gap: 0.35rem; height: 2.25rem; padding: 0 0.95rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; color: var(--foreground); cursor: pointer; white-space: nowrap; }

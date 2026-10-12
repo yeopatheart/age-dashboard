@@ -48,6 +48,8 @@ type Product = {
   fill_color: string | null;
   border_color: string | null;
   created_via: CreatedVia;
+  // 물봉(산소) 포장이 필요한 상품 — 포장 추천 때 물봉용 박스에 담는다.
+  needs_mulbong: boolean;
 };
 
 type OrderDayCounter = {
@@ -195,6 +197,7 @@ export type Database = {
           fill_color?: string | null;
           border_color?: string | null;
           created_via?: CreatedVia;
+          needs_mulbong?: boolean;
         }
       >;
       order_day_counters: TableDef<

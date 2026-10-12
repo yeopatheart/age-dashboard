@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 :root {
+  /* select 화살표 — 모든 드롭다운이 같은 화살표를 쓴다(.select-field, .ak-select 등) */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 8l4 4 4-4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   /* Brand Colors - 통영아재수산 */
   --primary: #003057;
   --primary-hover: #004278;
@@ -201,7 +203,7 @@ body {
 .select-field {
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 8l4 4 4-4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: var(--select-chevron);
   background-repeat: no-repeat;
   background-position: right 0.65rem center;
   background-size: 1rem;

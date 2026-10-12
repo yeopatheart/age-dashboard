@@ -5,7 +5,7 @@ export default async function ProductsPage() {
   const supabase = await createClient();
   const { data: products, error } = await supabase
     .from('products')
-    .select('id, name, created_at, created_via, fill_color, border_color')
+    .select('id, name, created_at, created_via, fill_color, border_color, needs_mulbong')
     .order('name');
 
   // 조회 오류(예: 적용 안 된 마이그레이션)를 빈 목록으로 삼키지 않는다.
