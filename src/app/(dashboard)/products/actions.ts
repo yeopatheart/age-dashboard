@@ -7,6 +7,8 @@ import { colorComboKey, isHueKey, pickUnusedColor } from '@/lib/color-palette';
 function revalidate() {
   revalidatePath('/products');
   revalidatePath('/dashboard');
+  revalidatePath('/reports');
+  revalidatePath('/packing-log');
 }
 
 // 수기 등록. 색을 고르지 않으면 기존 상품이 쓰지 않는 조합을 자동으로 배정한다.
@@ -79,4 +81,32 @@ export async function setProductMulbong(ids: string[], needsMulbong: boolean): P
   if (error) return { error: error.message };
   revalidate();
   return { error: null };
+}
+
+// 상품명 수정. 주문은 상품 이름 문자열로 저장돼 있어서(상품 색·품목별 수량·리포트가 모두 이름으로 연결된다) 과거
+// 주문의 상품명도 함께 바꿔야 연결이 끊기지 않는다. 박스 기록은 "그 당시 값" 스냅샷이라 건드리지 않는다.
+// 이미 있는 이름으로 바꾸려고 하면 막는다(합치기는 지원하지 않는다).
+export async function renameProduct(id: string, newName: string): Promise<{ error: string | null; updatedItems: number }> {
+  const supabase = await createClient();
+  const trimmed = newName.trim();
+  if (!trimmed) return { error: '상품명을 입력해주세요.', updatedItems: 0 };
+
+  const { data: current } = await supabase.from('products').select('name').eq('id', id).maybeSingle();
+  if (!current) return { error: '상품을 찾지 못했습니다.', updatedItems: 0 };
+  if (current.name === trimmed) return { error: null, updatedItems: 0 };
+
+  const { error } = await supabase.from('products').update({ name: trimmed }).eq('id', id);
+  if (error) return { error: error.code === '23505' ? '이미 등록된 상품명입니다.' : error.message, updatedItems: 0 };
+
+  const { count, error: itemError } = await supabase
+    .from('order_items')
+    .update({ product_name_raw: trimmed }, { count: 'exact' })
+    .eq('product_name_raw', current.name);
+  if (itemError) {
+    // 주문 이름 갱신에 실패하면 상품 이름도 되돌려서 둘이 어긋나지 않게 한다.
+    await supabase.from('products').update({ name: current.name }).eq('id', id);
+    return { error: itemError.message, updatedItems: 0 };
+  }
+  revalidate();
+  return { error: null, updatedItems: count ?? 0 };
 }
