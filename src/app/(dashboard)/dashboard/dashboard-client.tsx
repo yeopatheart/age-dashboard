@@ -438,8 +438,8 @@ export function DashboardClient({
   const rows = mainRows;
   const [separateOpen, setSeparateOpen] = useState(false);
   const columns = getProductSummary(items);
-  // 터미널별 박스는 별도 주문을 포함한 전체 기준이다(택배 박스도 세어야 하므로).
-  const terminalBoxTotals = getTerminalBoxTotals(allRows);
+  // 터미널별 박스는 기본 주문표 기준이다 — 별도 주문 터미널은 "별도 주문" 팝업에서 따로 본다.
+  const terminalBoxTotals = getTerminalBoxTotals(mainRows);
 
   // 표의 상품 열은 더 이상 "오늘 등록된 품목 종류"(columns) 기준이 아니라 "업체 한 곳이
   // 가장 많이 주문한 상품 수 + 1"(마지막은 항상 추가 버튼) 기준이다 — 열 개수가 품목 종류
@@ -903,21 +903,21 @@ export function DashboardClient({
               {separateRows.map((row) => {
                 const rowItems = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence);
                 return (
-                  <div key={row.dailyBusinessId} className="flex items-start gap-3 border border-slate-200 rounded-xl p-3 group">
-                    <div className="w-40 flex-shrink-0 flex flex-col gap-1">
-                      <span className={`inline-block self-start whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
-                      <span className="text-sm font-bold text-slate-800 break-keep">{row.businessName}</span>
-                      <span className="text-xs text-slate-500">박스 {row.totalBoxes}</span>
-                      {row.memo && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">메모: {row.memo}</span>}
+                  <div key={row.dailyBusinessId} className="flex items-center gap-3 border border-slate-200 rounded-lg px-3 py-1.5 group">
+                    <div className="w-72 flex-shrink-0 flex items-center gap-2">
+                      <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
+                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{row.businessName}</span>
+                      <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes}</span>
                     </div>
-                    <div className="flex-1 min-w-0 flex flex-wrap gap-1.5">
+                    <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
+                      {row.memo && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">메모: {row.memo}</span>}
                       {rowItems.map((item) => {
                         const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked);
                         const suffixParts: string[] = [];
                         if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
                         if (item.sizeRequest) suffixParts.push(item.sizeRequest);
                         return (
-                          <div key={item.id} className={`relative group/pill flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
+                          <div key={item.id} className={`relative group/pill flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
                             <span className="font-bold">{item.productName}</span>
                             <span className="font-black text-sm">{item.quantity}</span>
                             <span className="font-semibold">{item.unit}</span>
@@ -933,7 +933,7 @@ export function DashboardClient({
                         );
                       })}
                       {!readOnly && (
-                        <button onClick={() => setAddItemModal({ row })} className="px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-sky-400 hover:text-sky-500 text-xs flex items-center">
+                        <button onClick={() => setAddItemModal({ row })} className="px-2.5 py-1 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-sky-400 hover:text-sky-500 text-xs flex items-center">
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       )}
