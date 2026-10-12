@@ -70,3 +70,13 @@ export async function deleteProducts(ids: string[]): Promise<{ error: string | n
   revalidate();
   return { error: null };
 }
+
+// 물봉(산소) 포장이 필요한 상품 표시. 한 개 또는 여러 개에 한 번에 적용한다.
+export async function setProductMulbong(ids: string[], needsMulbong: boolean): Promise<{ error: string | null }> {
+  if (ids.length === 0) return { error: null };
+  const supabase = await createClient();
+  const { error } = await supabase.from('products').update({ needs_mulbong: needsMulbong }).in('id', ids);
+  if (error) return { error: error.message };
+  revalidate();
+  return { error: null };
+}

@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Tag, Trash2, Wand2 } from 'lucide-react';
-import { createProduct, setProductColors, autoAssignProductColors, deleteProducts } from './actions';
+import { createProduct, setProductColors, setProductMulbong, autoAssignProductColors, deleteProducts } from './actions';
 import { ColorPicker } from '@/components/color-picker';
 import { resolveColors } from '@/lib/color-palette';
 import {
@@ -12,6 +12,7 @@ import {
   FilterSelect,
   SearchInput,
   SidePanel,
+  Toggle,
   ViaTag,
   useHiddenColumns,
   type Column,
@@ -24,6 +25,7 @@ interface Product {
   created_via: 'order' | 'manual';
   fill_color: string | null;
   border_color: string | null;
+  needs_mulbong: boolean;
 }
 
 export function ProductsClient({ products }: { products: Product[] }) {
@@ -31,6 +33,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
   const [search, setSearch] = useState('');
   const [viaFilter, setViaFilter] = useState('all');
   const [colorFilter, setColorFilter] = useState('all');
+  const [mulbongFilter, setMulbongFilter] = useState('all');
   const [newName, setNewName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<{ fill: string | null; border: string | null }>({ fill: null, border: null });
@@ -42,10 +45,12 @@ export function ProductsClient({ products }: { products: Product[] }) {
   const [hidden, setHidden] = useHiddenColumns('ak-cols-products');
   // 색 선택은 누르는 즉시 저장하고 화면에도 바로 반영한다.
   const [local, setLocal] = useState<Record<string, { fill: string | null; border: string | null }>>({});
+  const [localMulbong, setLocalMulbong] = useState<Record<string, boolean>>({});
 
   const view = (p: Product): Product => {
     const l = local[p.id];
-    return l ? { ...p, fill_color: l.fill, border_color: l.border } : p;
+    const withColor = l ? { ...p, fill_color: l.fill, border_color: l.border } : p;
+    return p.id in localMulbong ? { ...withColor, needs_mulbong: localMulbong[p.id] } : withColor;
   };
   const hasColor = (p: Product) => !!(p.fill_color || p.border_color);
   const uncolored = products.map(view).filter((p) => !hasColor(p)).length;
@@ -55,9 +60,10 @@ export function ProductsClient({ products }: { products: Product[] }) {
       .map(view)
       .filter((p) => (k ? p.name.toLowerCase().includes(k) : true))
       .filter((p) => (viaFilter === 'all' ? true : p.created_via === viaFilter))
-      .filter((p) => (colorFilter === 'all' ? true : colorFilter === 'none' ? !hasColor(p) : hasColor(p)));
+      .filter((p) => (colorFilter === 'all' ? true : colorFilter === 'none' ? !hasColor(p) : hasColor(p)))
+      .filter((p) => (mulbongFilter === 'all' ? true : mulbongFilter === 'yes' ? p.needs_mulbong : !p.needs_mulbong));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, local, search, viaFilter, colorFilter]);
+  }, [products, local, localMulbong, search, viaFilter, colorFilter, mulbongFilter]);
   const open = openId ? products.map(view).find((p) => p.id === openId) ?? null : null;
 
   const run = async (fn: () => Promise<{ error: string | null }>, okNotice?: string) => {
@@ -83,6 +89,11 @@ export function ProductsClient({ products }: { products: Product[] }) {
   const handleColor = async (p: Product, fill: string | null, border: string | null) => {
     setLocal((prev) => ({ ...prev, [p.id]: { fill, border } }));
     await setProductColors([p.id], fill, border);
+    router.refresh();
+  };
+  const handleMulbong = async (ids: string[], value: boolean) => {
+    setLocalMulbong((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, value])) }));
+    await setProductMulbong(ids, value);
     router.refresh();
   };
   const toggle = (id: string) =>
@@ -139,6 +150,11 @@ export function ProductsClient({ products }: { products: Product[] }) {
           <span className="ak-muted">미지정</span>
         ),
     },
+    {
+      key: 'mulbong',
+      label: '물봉 포장',
+      render: (p) => <Toggle checked={p.needs_mulbong} onChange={(v) => handleMulbong([p.id], v)} label={`${p.name} 물봉 포장`} />,
+    },
     { key: 'via', label: '등록', render: (p) => <ViaTag via={p.created_via} date={p.created_at} /> },
   ];
 
@@ -152,6 +168,11 @@ export function ProductsClient({ products }: { products: Product[] }) {
           value={colorFilter}
           onChange={setColorFilter}
           options={[{ value: 'all', label: '색상: 전체' }, { value: 'set', label: '지정됨' }, { value: 'none', label: '미지정' }]}
+        />
+        <FilterSelect
+          value={mulbongFilter}
+          onChange={setMulbongFilter}
+          options={[{ value: 'all', label: '물봉: 전체' }, { value: 'yes', label: '물봉 포장 필요' }, { value: 'no', label: '불필요' }]}
         />
         <FilterSelect
           value={viaFilter}
@@ -183,6 +204,8 @@ export function ProductsClient({ products }: { products: Product[] }) {
             <strong>{selected.size}개 선택됨</strong>
             <button className="ak-btn" onClick={() => setSelected(new Set())}>선택 해제</button>
             <button className="ak-btn ak-btn-primary" onClick={applyBulk} disabled={busy}>선택한 상품에 색 적용</button>
+            <button className="ak-btn" onClick={() => handleMulbong([...selected], true)} disabled={busy}>물봉 포장 지정</button>
+            <button className="ak-btn" onClick={() => handleMulbong([...selected], false)} disabled={busy}>물봉 해제</button>
             <span className="ak-spacer" />
             <button
               className="ak-btn ak-btn-danger"
@@ -250,6 +273,13 @@ export function ProductsClient({ products }: { products: Product[] }) {
           <div className="ak-field">
             <span className="ak-field-label">상품명</span>
             <div className="ak-name">{open.name}</div>
+          </div>
+          <div className="ak-setting">
+            <span>
+              물봉 포장 필요
+              <small>켜두면 이 상품은 물봉용 박스에 담아야 하는 상품으로 취급됩니다</small>
+            </span>
+            <Toggle checked={open.needs_mulbong} onChange={(v) => handleMulbong([open.id], v)} label="물봉 포장 필요" />
           </div>
           <div className="ak-field">
             <span className="ak-field-label">색상 (누르면 바로 저장됩니다)</span>

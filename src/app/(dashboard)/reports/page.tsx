@@ -16,11 +16,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const period = getPeriod(granularity, anchor);
 
   const supabase = await createClient();
-  // 집계는 DB 함수(report_summary, 0017)에서 끝내고 결과만 받는다. 상품 색은 상품 이름 옆 표시용.
-  const [{ data, error }, { data: productRows }] = await Promise.all([
-    supabase.rpc('report_summary', { p_from: period.from, p_to: period.to }),
-    supabase.from('products').select('name, fill_color, border_color'),
-  ]);
+  // 집계는 DB 함수(report_summary, 0017)에서 끝내고 결과만 받는다.
+  const { data, error } = await supabase.rpc('report_summary', { p_from: period.from, p_to: period.to });
   if (error) throw new Error(`리포트 조회 실패: ${error.message}`);
 
   return (
@@ -30,7 +27,6 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       anchor={anchor}
       today={today}
       period={period}
-      productColors={Object.fromEntries((productRows ?? []).map((p) => [p.name, { fill: p.fill_color, border: p.border_color }]))}
     />
   );
 }

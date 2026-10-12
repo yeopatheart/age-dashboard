@@ -3,7 +3,6 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { BarChart3, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { GRANULARITY_LABEL, shiftAnchor, type Granularity, type ReportSummary } from '@/lib/report';
-import { resolveColors } from '@/lib/color-palette';
 
 type View = 'product' | 'business' | 'terminal';
 const VIEW_LABEL: Record<View, string> = { product: '상품별', business: '업체별', terminal: '터미널별' };
@@ -79,14 +78,12 @@ export function ReportsClient({
   anchor,
   today,
   period,
-  productColors,
 }: {
   summary: ReportSummary;
   granularity: Granularity;
   anchor: string;
   today: string;
   period: { from: string; to: string; label: string };
-  productColors: Record<string, { fill: string | null; border: string | null }>;
 }) {
   const router = useRouter();
   const [view, setView] = useState<View>('product');
@@ -194,17 +191,12 @@ export function ReportsClient({
             </thead>
             <tbody>
               {sorted.map((r, i) => {
-                const pc = view === 'product' ? resolveColors(productColors[r.name]?.fill, productColors[r.name]?.border) : null;
                 const barWidth = `${Math.round((valueOf(r, barKey) / barMax) * 100)}%`;
                 return (
                   <tr key={r.name}>
                     <td className="rank">{i + 1}</td>
                     <td className="name-cell">
-                      {pc ? (
-                        <span className="name-pill" style={{ backgroundColor: pc.fill, borderColor: pc.border, color: pc.text }}>{r.name}</span>
-                      ) : (
-                        <span className="name-text">{r.name}</span>
-                      )}
+                      <span className="name-text">{r.name}</span>
                       {view === 'business' && r.terminal && <span className="term-text">{r.terminal}</span>}
                       <div className="bar"><div style={{ width: barWidth }} /></div>
                     </td>
@@ -242,7 +234,7 @@ export function ReportsClient({
         .period-label { font-size: 1rem; font-weight: 800; color: var(--primary); min-width: 11rem; text-align: center; }
         .tool-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
         .sort-box { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 700; color: var(--muted-foreground); }
-        .sort-box select { border: 1px solid var(--border); border-radius: 8px; padding: 0.35rem 0.6rem; font-size: 0.8125rem; background: #fff; }
+        .sort-box select { appearance: none; -webkit-appearance: none; border: 1px solid var(--border); border-radius: 999px; height: 2.25rem; padding: 0 2.25rem 0 1rem; font-size: 0.8125rem; font-weight: 600; background-color: #fff; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right 0.7rem center; background-size: 1rem; cursor: pointer; }
         .count-text { font-size: 0.8125rem; color: var(--muted-foreground); }
         .csv-btn { margin-left: auto; display: flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; font-weight: 700; padding: 0.45rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
         .csv-btn:disabled { opacity: 0.45; cursor: default; }
@@ -255,7 +247,6 @@ export function ReportsClient({
         .rank { width: 2.5rem; color: var(--muted-foreground); font-size: 0.8125rem; }
         .name-cell { min-width: 12rem; }
         .name-text { font-weight: 700; }
-        .name-pill { display: inline-block; border: 2px solid; border-radius: 8px; padding: 0.1rem 0.7rem; font-weight: 700; }
         .term-text { margin-left: 0.5rem; font-size: 0.75rem; color: var(--muted-foreground); }
         .bar { height: 4px; background: var(--muted); border-radius: 999px; margin-top: 0.35rem; overflow: hidden; }
         .bar > div { height: 100%; background: var(--primary); border-radius: 999px; opacity: 0.55; }
