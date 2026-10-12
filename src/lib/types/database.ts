@@ -24,6 +24,8 @@ type Terminal = {
   created_via: CreatedVia;
   fill_color: string | null;
   border_color: string | null;
+  // true면 대시보드 기본 주문표에서 빼고 "별도 주문"으로 따로 본다(택배, 직배송 등).
+  is_separate: boolean;
 };
 
 type Business = {
@@ -170,7 +172,7 @@ export type Database = {
       >;
       terminals: TableDef<
         Terminal,
-        Pick<Terminal, "name"> & { id?: string; created_at?: string; created_via?: CreatedVia; fill_color?: string | null; border_color?: string | null }
+        Pick<Terminal, "name"> & { id?: string; created_at?: string; created_via?: CreatedVia; fill_color?: string | null; border_color?: string | null; is_separate?: boolean }
       >;
       businesses: TableDef<
         Business,
