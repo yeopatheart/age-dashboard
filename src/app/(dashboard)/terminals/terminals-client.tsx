@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { MapPinned, Plus, Trash2 } from 'lucide-react';
 import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate } from './actions';
@@ -69,8 +69,13 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
     return true;
   };
 
+  const addInputRef = useRef<HTMLInputElement>(null);
   const handleAdd = async () => {
-    if (!newName.trim()) return;
+    // 비어 있으면 버튼을 비활성(회색)으로 두지 않고 입력창으로 안내한다 — 다른 관리 화면의 추가 버튼과 같은 모양을 유지한다.
+    if (!newName.trim()) {
+      addInputRef.current?.focus();
+      return;
+    }
     if (await run(() => createTerminal(newName.trim()))) setNewName('');
   };
   const setSeparate = async (t: Terminal, value: boolean) => {
@@ -129,12 +134,13 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
         <span className="ak-spacer" />
         <div className="ak-quick-add">
           <input
+            ref={addInputRef}
             placeholder="새 터미널 (예: 대구, 택배)"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAdd()}
           />
-          <button className="ak-btn ak-btn-primary" onClick={handleAdd} disabled={busy || !newName.trim()}>
+          <button className="ak-btn ak-btn-primary" onClick={handleAdd} disabled={busy}>
             <Plus size={14} /> 추가
           </button>
         </div>
