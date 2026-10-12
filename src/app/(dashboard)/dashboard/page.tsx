@@ -91,6 +91,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         measuredValue: row.measured_value ?? undefined,
         isPacked: row.is_packed,
         packedAt: row.packed_at ?? undefined,
+        unshippedQuantity: Number(row.unshipped_quantity ?? 0),
+        unshippedReason: row.unshipped_reason ?? undefined,
         changeStatus: row.change_status,
         boxResult: row.box_result ?? undefined,
         totalBoxes: orderRow.totalBoxes,

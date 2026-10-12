@@ -115,7 +115,26 @@ export async function updateOrderItemManual(orderItemId: string, fields: ManualI
       change_status: fields.changeStatus,
     })
     .eq('id', orderItemId);
+  // 주문 수량을 미출고 수량보다 줄이면 미출고 수량도 주문 수량에 맞춘다.
+  await supabase.from('order_items').update({ unshipped_quantity: fields.quantity }).eq('id', orderItemId).gt('unshipped_quantity', fields.quantity);
   revalidatePath('/dashboard');
+}
+
+// 미출고: 주문은 유효하지만 현장에서 출고하지 못한 수량과 사유를 기록한다(취소와 별개). 0이면 해제.
+export async function setItemUnshipped(orderItemId: string, quantity: number, reason: string | null): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: item } = await supabase.from('order_items').select('quantity').eq('id', orderItemId).maybeSingle();
+  if (!item) return { error: '상품을 찾지 못했습니다.' };
+  const max = Number(item.quantity);
+  if (!(quantity >= 0) || quantity > max + 0.0001) return { error: `미출고 수량은 0~${max} 사이여야 합니다.` };
+  const { error } = await supabase
+    .from('order_items')
+    .update({ unshipped_quantity: quantity, unshipped_reason: quantity > 0 ? (reason?.trim() || null) : null })
+    .eq('id', orderItemId);
+  if (error) return { error: error.message };
+  revalidatePath('/dashboard');
+  revalidatePath('/packing-log');
+  return { error: null };
 }
 
 export async function cancelOrderItem(orderItemId: string) {

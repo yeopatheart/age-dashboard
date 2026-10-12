@@ -33,7 +33,7 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
     supabase.from('businesses').select('name, terminal_id').eq('id', daily.business_id).maybeSingle(),
     supabase
       .from('order_items')
-      .select('id, product_name_raw, unit, quantity, secondary_weight_kg, size_request, is_mulbong, change_status')
+      .select('id, product_name_raw, unit, quantity, secondary_weight_kg, size_request, is_mulbong, change_status, unshipped_quantity')
       .eq('daily_business_id', daily.id),
     supabase
       .from('boxes')
@@ -41,7 +41,11 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
       .in('id', [...new Set(input.boxes.map((b) => b.boxId))]),
   ]);
 
-  const liveItems = (items ?? []).filter((i) => i.change_status !== 'cancelled');
+  // 담아야 할 수량 = 주문 − 미출고. 전량 미출고인 상품은 대상에서 뺀다.
+  const liveItems = (items ?? [])
+    .filter((i) => i.change_status !== 'cancelled')
+    .map((i) => ({ ...i, quantity: Number(i.quantity) - Number(i.unshipped_quantity ?? 0) }))
+    .filter((i) => i.quantity > EPSILON);
   const itemById = new Map(liveItems.map((i) => [i.id, i]));
   const boxById = new Map((boxRows ?? []).map((b) => [b.id, b]));
 

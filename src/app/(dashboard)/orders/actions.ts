@@ -388,6 +388,12 @@ export async function commitOrderLines(orderDate: string, decisions: LineDecisio
 
     const { product } = decision;
     if (decision.kind === 'update_line' && decision.existingOrderItemId) {
+      // 주문 수량이 미출고 수량보다 작아지면 미출고 수량도 맞춘다(필터가 맞을 때만 실행되는 조건부 갱신).
+      updates.push(
+        Promise.resolve(
+          supabase.from('order_items').update({ unshipped_quantity: product.quantity }).eq('id', decision.existingOrderItemId).gt('unshipped_quantity', product.quantity),
+        ),
+      );
       updates.push(
         Promise.resolve(
           supabase
