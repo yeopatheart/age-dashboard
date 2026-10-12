@@ -26,23 +26,6 @@ const MIN_ROW_HEIGHT = ROW_HEIGHT_TIERS[ROW_HEIGHT_TIERS.length - 1];
 const MONITOR_COUNT = 2;
 const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 
-// 정렬: ① 터미널별 주문(업체) 수 많은 순 ② 같은 터미널 안에서는 상품 수 많은 업체 먼저.
-// 동률이면 터미널명/업체번호 순으로 고정해서 새로고침해도 순서가 흔들리지 않게 한다.
-function sortRows(rows: OrderRow[], items: OrderItem[]): OrderRow[] {
-  const itemCount = new Map<string, number>();
-  for (const item of items) itemCount.set(item.dailyBusinessId, (itemCount.get(item.dailyBusinessId) ?? 0) + 1);
-  const rowsPerTerminal = new Map<string, number>();
-  for (const row of rows) rowsPerTerminal.set(row.terminal, (rowsPerTerminal.get(row.terminal) ?? 0) + 1);
-
-  return [...rows].sort(
-    (a, b) =>
-      (rowsPerTerminal.get(b.terminal) ?? 0) - (rowsPerTerminal.get(a.terminal) ?? 0) ||
-      a.terminal.localeCompare(b.terminal, 'ko') ||
-      (itemCount.get(b.dailyBusinessId) ?? 0) - (itemCount.get(a.dailyBusinessId) ?? 0) ||
-      a.businessNumber - b.businessNumber,
-  );
-}
-
 // 헤더와 각 본문 행이 전부 독립된 flexbox였을 때는 같은 칸이라도 행마다 내용에 따라 폭이
 // 1~2px씩 미묘하게 달라져(브라우저의 flex 여유공간 분배가 셀 내용에 영향받는 경우가 있다)
 // 여러 줄에 걸쳐 누적되면 열 경계가 눈에 띄게 어긋났다. 헤더·모든 행이 똑같은 grid-template-
@@ -447,7 +430,9 @@ export function DashboardClient({
   const terminalColors: TerminalColorMap = Object.fromEntries(allTerminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
   // 택배·직배송처럼 "별도 주문"으로 표시한 터미널은 기본 주문표에서 빼고, 별도 주문 보기에서만 모아 본다.
   const separateNames = new Set(allTerminals.filter((t) => t.is_separate).map((t) => t.name));
-  const allRows = sortRows(rawRows, items);
+  // 주문표 순서는 주문 입력된 순서 그대로다(업체 번호 = 입력 순서, 서버에서 업체 번호순으로 내려준다).
+  // 터미널·상품 수 등으로 다시 정렬하지 않는다.
+  const allRows = rawRows;
   const separateRows = allRows.filter((r) => separateNames.has(r.terminal));
   const mainRows = allRows.filter((r) => !separateNames.has(r.terminal));
   const rows = mainRows;
