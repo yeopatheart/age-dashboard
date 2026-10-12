@@ -27,7 +27,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
       dailyIds.length
         ? supabase
             .from('order_items')
-            .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, measured_weight_kg, secondary_weight_kg, size_request, change_status')
+            .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, measured_weight_kg, secondary_weight_kg, size_request, change_status, unshipped_quantity')
             .in('daily_business_id', dailyIds)
             .order('product_sequence')
         : Promise.resolve({ data: [] }),
@@ -65,11 +65,12 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
       businessName: business?.name ?? '',
       terminal: business?.terminal_id ? terminalById.get(business.terminal_id) ?? '' : '',
       items: (items ?? [])
-        .filter((i) => i.daily_business_id === d.id && i.change_status !== 'cancelled')
+        // 미출고 수량은 박스에 담을 대상이 아니므로 뺀다(전량 미출고면 상품 자체를 제외).
+        .filter((i) => i.daily_business_id === d.id && i.change_status !== 'cancelled' && Number(i.quantity) - Number(i.unshipped_quantity ?? 0) > 0)
         .map((i) => ({
           id: i.id,
           name: i.product_name_raw,
-          quantity: Number(i.quantity),
+          quantity: Number(i.quantity) - Number(i.unshipped_quantity ?? 0),
           unit: i.unit,
           weightKg: i.measured_weight_kg == null ? null : Number(i.measured_weight_kg),
           secondaryWeightKg: i.secondary_weight_kg == null ? null : Number(i.secondary_weight_kg),

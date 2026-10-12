@@ -11,7 +11,7 @@ const UNIT_ORDER = ['미', 'kg', '팩', '개'];
 interface Row {
   name: string;
   terminal?: string;
-  units: Record<string, { qty: number; extra: number }>;
+  units: Record<string, { qty: number; extra: number; unshipped: number }>;
   metrics: Record<string, number>;
 }
 
@@ -33,7 +33,7 @@ function buildRows(summary: ReportSummary, view: View): { rows: Row[]; metricLab
   };
 
   if (view === 'product') {
-    for (const p of summary.products) get(p.name).units[p.unit] = { qty: Number(p.qty), extra: Number(p.extra_kg) };
+    for (const p of summary.products) get(p.name).units[p.unit] = { qty: Number(p.qty), extra: Number(p.extra_kg), unshipped: Number(p.unshipped ?? 0) };
     for (const s of summary.product_stats) {
       const r = get(s.name);
       r.metrics.businesses = Number(s.businesses);
@@ -44,7 +44,7 @@ function buildRows(summary: ReportSummary, view: View): { rows: Row[]; metricLab
   if (view === 'business') {
     for (const u of summary.business_units) {
       const r = get(u.name, u.terminal);
-      r.units[u.unit] = { qty: Number(u.qty), extra: Number(u.extra_kg) };
+      r.units[u.unit] = { qty: Number(u.qty), extra: Number(u.extra_kg), unshipped: Number(u.unshipped ?? 0) };
       r.metrics.lines = (r.metrics.lines ?? 0) + Number(u.lines);
     }
     for (const s of summary.business_stats) {
@@ -57,7 +57,7 @@ function buildRows(summary: ReportSummary, view: View): { rows: Row[]; metricLab
   }
   for (const u of summary.terminal_units) {
     const r = get(u.name);
-    r.units[u.unit] = { qty: Number(u.qty), extra: Number(u.extra_kg) };
+    r.units[u.unit] = { qty: Number(u.qty), extra: Number(u.extra_kg), unshipped: Number(u.unshipped ?? 0) };
     r.metrics.lines = (r.metrics.lines ?? 0) + Number(u.lines);
   }
   for (const s of summary.terminal_stats) {
@@ -116,13 +116,13 @@ export function ReportsClient({
 
   const downloadCsv = () => {
     const metricKeys = Object.keys(metricLabels);
-    const head = ['순위', VIEW_LABEL[view].replace('별', ''), ...(view === 'business' ? ['터미널'] : []), ...metricKeys.map((k) => metricLabels[k]), ...allUnits.flatMap((u) => [`${u} 합계`, `${u} 부가중량(kg)`])];
+    const head = ['순위', VIEW_LABEL[view].replace('별', ''), ...(view === 'business' ? ['터미널'] : []), ...metricKeys.map((k) => metricLabels[k]), ...allUnits.flatMap((u) => [`${u} 합계`, `${u} 부가중량(kg)`, `${u} 미출고`])];
     const lines = sorted.map((r, i) => [
       i + 1,
       r.name,
       ...(view === 'business' ? [r.terminal ?? ''] : []),
       ...metricKeys.map((k) => r.metrics[k] ?? 0),
-      ...allUnits.flatMap((u) => [r.units[u]?.qty ?? 0, r.units[u]?.extra ?? 0]),
+      ...allUnits.flatMap((u) => [r.units[u]?.qty ?? 0, r.units[u]?.extra ?? 0, r.units[u]?.unshipped ?? 0]),
     ]);
     const csv = [head, ...lines].map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
@@ -207,6 +207,7 @@ export function ReportsClient({
                           <span key={u} className="unit-chip">
                             <strong>{fmtNum(r.units[u].qty)}</strong>{u}
                             {r.units[u].extra > 0 && <em>(+{fmtNum(r.units[u].extra)}kg)</em>}
+                            {r.units[u].unshipped > 0 && <b className="unit-unshipped" title="주문은 유효하지만 출고하지 못한 수량">미출고 {fmtNum(r.units[u].unshipped)}</b>}
                           </span>
                         ))}
                       </div>
@@ -218,7 +219,7 @@ export function ReportsClient({
           </table>
         </div>
       )}
-      <p className="foot-note">미 상품의 <em>(+kg)</em>은 &quot;1미+2.5kg&quot;처럼 마릿수와 함께 적은 부가 중량의 합계입니다. 단위가 다른 수량은 더하지 않고 단위별로 따로 보여줍니다.</p>
+      <p className="foot-note"><b>미출고</b>는 주문은 유효하지만 현장에서 출고하지 못한 수량입니다(주문 수량에는 포함). 미 상품의 <em>(+kg)</em>은 &quot;1미+2.5kg&quot;처럼 마릿수와 함께 적은 부가 중량의 합계입니다. 단위가 다른 수량은 더하지 않고 단위별로 따로 보여줍니다.</p>
 
       <style>{`
         .reports-root { display: flex; flex-direction: column; gap: 1rem; }
@@ -253,6 +254,7 @@ export function ReportsClient({
         .unit-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
         .unit-chip { display: inline-flex; align-items: baseline; gap: 0.15rem; padding: 0.15rem 0.6rem; border-radius: 999px; background: #f1f5f9; border: 1px solid #e2e8f0; font-size: 0.8125rem; white-space: nowrap; }
         .unit-chip strong { font-size: 0.9375rem; }
+        .unit-unshipped { margin-left: 0.35rem; font-size: 0.6875rem; font-weight: 700; color: #b45309; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 0 0.3rem; }
         .unit-chip em { font-style: normal; font-size: 0.6875rem; color: var(--muted-foreground); margin-left: 0.2rem; }
         .foot-note { font-size: 0.75rem; color: var(--muted-foreground); }
         .foot-note em { font-style: normal; font-weight: 700; }

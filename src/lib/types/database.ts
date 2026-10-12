@@ -96,6 +96,9 @@ type OrderItem = {
   is_packed: boolean;
   packed_at: string | null;
   box_result: string | null;
+  // 미출고(0021): 주문은 유효하지만 출고하지 못한 수량. 0이면 정상. 주문취소(change_status)와 별개.
+  unshipped_quantity: number;
+  unshipped_reason: string | null;
   needs_review: boolean;
   review_reason: string | null;
   created_by: string | null;
@@ -259,6 +262,8 @@ export type Database = {
           is_packed?: boolean;
           packed_at?: string | null;
           box_result?: string | null;
+          unshipped_quantity?: number;
+          unshipped_reason?: string | null;
           needs_review?: boolean;
           review_reason?: string | null;
           created_by?: string | null;

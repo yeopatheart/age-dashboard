@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, Download, LayoutGrid, Monitor, Truck } from 'lucide-react';
+import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, Download, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
 import { getProductSummary, getTerminalBoxTotals, type OrderItem, type OrderRow, type ChangeStatus } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
@@ -14,6 +14,7 @@ import {
   addOrderItemManual,
   updateOrderItemManual,
   cancelOrderItem,
+  setItemUnshipped,
   deleteOrderItem,
   type ManualItemFields,
 } from './actions';
@@ -34,7 +35,14 @@ function productGridTemplate(slotCount: number) {
   return `40px 80px 144px 56px repeat(${slotCount}, minmax(130px, 1fr))`;
 }
 
-function getItemStyle(status: ChangeStatus, isPacked: boolean) {
+function getItemStyle(status: ChangeStatus, isPacked: boolean, unshipped = 0, quantity = 0) {
+  // 미출고(주문은 유효하지만 출고하지 못함)는 취소와 구분되도록 취소선 없이 호박색 점선으로 표시한다.
+  // 전량 미출고면 배경도 진하게, 일부만이면 연하게. 취소된 상품은 취소 표시가 우선한다.
+  if (unshipped > 0 && status !== 'cancelled') {
+    return unshipped >= quantity
+      ? { bg: 'bg-amber-100', border: 'border-amber-500 border-dashed', text: 'text-amber-900' }
+      : { bg: 'bg-amber-50', border: 'border-amber-500 border-dashed', text: 'text-slate-900' };
+  }
   if (isPacked && status !== 'cancelled') {
     return { bg: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-400' };
   }
@@ -74,6 +82,86 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 // ─── 새 주문 추가/수정 모달 ─────────────────────────────────────────────────────
 interface Terminal { id: string; name: string; fill_color: string | null; border_color: string | null; is_separate?: boolean }
 interface BusinessDirectoryEntry { id: string; name: string; terminal_id: string | null }
+
+// ─── 미출고 처리 모달 ──────────────────────────────────────────────────────────
+// 미출고 = 주문은 유효하지만 현장에서 출고하지 못한 수량(주문취소와 별개). 수량 0이면 해제.
+const UNSHIPPED_REASONS = ['재고없음', '폐사', '품질불량'];
+function UnshippedModal({
+  item,
+  onSave,
+  onClose,
+}: {
+  item: OrderItem;
+  onSave: (quantity: number, reason: string | null) => Promise<string | null>;
+  onClose: () => void;
+}) {
+  const initialReason = item.unshippedReason ?? '';
+  const [qty, setQty] = useState(String(item.unshippedQuantity > 0 ? item.unshippedQuantity : item.quantity));
+  const [reasonChoice, setReasonChoice] = useState(UNSHIPPED_REASONS.includes(initialReason) ? initialReason : initialReason ? '기타' : '');
+  const [otherReason, setOtherReason] = useState(UNSHIPPED_REASONS.includes(initialReason) ? '' : initialReason);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (quantity: number) => {
+    setBusy(true);
+    const reason = reasonChoice === '기타' ? otherReason.trim() || null : reasonChoice || null;
+    const err = await onSave(quantity, reason);
+    setBusy(false);
+    if (err) setError(err);
+  };
+  const parsed = parseFloat(qty);
+  const valid = Number.isFinite(parsed) && parsed > 0 && parsed <= item.quantity + 0.0001;
+
+  return (
+    <Modal title="미출고 처리" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">
+          <strong className="text-slate-800">{item.businessName}</strong> · {item.productName} 주문 {item.quantity}{item.unit}
+          <span className="block text-xs text-slate-400 mt-1">주문은 그대로 유효하고, 출고하지 못한 수량만 기록합니다. 주문 자체를 없애려면 취소를 사용하세요.</span>
+        </p>
+        <div>
+          <label className="block text-xs font-bold text-slate-600 mb-1">미출고 수량 ({item.unit})</label>
+          <input
+            type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus
+            className="w-32 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:border-[#003057] focus:outline-none"
+          />
+          <button type="button" className="ml-2 text-xs font-bold text-sky-600" onClick={() => setQty(String(item.quantity))}>전체({item.quantity})</button>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-slate-600 mb-1">사유 (선택)</label>
+          <div className="flex flex-wrap gap-1.5">
+            {[...UNSHIPPED_REASONS, '기타'].map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setReasonChoice(reasonChoice === r ? '' : r)}
+                className={`px-3 py-1 rounded-full border text-xs font-bold transition-colors ${reasonChoice === r ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+              >{r}</button>
+            ))}
+          </div>
+          {reasonChoice === '기타' && (
+            <input
+              value={otherReason} onChange={(e) => setOtherReason(e.target.value)} placeholder="사유 직접 입력"
+              className="mt-2 w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:border-[#003057] focus:outline-none"
+            />
+          )}
+        </div>
+        {error && <p className="text-xs font-bold text-rose-600">{error}</p>}
+        <div className="flex items-center gap-2 pt-1">
+          {item.unshippedQuantity > 0 && (
+            <button type="button" disabled={busy} onClick={() => submit(0)} className="px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50">미출고 해제</button>
+          )}
+          <span className="flex-1" />
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50">닫기</button>
+          <button
+            type="button" disabled={busy || !valid} onClick={() => submit(parsed)}
+            className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-40" style={{ backgroundColor: '#003057' }}
+          >저장</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 const SUGGESTION_ROW_HEIGHT = 36;
 const SUGGESTION_VISIBLE_ROWS = 5;
@@ -425,6 +513,7 @@ export function DashboardClient({
   const [editOrderModal, setEditOrderModal] = useState<OrderRow | null>(null);
   const [addItemModal, setAddItemModal] = useState<{ row: OrderRow; prefillProductName?: string; prefillUnit?: string } | null>(null);
   const [editItemModal, setEditItemModal] = useState<OrderItem | null>(null);
+  const [unshippedModal, setUnshippedModal] = useState<OrderItem | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'order' | 'item'; dailyBusinessId?: string; itemId?: string } | null>(null);
 
   const terminalColors: TerminalColorMap = Object.fromEntries(allTerminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
@@ -524,7 +613,8 @@ export function DashboardClient({
         const item = rowItems[idx][i];
         if (!item) return '';
         const extra = [item.secondaryWeightKg != null ? `${item.secondaryWeightKg}kg` : null, item.sizeRequest].filter(Boolean).join(', ');
-        return `${STATUS_PREFIX[item.changeStatus] ?? ''}${item.productName} ${item.quantity}${item.unit}${extra ? ` (${extra})` : ''}`;
+        const unshippedPrefix = item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' ? `[미출고 ${item.unshippedQuantity}] ` : '';
+        return `${STATUS_PREFIX[item.changeStatus] ?? ''}${unshippedPrefix}${item.productName} ${item.quantity}${item.unit}${extra ? ` (${extra})` : ''}`;
       }),
     ]);
     const csv = [head, ...lines].map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -586,6 +676,7 @@ export function DashboardClient({
     >
       <span className="text-xs font-bold">{product.label}</span>
       <span className="text-xs font-black">{product.total}{product.unit}</span>
+      {product.unshipped > 0 && <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded px-1">미출고 {product.unshipped}</span>}
     </div>
   ));
   const summaryCard = (
@@ -611,7 +702,7 @@ export function DashboardClient({
         return ctx.measureText(text).width;
       };
       const available = 108 - 4; // 이름과 수량 사이 간격(gap-1)
-      setLongNames(new Set(columns.filter((c) => width(c.label, 700) + width(`${c.total}${c.unit}`, 900) > available).map((c) => c.key)));
+      setLongNames(new Set(columns.filter((c) => width(c.label, 700) + width(`${c.total}${c.unit}${c.unshipped > 0 ? ` (미출고 ${c.unshipped})` : ''}`, 900) > available).map((c) => c.key)));
     };
     measure();
     // 웹폰트가 늦게 로드되면 폭이 달라지므로 로드 후 한 번 더 잰다.
@@ -637,7 +728,10 @@ export function DashboardClient({
             style={{ ...chipStyle(product.productName), height: panelItemHeight - 1, fontSize: Math.min(12, panelItemHeight - 6) }}
           >
             <span className="font-bold truncate leading-none">{product.label}</span>
-            <span className="font-black shrink-0 leading-none">{product.total}{product.unit}</span>
+            <span className="font-black shrink-0 leading-none">
+              {product.total}{product.unit}
+              {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
+            </span>
           </div>
         ))}
       </div>
@@ -877,7 +971,7 @@ export function DashboardClient({
                         );
                       }
 
-                      const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked);
+                      const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked, item.unshippedQuantity, item.quantity);
                       const suffixParts: string[] = [];
                       if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
                       if (item.sizeRequest) suffixParts.push(item.sizeRequest);
@@ -886,6 +980,14 @@ export function DashboardClient({
                       return (
                         <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[2px] flex min-w-0">
                           <div className={`relative w-full flex items-center justify-center px-1.5 rounded-lg border overflow-hidden ${bg} ${border} transition-all group shadow-sm`}>
+                            {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
+                              <span
+                                className="absolute top-0 left-0 z-20 text-[9px] font-bold leading-none px-1 py-[2px] rounded-br bg-amber-500 text-white"
+                                title={item.unshippedReason ? `미출고 사유: ${item.unshippedReason}` : '미출고'}
+                              >
+                                미출고 {item.unshippedQuantity}
+                              </span>
+                            )}
                             {item.isPacked && item.changeStatus !== 'cancelled' && (
                               <Check className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-slate-400/30" strokeWidth={4} />
                             )}
@@ -909,9 +1011,16 @@ export function DashboardClient({
                               ><Pencil className="w-2.5 h-2.5" /></button>
                               {item.changeStatus !== 'cancelled' && (
                                 <button
+                                  onClick={(e) => { e.stopPropagation(); setUnshippedModal(item); }}
+                                  className="w-4 h-4 rounded bg-indigo-500 text-white flex items-center justify-center hover:bg-indigo-700 transition-colors"
+                                  title="미출고 처리 (주문은 유효, 출고만 못 함)"
+                                ><PackageX className="w-2.5 h-2.5" /></button>
+                              )}
+                              {item.changeStatus !== 'cancelled' && (
+                                <button
                                   onClick={async (e) => { e.stopPropagation(); await cancelOrderItem(item.id); refresh(); }}
                                   className="w-4 h-4 rounded bg-amber-400 text-white flex items-center justify-center hover:bg-amber-500 transition-colors"
-                                  title="취소처리"
+                                  title="주문 취소 (주문 자체가 없어짐)"
                                 ><X className="w-2.5 h-2.5" /></button>
                               )}
                               <button
@@ -965,7 +1074,7 @@ export function DashboardClient({
                     <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
                       {row.memo && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">메모: {row.memo}</span>}
                       {rowItems.map((item) => {
-                        const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked);
+                        const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked, item.unshippedQuantity, item.quantity);
                         const suffixParts: string[] = [];
                         if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
                         if (item.sizeRequest) suffixParts.push(item.sizeRequest);
@@ -975,12 +1084,22 @@ export function DashboardClient({
                             <span className="font-black text-sm">{item.quantity}</span>
                             <span className="font-semibold">{item.unit}</span>
                             {suffixParts.length > 0 && <span className="font-semibold text-sky-600">({suffixParts.join(', ')})</span>}
+                            {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
+                              <span className="text-[10px] font-bold text-white bg-amber-500 rounded px-1 py-[1px]" title={item.unshippedReason ?? undefined}>미출고 {item.unshippedQuantity}</span>
+                            )}
                             {!readOnly && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); setEditItemModal(item); }}
                                 className="ml-1 w-4 h-4 rounded bg-slate-600 text-white items-center justify-center hidden group-hover/pill:flex"
                                 title="수정"
                               ><Pencil className="w-2.5 h-2.5" /></button>
+                            )}
+                            {!readOnly && item.changeStatus !== 'cancelled' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setUnshippedModal(item); }}
+                                className="w-4 h-4 rounded bg-indigo-500 text-white items-center justify-center hidden group-hover/pill:flex"
+                                title="미출고 처리"
+                              ><PackageX className="w-2.5 h-2.5" /></button>
                             )}
                           </div>
                         );
@@ -1021,6 +1140,19 @@ export function DashboardClient({
           initial={{ productName: addItemModal.prefillProductName, unit: addItemModal.prefillUnit, changeStatus: 'new' }}
           onSave={handleSaveItem}
           onClose={() => setAddItemModal(null)}
+        />
+      )}
+      {unshippedModal && (
+        <UnshippedModal
+          item={unshippedModal}
+          onSave={async (qty, reason) => {
+            const result = await setItemUnshipped(unshippedModal.id, qty, reason);
+            if (result.error) return result.error;
+            setUnshippedModal(null);
+            refresh();
+            return null;
+          }}
+          onClose={() => setUnshippedModal(null)}
         />
       )}
       {editItemModal && (

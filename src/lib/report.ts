@@ -39,7 +39,7 @@ export function shiftAnchor(granularity: Granularity, anchor: string, direction:
   return fmt(new Date(Date.UTC(d.getUTCFullYear() + direction, 0, 1)));
 }
 
-export interface UnitRow { name: string; unit: string; qty: number; extra_kg: number }
+export interface UnitRow { name: string; unit: string; qty: number; extra_kg: number; unshipped: number }
 export interface ReportSummary {
   products: UnitRow[];
   product_stats: { name: string; days: number; businesses: number }[];

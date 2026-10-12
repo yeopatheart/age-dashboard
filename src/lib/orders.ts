@@ -36,6 +36,9 @@ export interface OrderItem {
   measuredValue?: string;
   isPacked: boolean;
   packedAt?: string;
+  // 미출고 수량(0이면 정상) — 주문취소와 별개로, 주문은 유효하지만 현장에서 출고하지 못한 수량.
+  unshippedQuantity: number;
+  unshippedReason?: string;
   changeStatus: ChangeStatus;
   boxResult?: string;
   // Figma 매트릭스의 "박스" 열 — 업체(daily_business) 단위 값이라 그 업체의 모든 줄에 동일하게 실린다.
@@ -47,7 +50,8 @@ export interface ProductSummaryRow {
   productName: string;
   size: string; // 사이즈/종류 요청(예: "선별", "6-800"). 없으면 빈 문자열
   label: string; // 화면 표시용: "보리새우 (선별)"
-  total: number;
+  total: number; // 출고 대상 수량 = 주문 − 미출고
+  unshipped: number; // 미출고 수량(출고하지 못한 것)
   unit: string;
   mulbong: number;
   packed: number;
@@ -63,8 +67,10 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
     const size = (item.sizeRequest ?? '').trim();
     const key = `${item.productId ?? item.productName}|${size}|${item.unit}`;
     const existing = map.get(key);
+    const shippable = Math.max(0, item.quantity - item.unshippedQuantity);
     if (existing) {
-      existing.total += item.quantity;
+      existing.total += shippable;
+      existing.unshipped += item.unshippedQuantity;
       if (item.isMulbong) existing.mulbong += item.quantity;
       if (item.isPacked) existing.packed += item.quantity;
     } else {
@@ -73,7 +79,8 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
         productName: item.productName,
         size,
         label: size ? `${item.productName} (${size})` : item.productName,
-        total: item.quantity,
+        total: shippable,
+        unshipped: item.unshippedQuantity,
         unit: item.unit,
         mulbong: item.isMulbong ? item.quantity : 0,
         packed: item.isPacked ? item.quantity : 0,
