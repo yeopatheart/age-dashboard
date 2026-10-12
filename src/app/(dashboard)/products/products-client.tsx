@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Tag, Trash2, Wand2 } from 'lucide-react';
 import { createProduct, setProductColors, setProductMulbong, autoAssignProductColors, deleteProducts } from './actions';
@@ -82,8 +82,13 @@ export function ProductsClient({ products }: { products: Product[] }) {
     return true;
   };
 
+  const addInputRef = useRef<HTMLInputElement>(null);
   const handleAdd = async () => {
-    if (!newName.trim()) return;
+    // 비어 있으면 버튼을 비활성(회색)으로 두지 않고 입력창으로 안내한다 — 다른 관리 화면의 추가 버튼과 같은 모양을 유지한다.
+    if (!newName.trim()) {
+      addInputRef.current?.focus();
+      return;
+    }
     if (await run(() => createProduct(newName, null, null))) setNewName('');
   };
   const handleColor = async (p: Product, fill: string | null, border: string | null) => {
@@ -186,12 +191,13 @@ export function ProductsClient({ products }: { products: Product[] }) {
         </button>
         <div className="ak-quick-add">
           <input
+            ref={addInputRef}
             placeholder="새 상품 (예: 활전갱이)"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAdd()}
           />
-          <button className="ak-btn ak-btn-primary" onClick={handleAdd} disabled={busy || !newName.trim()}>
+          <button className="ak-btn ak-btn-primary" onClick={handleAdd} disabled={busy}>
             <Plus size={14} /> 추가
           </button>
         </div>
