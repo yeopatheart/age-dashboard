@@ -105,10 +105,11 @@ export function PackingLogClient({
   );
 
   const initialDraft = (row: PackingBusiness): Draft => ({
-    boxes: (row.submitted?.boxes ?? []).map((b) => {
+    // uid는 렌더마다 같은 값이어야 한다(작성 내용이 저장되기 전에는 이 함수가 매번 다시 불리므로).
+    boxes: (row.submitted?.boxes ?? []).map((b, index) => {
       const type = b.boxId ? boxTypeById.get(b.boxId) : undefined;
       return {
-        uid: newUid(),
+        uid: `saved-${row.id}-${index}`,
         boxId: type ? type.id : null,
         name: b.boxName,
         dims: type ? dimsOf(type) : null,
@@ -304,7 +305,7 @@ export function PackingLogClient({
           </aside>
 
           {selected && draft && (
-            <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveDrag(null)}>
+            <DndContext id="packing-dnd" sensors={sensors} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveDrag(null)}>
               <section className="pk-work">
                 <div className="pk-work-head">
                   <div>
@@ -382,7 +383,7 @@ export function PackingLogClient({
         .pk-biz-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
         .pk-biz-name { font-weight: 700; font-size: 0.875rem; }
         .pk-biz-sub { font-size: 0.75rem; color: var(--muted-foreground); }
-        .pk-work { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; min-width: 0; }
+        .pk-work { container-type: inline-size; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; min-width: 0; }
         .pk-work-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
         .pk-title { font-size: 1.05rem; font-weight: 800; color: var(--primary); }
         .pk-board { display: grid; grid-template-columns: 19rem minmax(0, 1fr); gap: 1rem; padding: 1rem 1.1rem; min-height: 22rem; }
@@ -419,6 +420,8 @@ export function PackingLogClient({
         .pk-warn { font-size: 0.625rem; font-weight: 800; color: #b45309; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 999px; padding: 0 0.35rem; }
         .pk-foot { display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 1.1rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
         .pk-submit { height: 2.5rem; padding: 0 1.4rem; font-size: 0.9rem; }
+        /* 작업 영역 폭이 좁으면(태블릿/좁은 창) 상품 영역을 박스 영역 위로 쌓는다. */
+        @container (max-width: 52rem) { .pk-board { grid-template-columns: 1fr; } }
         @media (max-width: 900px) { .pk-layout { grid-template-columns: 1fr; } .pk-board { grid-template-columns: 1fr; } .pk-list { max-height: 14rem; flex-direction: row; overflow-x: auto; } .pk-biz { min-width: 11rem; } }
       `}</style>
     </div>
