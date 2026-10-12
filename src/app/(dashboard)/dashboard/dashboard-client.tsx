@@ -1,7 +1,7 @@
 'use client';
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, Download, LayoutGrid, Monitor, Truck } from 'lucide-react';
 import { getProductSummary, getTerminalBoxTotals, type OrderItem, type OrderRow, type ChangeStatus } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
@@ -505,6 +505,37 @@ export function DashboardClient({
   }, 0);
   const productSlotCount = maxProductCount + 1;
 
+  // 전체보기 기준(기본 주문표 전체, 입력 순서) 주문 목록을 엑셀에서 열리는 CSV로 내려받는다.
+  // 상품 칸은 "상품명 수량단위 (사이즈·중량)"이고, 추가/수정/취소된 상품은 앞에 표시한다.
+  const exportOrders = () => {
+    const STATUS_PREFIX: Partial<Record<ChangeStatus, string>> = { new: '[추가] ', modified: '[수정] ', cancelled: '[취소] ' };
+    const rowItems = mainRows.map((row) =>
+      items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence),
+    );
+    const maxItems = rowItems.reduce((m, list) => Math.max(m, list.length), 0);
+    const head = ['번호', '터미널', '고객명', '박스', '메모', ...Array.from({ length: maxItems }, (_, i) => `상품 ${i + 1}`)];
+    const lines = mainRows.map((row, idx) => [
+      idx + 1,
+      row.terminal,
+      row.businessName,
+      row.totalBoxes,
+      row.memo ?? '',
+      ...Array.from({ length: maxItems }, (_, i) => {
+        const item = rowItems[idx][i];
+        if (!item) return '';
+        const extra = [item.secondaryWeightKg != null ? `${item.secondaryWeightKg}kg` : null, item.sizeRequest].filter(Boolean).join(', ');
+        return `${STATUS_PREFIX[item.changeStatus] ?? ''}${item.productName} ${item.quantity}${item.unit}${extra ? ` (${extra})` : ''}`;
+      }),
+    ]);
+    const csv = [head, ...lines].map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `주문목록_${orderDate}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const refresh = () => router.refresh();
 
   const handleTogglePacked = async (item: OrderItem) => {
@@ -639,7 +670,6 @@ export function DashboardClient({
             )}
           </div>
           <div className="w-px h-4 bg-slate-200 mx-1.5" />
-          <span className="text-xs font-bold text-slate-500">터미널별 박스</span>
           {terminalBoxTotals.map(({ terminal, boxes }) => (
             <div key={terminal} className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold ${terminalBadgeProps(terminal, terminalColors).className}`} style={terminalBadgeProps(terminal, terminalColors).style}>
               <span>{terminal || '(터미널 없음)'}</span>
@@ -652,17 +682,31 @@ export function DashboardClient({
           {/* 모바일은 화면이 하나뿐이라 모니터 분할 자체가 의미 없다 — 전체보기만 강제되므로 */}
           {/* 선택 버튼도 노출하지 않는다(md 이상, 768px부터 노출 — 위 isMobile 판정 기준과 동일). */}
           <div className="hidden md:flex bg-slate-100 rounded-lg p-1 gap-0.5">
-            <button onClick={() => setMonitorMode('all')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${monitorMode === 'all' ? 'bg-white shadow-sm text-[#003057]' : 'text-slate-500 hover:text-slate-700'}`}>전체보기</button>
-            <button onClick={() => setMonitorMode('1')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${monitorMode === '1' ? 'bg-white shadow-sm text-[#003057]' : 'text-slate-500 hover:text-slate-700'}`}>모니터 1</button>
-            <button onClick={() => setMonitorMode('2')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${monitorMode === '2' ? 'bg-white shadow-sm text-[#003057]' : 'text-slate-500 hover:text-slate-700'}`}>모니터 2</button>
+            {([
+              { mode: 'all', title: '전체보기', content: <LayoutGrid className="w-4 h-4" /> },
+              { mode: '1', title: '모니터 1', content: <><Monitor className="w-4 h-4" /><span>1</span></> },
+              { mode: '2', title: '모니터 2', content: <><Monitor className="w-4 h-4" /><span>2</span></> },
+            ] as const).map(({ mode, title, content }) => (
+              <button
+                key={mode}
+                onClick={() => setMonitorMode(mode)}
+                title={title}
+                aria-label={title}
+                className={`h-7 min-w-8 px-2 inline-flex items-center justify-center gap-1 text-xs font-bold rounded-md transition-colors ${monitorMode === mode ? 'bg-white shadow-sm text-[#003057]' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                {content}
+              </button>
+            ))}
           </div>
           {separateNames.size > 0 && (
             <button
               onClick={() => setSeparateOpen(true)}
-              className="px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
-              title="택배·직배송 등 별도 주문만 보기"
+              className="h-8 px-2.5 inline-flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-colors bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+              title={`별도 주문 보기 (택배·직배송 등) — ${separateRows.length}건`}
+              aria-label="별도 주문 보기"
             >
-              별도 주문 {separateRows.length}
+              <Truck className="w-4 h-4" />
+              {separateRows.length}
             </button>
           )}
           {!readOnly && <button
@@ -674,6 +718,15 @@ export function DashboardClient({
           >
             <Plus className="w-4 h-4" />
           </button>}
+          <button
+            onClick={exportOrders}
+            disabled={mainRows.length === 0}
+            className="w-8 h-8 rounded-lg border border-slate-200 text-slate-600 bg-white hover:bg-slate-100 disabled:opacity-40 transition-colors flex items-center justify-center"
+            title="주문 목록 엑셀(CSV) 다운로드 — 전체보기 기준"
+            aria-label="주문 목록 엑셀 다운로드"
+          >
+            <Download className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
