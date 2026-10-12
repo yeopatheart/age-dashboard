@@ -103,12 +103,40 @@ type OrderItem = {
   updated_at: string;
 };
 
-type DailyBusinessBox = {
+// 박스 기록(0020) — 제출 시점에 저장하는 "어느 박스에 어떤 상품이 담겼는지". 이름·크기는 그 시점 값의 복사본.
+type PackingRecord = {
   id: string;
   daily_business_id: string;
-  box_id: string;
+  order_date: string;
+  business_name: string;
+  terminal_name: string | null;
+  submitted_by: string | null;
+  submitted_at: string;
+};
+
+type PackingBox = {
+  id: string;
+  record_id: string;
+  box_id: string | null;
+  position: number;
+  box_name: string;
+  inner_width_cm: number | null;
+  inner_depth_cm: number | null;
+  inner_height_cm: number | null;
+  is_mulbong_box: boolean;
+};
+
+type PackingBoxItem = {
+  id: string;
+  packing_box_id: string;
+  order_item_id: string | null;
+  product_name: string;
+  unit: string;
   quantity: number;
-  created_at: string;
+  secondary_weight_kg: number | null;
+  size_request: string | null;
+  is_mulbong: boolean;
+  needs_mulbong: boolean;
 };
 
 type KakaoMessageLog = {
@@ -281,9 +309,36 @@ export type Database = {
           created_at?: string;
         }
       >;
-      daily_business_boxes: TableDef<
-        DailyBusinessBox,
-        Pick<DailyBusinessBox, "daily_business_id" | "box_id" | "quantity"> & { id?: string; created_at?: string }
+      packing_records: TableDef<
+        PackingRecord,
+        Pick<PackingRecord, "daily_business_id" | "order_date" | "business_name"> & {
+          id?: string;
+          terminal_name?: string | null;
+          submitted_by?: string | null;
+          submitted_at?: string;
+        }
+      >;
+      packing_boxes: TableDef<
+        PackingBox,
+        Pick<PackingBox, "record_id" | "position" | "box_name"> & {
+          id?: string;
+          box_id?: string | null;
+          inner_width_cm?: number | null;
+          inner_depth_cm?: number | null;
+          inner_height_cm?: number | null;
+          is_mulbong_box?: boolean;
+        }
+      >;
+      packing_box_items: TableDef<
+        PackingBoxItem,
+        Pick<PackingBoxItem, "packing_box_id" | "product_name" | "unit" | "quantity"> & {
+          id?: string;
+          order_item_id?: string | null;
+          secondary_weight_kg?: number | null;
+          size_request?: string | null;
+          is_mulbong?: boolean;
+          needs_mulbong?: boolean;
+        }
       >;
     };
     Views: Record<string, never>;
