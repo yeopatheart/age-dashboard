@@ -18,6 +18,7 @@ import {
   PanelLeftOpen,
   Tag,
   BarChart3,
+  Settings,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { href: '/boxes', label: '박스 관리', icon: Package },
   { href: '/packing-log', label: '박스 기록', icon: ClipboardList },
   { href: '/reports', label: '리포트', icon: BarChart3 },
+  { href: '/settings', label: '설정', icon: Settings },
 ];
 
 const COLLAPSE_STORAGE_KEY = 'age-dashboard-sidebar-collapsed';

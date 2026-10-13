@@ -221,6 +221,8 @@ export function NewOrderClient({
                           <Sparkles size={11} /> AI 보정
                         </span>
                       )}
+                      {s.sizeSpecText.map((t) => <span key={t} className="spec-chip" title="입력한 사이즈 표기를 중량 범위로 해석한 값">{t}</span>)}
+                      {s.sizeSpecUnparsed.map((t) => <span key={t} className="spec-chip spec-chip-off" title="이 표기는 중량 범위로 해석하지 못했습니다(원문 그대로 저장)">해석 못 함: {t}</span>)}
                       {s.normalizedFrom && (
                         <span className="normalized-note" title={s.normalizedFrom}>표준 형식으로 정리됨</span>
                       )}
@@ -419,6 +421,8 @@ export function NewOrderClient({
         .guide-close { border: none; background: var(--muted); border-radius: 7px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .guide-modal-body { padding: 1rem 1.5rem 1.5rem; overflow-y: auto; }
         .kind-badge-cancel { background: #fff1f2; border-color: #fda4af; color: #be123c; }
+        .spec-chip { font-size: 0.75rem; font-weight: 700; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.1rem 0.45rem; }
+        .spec-chip-off { color: #64748b; background: #f1f5f9; border-color: #cbd5e1; }
         .normalized-note { font-size: 0.75rem; color: var(--muted-foreground); border-bottom: 1px dotted currentColor; cursor: help; }
         .memo-note { font-size: 0.75rem; font-weight: 600; color: #b45309; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.1rem 0.45rem; }
         .kind-badge-same { background: #f1f5f9; border-color: #cbd5e1; color: #64748b; }
