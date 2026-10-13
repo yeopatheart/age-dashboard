@@ -2,6 +2,8 @@
 // Supabase 프로젝트 연결 후 아래 명령으로 자동 생성본으로 교체한다:
 //   npx supabase gen types typescript --linked > src/lib/types/database.ts
 
+import type { SizeSpec } from "@/lib/size-spec";
+
 type Profile = {
   id: string;
   display_name: string;
@@ -99,6 +101,8 @@ type OrderItem = {
   // 미출고(0021): 주문은 유효하지만 출고하지 못한 수량. 0이면 정상. 주문취소(change_status)와 별개.
   unshipped_quantity: number;
   unshipped_reason: string | null;
+  // 사이즈/종류 요구사항을 해석한 구조화 값(0022). 원문은 size_request.
+  size_spec: SizeSpec | null;
   needs_review: boolean;
   review_reason: string | null;
   created_by: string | null;
@@ -264,6 +268,7 @@ export type Database = {
           box_result?: string | null;
           unshipped_quantity?: number;
           unshipped_reason?: string | null;
+          size_spec?: SizeSpec | null;
           needs_review?: boolean;
           review_reason?: string | null;
           created_by?: string | null;
@@ -313,6 +318,10 @@ export type Database = {
           is_active?: boolean;
           created_at?: string;
         }
+      >;
+      app_settings: TableDef<
+        { key: string; value: unknown; updated_at: string },
+        { key: string; value: unknown; updated_at?: string }
       >;
       packing_records: TableDef<
         PackingRecord,

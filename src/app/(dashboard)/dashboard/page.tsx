@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { loadAppSettings } from '@/lib/settings-server';
 import type { OrderItem, OrderRow } from '@/lib/orders';
 import { DashboardClient } from './dashboard-client';
 
@@ -107,6 +108,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       allTerminals={allTerminals ?? []}
       businessDirectory={businessDirectory ?? []}
       orderDate={orderDate}
+      unshippedReasons={(await loadAppSettings(supabase)).unshippedReasons}
       productColors={Object.fromEntries((productRows ?? []).map((p) => [p.name, { fill: p.fill_color, border: p.border_color }]))}
       today={today}
     />

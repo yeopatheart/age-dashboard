@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { colorComboKey, pickUnusedColor } from '@/lib/color-palette';
+import { loadAppSettings } from '@/lib/settings-server';
+import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from '@/lib/kakao-parser';
 import { repairFailedLine } from '@/lib/kakao-ai-repair';
 
@@ -81,6 +83,9 @@ export interface SuggestedLine {
   blocking: boolean;
   memo?: string;
   normalizedFrom?: string;
+  // 사이즈/종류 요구사항을 해석한 결과(확인 화면에 "400g ~ 600g" 같은 칩으로 보여준다)
+  sizeSpecText: string[];
+  sizeSpecUnparsed: string[];
   // 등록된 적 없는 터미널/업체 — 확정하면 주문입력 출처로 자동 등록된다.
   isNewTerminal: boolean;
   isNewBusiness: boolean;
@@ -93,6 +98,7 @@ export async function suggestOrderLines(rawText: string, orderDate: string): Pro
   const parsedLines = parseKakaoMessage(rawText);
 
   // 서로 의존하지 않는 조회는 한 번에 보낸다(DB 왕복이 곧 대기 시간).
+  const settings = await loadAppSettings(supabase);
   const [{ data: allBusinesses }, { data: registeredTerminals }, { data: dailyBusinesses }] = await Promise.all([
     supabase.from('businesses').select('id, name'),
     supabase.from('terminals').select('name'),
@@ -175,6 +181,8 @@ export async function suggestOrderLines(rawText: string, orderDate: string): Pro
           existingOrderItemId: null,
           needsReview: true,
           blocking: true,
+          sizeSpecText: [],
+          sizeSpecUnparsed: [],
           reviewReason: '취소할 오늘 주문이 없습니다',
         });
       }
@@ -187,6 +195,8 @@ export async function suggestOrderLines(rawText: string, orderDate: string): Pro
           existingOrderItemId: item.id,
           needsReview: false,
           blocking: false,
+          sizeSpecText: [],
+          sizeSpecUnparsed: [],
         });
       });
       continue;
@@ -194,7 +204,15 @@ export async function suggestOrderLines(rawText: string, orderDate: string): Pro
 
     line.products.forEach((product, idx) => {
       const existing = existingItems.find((i) => i.product_name_raw === product.productName);
-      const common = { ...base, key: `${line.raw}__${idx}`, product, normalizedFrom: product.normalizedFrom };
+      const spec = parseSizeSpec(product.sizeRequest, settings);
+      const common = {
+        ...base,
+        key: `${line.raw}__${idx}`,
+        product,
+        normalizedFrom: product.normalizedFrom,
+        sizeSpecText: describeSizeSpec(spec),
+        sizeSpecUnparsed: spec.unparsed,
+      };
 
       if (product.isCancel) {
         const alreadyCancelled = existing?.change_status === 'cancelled';
@@ -282,11 +300,12 @@ async function registerNewProducts(supabase: Awaited<ReturnType<typeof createCli
 // 터미널 → 업체 → 오늘 카드 → 상품 순으로 단계별로 모아서 한 번에 처리한다.
 export async function commitOrderLines(orderDate: string, decisions: LineDecision[], rawText?: string) {
   const supabase = await createClient();
-  const [{ data: claims }, logCount] = await Promise.all([
+  const [{ data: claims }, logCount, settings] = await Promise.all([
     supabase.auth.getClaims(),
     rawText
       ? supabase.from('kakao_message_log').select('id', { count: 'exact', head: true }).eq('order_date', orderDate)
       : Promise.resolve(null),
+    loadAppSettings(supabase),
   ]);
   const userId = claims?.claims.sub ?? null;
 
@@ -403,6 +422,7 @@ export async function commitOrderLines(orderDate: string, decisions: LineDecisio
               unit: product.unit,
               secondary_weight_kg: product.secondaryWeightKg,
               size_request: product.sizeRequest,
+              size_spec: parseSizeSpec(product.sizeRequest, settings),
               is_mulbong: product.isMulbong,
               mulbong_box_count: product.mulbongBoxCount,
               has_ice_pack: product.hasIcePack,
@@ -439,6 +459,7 @@ export async function commitOrderLines(orderDate: string, decisions: LineDecisio
           unit: product.unit,
           secondary_weight_kg: product.secondaryWeightKg,
           size_request: product.sizeRequest,
+          size_spec: parseSizeSpec(product.sizeRequest, settings),
           is_mulbong: product.isMulbong,
           mulbong_box_count: product.mulbongBoxCount,
           has_ice_pack: product.hasIcePack,

@@ -85,20 +85,21 @@ interface BusinessDirectoryEntry { id: string; name: string; terminal_id: string
 
 // ─── 미출고 처리 모달 ──────────────────────────────────────────────────────────
 // 미출고 = 주문은 유효하지만 현장에서 출고하지 못한 수량(주문취소와 별개). 수량 0이면 해제.
-const UNSHIPPED_REASONS = ['재고없음', '폐사', '품질불량'];
 function UnshippedModal({
   item,
+  reasons,
   onSave,
   onClose,
 }: {
   item: OrderItem;
+  reasons: string[];
   onSave: (quantity: number, reason: string | null) => Promise<string | null>;
   onClose: () => void;
 }) {
   const initialReason = item.unshippedReason ?? '';
   const [qty, setQty] = useState(String(item.unshippedQuantity > 0 ? item.unshippedQuantity : item.quantity));
-  const [reasonChoice, setReasonChoice] = useState(UNSHIPPED_REASONS.includes(initialReason) ? initialReason : initialReason ? '기타' : '');
-  const [otherReason, setOtherReason] = useState(UNSHIPPED_REASONS.includes(initialReason) ? '' : initialReason);
+  const [reasonChoice, setReasonChoice] = useState(reasons.includes(initialReason) ? initialReason : initialReason ? '기타' : '');
+  const [otherReason, setOtherReason] = useState(reasons.includes(initialReason) ? '' : initialReason);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -130,7 +131,7 @@ function UnshippedModal({
         <div>
           <label className="block text-xs font-bold text-slate-600 mb-1">사유 (선택)</label>
           <div className="flex flex-wrap gap-1.5">
-            {[...UNSHIPPED_REASONS, '기타'].map((r) => (
+            {[...reasons, '기타'].map((r) => (
               <button
                 key={r}
                 type="button"
@@ -478,6 +479,7 @@ export function DashboardClient({
   orderDate,
   today,
   productColors,
+  unshippedReasons,
 }: {
   rows: OrderRow[];
   items: OrderItem[];
@@ -486,6 +488,7 @@ export function DashboardClient({
   orderDate: string;
   today: string;
   productColors: Record<string, { fill: string | null; border: string | null }>;
+  unshippedReasons: string[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1145,6 +1148,7 @@ export function DashboardClient({
       {unshippedModal && (
         <UnshippedModal
           item={unshippedModal}
+          reasons={unshippedReasons}
           onSave={async (qty, reason) => {
             const result = await setItemUnshipped(unshippedModal.id, qty, reason);
             if (result.error) return result.error;
