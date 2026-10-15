@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { colorComboKey, pickUnusedColor } from '@/lib/color-palette';
 import { loadAppSettings } from '@/lib/settings-server';
+import { editableDateError } from '@/lib/order-date';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from '@/lib/kakao-parser';
 import { repairFailedLine } from '@/lib/kakao-ai-repair';
@@ -99,7 +100,10 @@ export async function suggestOrderLines(rawText: string, orderDate: string): Pro
 
   // 서로 의존하지 않는 조회는 한 번에 보낸다(DB 왕복이 곧 대기 시간).
   const settings = await loadAppSettings(supabase);
+  const dateError = editableDateError(orderDate, settings.allowPastOrderEdit);
+  if (dateError) throw new Error(dateError);
   const [{ data: allBusinesses }, { data: registeredTerminals }, { data: dailyBusinesses }] = await Promise.all([
+
     supabase.from('businesses').select('id, name'),
     supabase.from('terminals').select('name'),
     supabase.from('daily_businesses').select('id, business_id').eq('order_date', orderDate),
@@ -308,6 +312,8 @@ export async function commitOrderLines(orderDate: string, decisions: LineDecisio
     loadAppSettings(supabase),
   ]);
   const userId = claims?.claims.sub ?? null;
+  const dateError = editableDateError(orderDate, settings.allowPastOrderEdit);
+  if (dateError) throw new Error(dateError);
 
   // 그날 첫 입력(로그가 아직 없음)으로 들어오는 상품은 "최초주문"(none), 이후 입력으로 새로 들어오는
   // 상품은 "추가됨"(new)으로 구분한다 — 대시보드에서 오전 최초 주문과 이후 추가분을 한눈에 가른다.

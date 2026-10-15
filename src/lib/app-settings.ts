@@ -10,6 +10,8 @@ export interface AppSettings {
   optionalKeywords: string[]; // 상품이 확보되면 준비하는 주문 표시(예: 가능하면)
   // 미출고 사유 선택지
   unshippedReasons: string[];
+  // 켜면 오늘 이전 날짜의 주문 입력·수정과 박스 기록 편집을 허용한다(미래 날짜는 항상 막는다).
+  allowPastOrderEdit: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -19,6 +21,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pendingKeywords: ['확인중', '확인 중'],
   optionalKeywords: ['가능하면'],
   unshippedReasons: ['재고없음', '폐사', '품질불량'],
+  allowPastOrderEdit: false,
 };
 
 const num = (v: unknown, fallback: number, min: number, max: number) => {
@@ -39,5 +42,6 @@ export function mergeSettings(stored: Record<string, unknown> | null | undefined
     pendingKeywords: list(s.pendingKeywords, d.pendingKeywords),
     optionalKeywords: list(s.optionalKeywords, d.optionalKeywords),
     unshippedReasons: list(s.unshippedReasons, d.unshippedReasons),
+    allowPastOrderEdit: typeof s.allowPastOrderEdit === 'boolean' ? s.allowPastOrderEdit : d.allowPastOrderEdit,
   };
 }

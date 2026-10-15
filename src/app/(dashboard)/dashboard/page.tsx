@@ -34,6 +34,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         .order('business_number'),
       supabase.from('products').select('name, fill_color, border_color'),
     ]);
+  const [settings, { data: highlightRows, error: highlightError }] = await Promise.all([
+    loadAppSettings(supabase),
+    supabase.from('daily_product_highlights').select('product_name, position').eq('order_date', orderDate).order('position'),
+  ]);
+  if (highlightError) throw new Error(`강조 상품 조회 실패(마이그레이션 0023 적용 필요): ${highlightError.message}`);
 
   // 조회 오류(예: 아직 적용 안 된 마이그레이션의 컬럼)를 빈 화면으로 삼키면 "주문이 사라진 것"처럼 보인다.
   if (dailyError) throw new Error(`대시보드 조회 실패: ${dailyError.message}`);
@@ -108,7 +113,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       allTerminals={allTerminals ?? []}
       businessDirectory={businessDirectory ?? []}
       orderDate={orderDate}
-      unshippedReasons={(await loadAppSettings(supabase)).unshippedReasons}
+      unshippedReasons={settings.unshippedReasons}
+      allowPast={settings.allowPastOrderEdit}
+      highlights={(highlightRows ?? []).map((h) => h.product_name)}
       productColors={Object.fromEntries((productRows ?? []).map((p) => [p.name, { fill: p.fill_color, border: p.border_color }]))}
       today={today}
     />

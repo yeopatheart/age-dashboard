@@ -1,11 +1,13 @@
 'use client';
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useOptimistic, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, Download, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
+import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
 import { getProductSummary, getTerminalBoxTotals, type OrderItem, type OrderRow, type ChangeStatus } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import {
+  setProductHighlight,
+  clearProductHighlights,
   togglePacked,
   updateTotalBoxes,
   createManualOrder,
@@ -34,6 +36,10 @@ const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 function productGridTemplate(slotCount: number) {
   return `40px 80px 144px 56px repeat(${slotCount}, minmax(130px, 1fr))`;
 }
+
+// 오늘 강조한 상품의 상품명 글자색. 첫 번째는 빨강이고, 두 개 이상 고르면 고른 순서대로 서로 다른 색을 쓴다.
+// 상태 색(신규 초록, 수정 노랑, 취소 빨강)과 헷갈리지 않게 파랑·보라·분홍·청록·갈색 계열로 이어 간다.
+const HIGHLIGHT_COLORS = ['#dc2626', '#2563eb', '#9333ea', '#db2777', '#0e7490', '#a16207'];
 
 function getItemStyle(status: ChangeStatus, isPacked: boolean, unshipped = 0, quantity = 0) {
   // 미출고(주문은 유효하지만 출고하지 못함)는 취소와 구분되도록 취소선 없이 호박색 점선으로 표시한다.
@@ -480,6 +486,8 @@ export function DashboardClient({
   today,
   productColors,
   unshippedReasons,
+  allowPast,
+  highlights,
 }: {
   rows: OrderRow[];
   items: OrderItem[];
@@ -489,13 +497,17 @@ export function DashboardClient({
   today: string;
   productColors: Record<string, { fill: string | null; border: string | null }>;
   unshippedReasons: string[];
+  allowPast: boolean;
+  highlights: string[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const monitorMode = searchParams.get('monitor') || '1';
 
-  // 과거 날짜는 최종 상태를 보는 조회 전용 — 실수로 지난 기록을 고치지 않게 편집 수단을 숨긴다.
-  const readOnly = orderDate !== today;
+  // 과거 날짜는 기본적으로 조회 전용 — 실수로 지난 기록을 고치지 않게 편집 수단을 숨긴다.
+  // 설정에서 "과거 날짜 편집"을 켜면 오늘과 똑같이 편집할 수 있다.
+  const isPast = orderDate !== today;
+  const readOnly = isPast && !allowPast;
 
   const dashboardUrl = (mode: string, date: string) =>
     `/dashboard?monitor=${mode}${date === today ? '' : `&date=${date}`}`;
@@ -631,6 +643,33 @@ export function DashboardClient({
 
   const refresh = () => router.refresh();
 
+  // 강조 상품: 날짜별로 DB에 저장해서 PC와 TV가 같은 선택을 본다. 누르는 즉시 화면에 반영하고 저장은 뒤에서 한다.
+  const [hlOpen, setHlOpen] = useState(false);
+  const [, startHlTransition] = useTransition();
+  const [hlList, setHlOptimistic] = useOptimistic(
+    highlights,
+    (state: string[], action: { name: string | null; on: boolean }) =>
+      action.name === null ? [] : action.on ? [...state.filter((n) => n !== action.name), action.name] : state.filter((n) => n !== action.name),
+  );
+  const hlColor = new Map(hlList.map((name, i) => [name, HIGHLIGHT_COLORS[i % HIGHLIGHT_COLORS.length]]));
+  const hlProducts = (() => {
+    const counts = new Map<string, number>();
+    for (const i of items) counts.set(i.productName, (counts.get(i.productName) ?? 0) + 1);
+    return [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ko'));
+  })();
+  const toggleHl = (name: string, on: boolean) =>
+    startHlTransition(async () => {
+      setHlOptimistic({ name, on });
+      await setProductHighlight(orderDate, name, on);
+      router.refresh();
+    });
+  const clearHl = () =>
+    startHlTransition(async () => {
+      setHlOptimistic({ name: null, on: false });
+      await clearProductHighlights(orderDate);
+      router.refresh();
+    });
+
   const handleTogglePacked = async (item: OrderItem) => {
     if (item.changeStatus === 'cancelled') return;
     await togglePacked(item.id, !item.isPacked);
@@ -746,8 +785,8 @@ export function DashboardClient({
     // (12px/16px) — 여기서 음수 마진으로 상쇄하는 방식은 main-content의 overflow-y:auto가
     // overflow-x까지 auto로 끌어올리는 CSS 규칙과 부딪혀 표 오른쪽이 잘려 보이는 버그가 있었다.
     <div className="flex flex-col h-[calc(100vh-24px)] gap-2">
-      <div className="flex justify-between items-center bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm flex-shrink-0 flex-wrap gap-3">
-        <div className="flex gap-4 items-center flex-wrap">
+      <div className="flex justify-between items-center bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex-shrink-0 flex-wrap gap-x-2 gap-y-1.5">
+        <div className="flex gap-2 items-center flex-wrap">
           <div className="flex items-center gap-1">
             <button onClick={() => shiftDate(-1)} className="w-7 h-7 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100 flex items-center justify-center" title="전날"><ChevronLeft className="w-4 h-4" /></button>
             <input
@@ -758,7 +797,7 @@ export function DashboardClient({
               className="text-sm font-bold text-slate-800 border border-slate-200 rounded-md px-2 py-1 bg-white"
             />
             <button onClick={() => shiftDate(1)} disabled={orderDate >= today} className="w-7 h-7 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent flex items-center justify-center" title="다음날"><ChevronRight className="w-4 h-4" /></button>
-            {readOnly ? (
+            {isPast ? (
               <>
                 <button onClick={() => setDate(today)} className="ml-1 px-2.5 py-1 rounded-md bg-[#003057] text-white text-xs font-bold">오늘</button>
               </>
@@ -766,7 +805,7 @@ export function DashboardClient({
               <span className="ml-1 px-2 py-1 rounded-md bg-slate-100 text-xs font-bold text-slate-500">오늘</span>
             )}
           </div>
-          <div className="w-px h-4 bg-slate-200 mx-1.5" />
+          <div className="w-px h-4 bg-slate-200" />
           {terminalBoxTotals.map(({ terminal, boxes }) => (
             <div key={terminal} className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold ${terminalBadgeProps(terminal, terminalColors).className}`} style={terminalBadgeProps(terminal, terminalColors).style}>
               <span>{terminal || '(터미널 없음)'}</span>
@@ -775,7 +814,7 @@ export function DashboardClient({
           ))}
         </div>
 
-        <div className="flex items-center gap-4 ml-auto">
+        <div className="flex items-center gap-2 ml-auto">
           {/* 모바일은 화면이 하나뿐이라 모니터 분할 자체가 의미 없다 — 전체보기만 강제되므로 */}
           {/* 선택 버튼도 노출하지 않는다(md 이상, 768px부터 노출 — 위 isMobile 판정 기준과 동일). */}
           <div className="hidden md:flex bg-slate-100 rounded-lg p-1 gap-0.5">
@@ -815,6 +854,42 @@ export function DashboardClient({
           >
             <Plus className="w-4 h-4" />
           </button>}
+          <div className="relative">
+            <button
+              onClick={() => setHlOpen((v) => !v)}
+              className={`h-8 px-2.5 inline-flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-colors ${hlList.length > 0 ? 'bg-red-50 border-red-300 text-red-600 hover:bg-red-100' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-100'}`}
+              title="오늘 강조할 상품 선택 — 주문표에서 그 상품의 이름 색이 달라집니다"
+              aria-label="강조 상품 선택"
+              aria-expanded={hlOpen}
+            >
+              <Highlighter className="w-4 h-4" />
+              {hlList.length > 0 && hlList.length}
+            </button>
+            {hlOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setHlOpen(false)} />
+                <div className="absolute right-0 top-10 z-50 w-72 max-h-[60vh] overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-lg p-2">
+                  <div className="flex items-center justify-between px-2 py-1">
+                    <span className="text-xs font-bold text-slate-700">강조할 상품</span>
+                    {hlList.length > 0 && <button onClick={clearHl} className="text-xs text-slate-500 hover:text-slate-800">모두 해제</button>}
+                  </div>
+                  {hlProducts.length === 0 && <p className="px-2 py-3 text-xs text-slate-400">이 날짜에 주문된 상품이 없습니다.</p>}
+                  {hlProducts.map(({ name, count }) => {
+                    const color = hlColor.get(name);
+                    return (
+                      <button key={name} onClick={() => toggleHl(name, !color)} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-slate-50 text-left">
+                        <span className="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0" style={color ? { background: color, borderColor: color } : { borderColor: '#cbd5e1' }}>
+                          {color && <Check className="w-3 h-3 text-white" strokeWidth={4} />}
+                        </span>
+                        <span className="text-sm font-semibold truncate" style={color ? { color } : undefined}>{name}</span>
+                        <span className="ml-auto text-xs text-slate-400 flex-shrink-0">{count}곳</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={exportOrders}
             disabled={mainRows.length === 0}
@@ -975,6 +1050,8 @@ export function DashboardClient({
                       }
 
                       const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked, item.unshippedQuantity, item.quantity);
+                      // 강조 상품은 이름만 색을 바꾼다. 취소·포장 완료 칸은 상태 표시(취소선, 회색)가 우선한다.
+                      const highlightColor = item.changeStatus !== 'cancelled' && !item.isPacked ? hlColor.get(item.productName) : undefined;
                       const suffixParts: string[] = [];
                       if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
                       if (item.sizeRequest) suffixParts.push(item.sizeRequest);
@@ -999,7 +1076,7 @@ export function DashboardClient({
                               className="w-full min-w-0 flex flex-wrap items-center justify-center gap-x-1 z-10 cursor-pointer select-none overflow-hidden break-keep [overflow-wrap:anywhere]"
                               style={{ lineHeight: `${pillLineHeight}px`, maxHeight: pillLineHeight * 2 }}
                             >
-                              <span className={`font-bold ${text}`} style={{ fontSize: pillNameFont }}>{item.productName}</span>
+                              <span className={highlightColor ? 'font-black' : `font-bold ${text}`} style={{ fontSize: pillNameFont, ...(highlightColor ? { color: highlightColor } : {}) }}>{item.productName}</span>
                               <span className="whitespace-nowrap">
                                 <span className={`font-black ${text}`} style={{ fontSize: pillQtyFont }}>{item.quantity}</span>
                                 <span className={`ml-0.5 font-semibold ${text}`} style={{ fontSize: pillNameFont }}>{item.unit}</span>

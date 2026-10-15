@@ -2,6 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { loadAppSettings } from '@/lib/settings-server';
+import { editableDateError } from '@/lib/order-date';
 
 export interface PackingSubmission {
   dailyBusinessId: string;
@@ -28,6 +30,8 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
     .eq('id', input.dailyBusinessId)
     .maybeSingle();
   if (!daily) return { error: '업체 주문을 찾지 못했습니다.' };
+  const dateError = editableDateError(daily.order_date, (await loadAppSettings(supabase)).allowPastOrderEdit);
+  if (dateError) return { error: dateError };
 
   const [{ data: business }, { data: items }, { data: boxRows }] = await Promise.all([
     supabase.from('businesses').select('name, terminal_id').eq('id', daily.business_id).maybeSingle(),
@@ -144,6 +148,11 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
 
 export async function deletePackingRecord(dailyBusinessId: string): Promise<{ error: string | null }> {
   const supabase = await createClient();
+  const { data: daily } = await supabase.from('daily_businesses').select('order_date').eq('id', dailyBusinessId).maybeSingle();
+  if (daily) {
+    const dateError = editableDateError(daily.order_date, (await loadAppSettings(supabase)).allowPastOrderEdit);
+    if (dateError) return { error: dateError };
+  }
   const { error } = await supabase.from('packing_records').delete().eq('daily_business_id', dailyBusinessId);
   if (error) return { error: error.message };
   revalidatePath('/packing-log');
