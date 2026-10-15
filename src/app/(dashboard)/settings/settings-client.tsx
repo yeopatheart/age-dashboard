@@ -3,7 +3,7 @@ import '@/components/admin/admin.css';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { RotateCcw, Settings as SettingsIcon } from 'lucide-react';
-import { AdminHeader } from '@/components/admin/admin-kit';
+import { AdminHeader, Toggle } from '@/components/admin/admin-kit';
 import { DEFAULT_SETTINGS, type AppSettings } from '@/lib/app-settings';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { reapplySizeSpecs, saveSettings } from './actions';
@@ -20,6 +20,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
     optionalKeywords: initial.optionalKeywords.join(', '),
     unshippedReasons: initial.unshippedReasons.join(', '),
   });
+  const [allowPast, setAllowPast] = useState(initial.allowPastOrderEdit);
   const [sample, setSample] = useState('2.5kg내외, 피빼기');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,8 +34,9 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       pendingKeywords: toList(form.pendingKeywords),
       optionalKeywords: toList(form.optionalKeywords),
       unshippedReasons: toList(form.unshippedReasons),
+      allowPastOrderEdit: allowPast,
     }),
-    [form],
+    [form, allowPast],
   );
   // 입력한 값이 숫자가 아니면 미리보기에는 기본값을 쓴다(저장할 때는 서버가 같은 규칙으로 걸러낸다).
   const previewCfg: AppSettings = {
@@ -59,7 +61,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
     setNotice('설정을 저장했습니다. 새로 입력하는 주문부터 적용됩니다.');
     router.refresh();
   };
-  const reset = () =>
+  const reset = () => {
     setForm({
       sizeTolerancePct: String(DEFAULT_SETTINGS.sizeTolerancePct),
       earlyRangeKg: String(DEFAULT_SETTINGS.earlyRangeKg),
@@ -68,6 +70,8 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       optionalKeywords: DEFAULT_SETTINGS.optionalKeywords.join(', '),
       unshippedReasons: DEFAULT_SETTINGS.unshippedReasons.join(', '),
     });
+    setAllowPast(DEFAULT_SETTINGS.allowPastOrderEdit);
+  };
   const reapply = async () => {
     setBusy(true);
     setError(null);
@@ -79,7 +83,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
   };
 
   return (
-    <div className="ak-page" style={{ maxWidth: '52rem' }}>
+    <div className="ak-page">
       <AdminHeader icon={<SettingsIcon size={20} />} title="설정" sub="시스템이 쓰는 기준값입니다. 값을 바꾸고 저장하면 새로 입력하는 주문부터 적용됩니다." />
 
       <section className="st-card">
@@ -141,6 +145,15 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
         </label>
       </section>
 
+      <section className="st-card">
+        <h2 className="st-title">과거 날짜 편집</h2>
+        <p className="st-desc">켜면 오늘 이전 날짜의 주문도 오늘과 똑같이 입력·수정·취소·삭제할 수 있고, 박스 기록도 고칠 수 있습니다. 주문 입력 화면에는 날짜 선택칸이 생깁니다. 미래 날짜는 항상 막힙니다.</p>
+        <div className="st-row">
+          <Toggle checked={allowPast} onChange={setAllowPast} label="과거 날짜 편집 허용" />
+          <span>{allowPast ? '허용 중 — 과거 날짜도 오늘처럼 편집할 수 있습니다' : '꺼짐 — 과거 날짜는 조회만 할 수 있습니다'}</span>
+        </div>
+      </section>
+
       <div className="st-actions">
         <button className="ak-btn" onClick={reset} disabled={busy}><RotateCcw size={14} /> 기본값으로</button>
         <button className="ak-btn" onClick={reapply} disabled={busy} title="이미 저장된 주문의 요구사항 해석을 현재 저장된 설정으로 다시 계산합니다">저장된 주문에 다시 적용</button>
@@ -158,6 +171,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
         .st-card small { font-size: 0.75rem; color: var(--muted-foreground); }
         .st-try { display: flex; flex-direction: column; gap: 0.4rem; background: var(--muted); border-radius: 12px; padding: 0.75rem; }
         .st-result { display: flex; flex-wrap: wrap; gap: 0.4rem; min-height: 1.6rem; align-items: center; }
+        .st-row { display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; font-weight: 600; }
         .st-actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
       `}</style>
     </div>

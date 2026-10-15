@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { loadAppSettings } from '@/lib/settings-server';
 import { PackingLogClient, type PackingBusiness } from './packing-log-client';
 
 function todayKST() {
@@ -40,6 +41,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
         : Promise.resolve({ data: [], error: null }),
       supabase.from('products').select('name, needs_mulbong'),
     ]);
+  const settings = await loadAppSettings(supabase);
   if (recordError) throw new Error(`박스 기록 조회 실패: ${recordError.message}`);
 
   const recordIds = (records ?? []).map((r) => r.id);
@@ -94,5 +96,5 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
     };
   });
 
-  return <PackingLogClient orderDate={orderDate} today={today} rows={rows} boxes={boxes ?? []} />;
+  return <PackingLogClient orderDate={orderDate} today={today} allowPast={settings.allowPastOrderEdit} rows={rows} boxes={boxes ?? []} />;
 }

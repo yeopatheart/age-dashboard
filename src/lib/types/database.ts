@@ -192,6 +192,14 @@ type Box = {
   created_at: string;
 };
 
+// 대시보드에서 날짜별로 강조하는 상품(0023)
+type DailyProductHighlight = {
+  order_date: string;
+  product_name: string;
+  position: number;
+  created_at: string;
+};
+
 type TableDef<Row, Insert, Update = Partial<Insert>> = {
   Row: Row;
   Insert: Insert;
@@ -322,6 +330,10 @@ export type Database = {
       app_settings: TableDef<
         { key: string; value: unknown; updated_at: string },
         { key: string; value: unknown; updated_at?: string }
+      >;
+      daily_product_highlights: TableDef<
+        DailyProductHighlight,
+        Pick<DailyProductHighlight, "order_date" | "product_name" | "position"> & { created_at?: string }
       >;
       packing_records: TableDef<
         PackingRecord,

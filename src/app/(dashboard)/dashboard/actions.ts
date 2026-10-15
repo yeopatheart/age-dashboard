@@ -148,3 +148,34 @@ export async function deleteOrderItem(orderItemId: string) {
   await supabase.from('order_items').delete().eq('id', orderItemId);
   revalidatePath('/dashboard');
 }
+
+// 대시보드 주문표에서 상품명을 강조할 상품을 날짜별로 켜고 끈다. 보기 설정이라 과거 날짜 편집 설정과 무관하게 항상 쓸 수 있다.
+// 켤 때는 그날 이미 고른 개수 다음 순서를 준다(색은 이 순서로 다르게 나눠 준다).
+export async function setProductHighlight(orderDate: string, productName: string, on: boolean): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  if (!on) {
+    const { error } = await supabase.from('daily_product_highlights').delete().eq('order_date', orderDate).eq('product_name', productName);
+    if (error) return { error: error.message };
+  } else {
+    const { data: last } = await supabase
+      .from('daily_product_highlights')
+      .select('position')
+      .eq('order_date', orderDate)
+      .order('position', { ascending: false })
+      .limit(1);
+    const { error } = await supabase
+      .from('daily_product_highlights')
+      .upsert({ order_date: orderDate, product_name: productName, position: (last?.[0]?.position ?? -1) + 1 }, { onConflict: 'order_date,product_name' });
+    if (error) return { error: error.message };
+  }
+  revalidatePath('/dashboard');
+  return { error: null };
+}
+
+export async function clearProductHighlights(orderDate: string): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { error } = await supabase.from('daily_product_highlights').delete().eq('order_date', orderDate);
+  if (error) return { error: error.message };
+  revalidatePath('/dashboard');
+  return { error: null };
+}

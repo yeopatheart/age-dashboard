@@ -31,15 +31,19 @@ function formatTime(iso: string) {
 // 그래서 이 기능은 대시보드 위 모달이 아니라 별도 페이지로 둔다 — TV 화면이 입력 중에
 // 가려지는 일이 없게 하기 위함(docs/decisions 참고). 권한으로 가리는 대신 페이지 분리로 해결한다.
 export function NewOrderClient({
-  orderDate,
+  today,
+  allowPast,
   initialHistory,
   guideMarkdown,
 }: {
-  orderDate: string;
+  today: string;
+  allowPast: boolean;
   initialHistory: OrderHistoryEntry[];
   guideMarkdown: string;
 }) {
   const router = useRouter();
+  // 설정에서 과거 날짜 편집을 켜면 입력할 날짜를 바꿀 수 있다(기본은 오늘, 미래는 항상 막는다).
+  const [orderDate, setOrderDate] = useState(today);
   const [rawText, setRawText] = useState('');
   const [suggestions, setSuggestions] = useState<SuggestedLine[] | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -49,7 +53,7 @@ export function NewOrderClient({
   const [onlyReview, setOnlyReview] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
-  const [historyDate, setHistoryDate] = useState(orderDate);
+  const [historyDate, setHistoryDate] = useState(today);
   const [history, setHistory] = useState(initialHistory);
   const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -66,6 +70,15 @@ export function NewOrderClient({
     setHistoryDate(date);
     setExpandedHistoryId(null);
     loadHistory(date);
+  };
+
+  const handleOrderDateChange = (date: string) => {
+    if (!date || date > today) return;
+    setOrderDate(date);
+    setSuggestions(null); // 다른 날짜 기준으로 만든 미리보기는 쓸 수 없다
+    setDone(false);
+    setError(null);
+    handleHistoryDateChange(date);
   };
 
   const handleAnalyze = async () => {
@@ -119,7 +132,13 @@ export function NewOrderClient({
         <div className="page-header-icon"><Sparkles size={20} /></div>
         <div>
           <h1 className="page-title">주문 입력</h1>
-          <p className="page-sub">{orderDate}</p>
+          {allowPast ? (
+            <p className="page-sub">
+              <input type="date" value={orderDate} max={today} onChange={(e) => handleOrderDateChange(e.target.value)} className="history-date-input" aria-label="주문 입력 날짜" />
+            </p>
+          ) : (
+            <p className="page-sub">{orderDate}</p>
+          )}
         </div>
         <button className="guide-btn" onClick={() => setGuideOpen(true)}>
           <BookOpen size={15} /> 입력 가이드
@@ -254,11 +273,11 @@ export function NewOrderClient({
             <input
               type="date"
               value={historyDate}
-              max={orderDate}
+              max={today}
               onChange={(e) => handleHistoryDateChange(e.target.value)}
               className="history-date-input"
             />
-            {historyDate === orderDate && <span className="badge badge-primary history-today-badge">오늘</span>}
+            {historyDate === today && <span className="badge badge-primary history-today-badge">오늘</span>}
             {historyLoading && <Loader2 size={14} className="spin history-date-loading" />}
           </div>
           <div className="history-list">

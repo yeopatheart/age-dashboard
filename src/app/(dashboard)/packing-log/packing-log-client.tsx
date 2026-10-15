@@ -76,15 +76,19 @@ const newUid = () => `box-${Date.now()}-${uidCounter++}`;
 export function PackingLogClient({
   orderDate,
   today,
+  allowPast,
   rows,
   boxes,
 }: {
   orderDate: string;
   today: string;
+  allowPast: boolean;
   rows: PackingBusiness[];
   boxes: BoxType[];
 }) {
   const router = useRouter();
+  // 과거 날짜는 설정에서 "과거 날짜 편집"을 켰을 때만 제출·삭제할 수 있다(서버도 같은 규칙으로 막는다).
+  const readOnly = orderDate !== today && !allowPast;
   const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
   const [onlyPending, setOnlyPending] = useState(false);
   // 업체를 오가도 작성 중인 내용이 사라지지 않게 업체별로 보관한다(제출 전까지는 이 화면 메모리에만 있다).
@@ -137,10 +141,12 @@ export function PackingLogClient({
     [selected, draft],
   );
   const hasDeletedBox = !!draft?.boxes.some((b) => b.boxId === null);
-  const canSubmit = !!draft && draft.boxes.length > 0 && unplaced.length === 0 && !hasDeletedBox && !busy && (selected?.items.length ?? 0) > 0;
+  const canSubmit = !readOnly && !!draft && draft.boxes.length > 0 && unplaced.length === 0 && !hasDeletedBox && !busy && (selected?.items.length ?? 0) > 0;
   const submitHint = !draft
     ? ''
-    : draft.boxes.length === 0
+    : readOnly
+      ? '과거 날짜는 설정에서 "과거 날짜 편집"을 켜면 제출할 수 있습니다'
+      : draft.boxes.length === 0
       ? '오른쪽에서 박스를 추가해주세요'
       : hasDeletedBox
         ? '삭제된 박스가 있습니다. 해당 박스를 지우고 다른 박스를 추가해주세요'
@@ -321,7 +327,7 @@ export function PackingLogClient({
                         <button className="ak-btn ak-btn-primary" style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }} disabled={busy} onClick={handleDeleteRecord}>삭제</button>
                       </>
                     ) : (
-                      <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 기록 삭제</button>
+                      <button className="ak-btn ak-btn-danger" disabled={readOnly} onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 기록 삭제</button>
                     )
                   )}
                 </div>
