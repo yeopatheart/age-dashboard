@@ -60,10 +60,13 @@ export interface ProductSummaryRow {
 // 같은 품목이라도 사이즈·종류(선별/일반, 하모 6-800 등)와 단위(미/kg)가 다르면 따로 센다 — 한 줄로 합치면
 // 어떤 크기를 얼마나 준비해야 하는지 알 수 없고, 마릿수와 kg가 한 숫자로 더해지는 문제도 있다.
 // 정렬은 같은 품목의 줄이 붙어 있도록 품목 합계가 큰 순서로 묶고, 그 안에서는 수량 순이다.
+// 주문 입력에서 수량을 못 찾아 "수량 미정"으로 올린 상품(수량 0, 단위 없음). 합계·포장에서는 빠지고 대시보드에 "수량 미정"으로 보인다.
+export const isUndecidedQuantity = (item: Pick<OrderItem, 'quantity' | 'unit'>) => item.quantity === 0 && !item.unit;
+
 export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
   const map = new Map<string, ProductSummaryRow>();
   for (const item of items) {
-    if (item.changeStatus === 'cancelled') continue;
+    if (item.changeStatus === 'cancelled' || isUndecidedQuantity(item)) continue;
     const size = (item.sizeRequest ?? '').trim();
     const key = `${item.productId ?? item.productName}|${size}|${item.unit}`;
     const existing = map.get(key);

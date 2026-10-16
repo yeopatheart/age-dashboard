@@ -79,8 +79,10 @@ export interface SuggestedLine {
   existingOrderItemId: string | null;
   needsReview: boolean;
   reviewReason?: string;
+  // 수량을 못 찾았지만 기존 상품을 덮어쓰는 게 아니라서 "수량 미정"으로 추가할 수 있는 줄(수량 0, 단위 없음으로 저장).
+  undecidedQuantity?: boolean;
   source: 'regex' | 'ai';
-  // true면 확정할 수 없다(수량 없음, 취소 대상 없음) — 카톡 메시지를 고쳐서 다시 분석해야 한다.
+  // true면 확정에 포함할 수 없는 줄(취소 대상 없음, 수량 없이 기존 상품을 덮어쓰기) — 확인 화면에서 자동으로 제외된다.
   blocking: boolean;
   memo?: string;
   normalizedFrom?: string;
@@ -252,8 +254,10 @@ export async function suggestOrderLines(rawText: string, orderDate: string): Pro
         kind = 'new_line';
       }
 
-      // 수량이 없는 상품은 0으로 저장되면 안 되므로 확정 자체를 막는다(카톡 메시지를 고쳐서 다시 분석).
+      // 수량이 없는 상품: 새 상품이면 "수량 미정"(수량 0, 단위 없음)으로 대시보드에 올릴 수 있게 한다.
+      // 이미 있는 상품이면 수량 없이 덮어쓰면 기존 수량이 0이 되므로 이 줄은 제외 대상으로 둔다.
       const missingQuantity = product.quantity <= 0;
+      const undecidedQuantity = missingQuantity && !existing;
       suggestions.push({
         ...common,
         kind,
@@ -261,8 +265,9 @@ export async function suggestOrderLines(rawText: string, orderDate: string): Pro
         // 같은 줄의 다른 상품 하나가 문제라고 정상 상품까지 확인 필요로 만들지 않는다 — 상품 단위로만
         // 판단한다. 단, AI가 재구성한 줄은 모든 상품이 항상 사람 확인 대상이다.
         needsReview: product.needsReview || missingQuantity || source === 'ai',
-        blocking: missingQuantity,
-        reviewReason: product.reviewReason ?? (missingQuantity ? '수량을 찾지 못함' : source === 'ai' ? line.reviewReason : undefined),
+        blocking: missingQuantity && !!existing,
+        undecidedQuantity,
+        reviewReason: undecidedQuantity ? '수량 미정으로 추가됩니다 (나중에 대시보드에서 수량을 채우세요)' : product.reviewReason ?? (missingQuantity ? '이미 있는 상품이라 수량 없이는 바꿀 수 없습니다' : source === 'ai' ? line.reviewReason : undefined),
       });
     });
   }
