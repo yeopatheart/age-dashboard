@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Loader2, AlertTriangle, History, ChevronDown, ChevronUp, BookOpen, X } from 'lucide-react';
+import { Sparkles, Loader2, AlertTriangle, History, ChevronDown, ChevronUp, BookOpen, X, Pencil } from 'lucide-react';
 import { MarkdownView } from '@/components/markdown-view';
 import {
   suggestOrderLines,
@@ -45,7 +45,14 @@ export function NewOrderClient({
   // 설정에서 과거 날짜 편집을 켜면 입력할 날짜를 바꿀 수 있다(기본은 오늘, 미래는 항상 막는다).
   const [orderDate, setOrderDate] = useState(today);
   const [rawText, setRawText] = useState('');
-  const [suggestions, setSuggestions] = useState<SuggestedLine[] | null>(null);
+  type Row = SuggestedLine & { edited?: boolean };
+  const [suggestions, setSuggestions] = useState<Row[] | null>(null);
+  // 확인 화면에서 직접 고친 줄과 이번에 반영하지 않기로 한 줄
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +96,8 @@ export function NewOrderClient({
     try {
       const result = await suggestOrderLines(rawText, orderDate);
       setSuggestions(result);
+      setExcluded(new Set());
+      setEditingKey(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : '미리보기에 실패했습니다.');
     } finally {
@@ -96,15 +105,49 @@ export function NewOrderClient({
     }
   };
 
-  const blockingCount = suggestions?.filter((s) => s.blocking).length ?? 0;
-  const changedCount = suggestions?.filter((s) => s.kind !== 'no_change').length ?? 0;
+  // 반영할 줄: 바뀌는 게 있고, 반영할 수 없는 줄(취소 대상 없음 등)이 아니고, 사용자가 제외하지 않은 줄.
+  const isApplicable = (s: SuggestedLine) => s.kind !== 'no_change' && !s.blocking && !excluded.has(s.key);
+  const applicableCount = suggestions?.filter(isApplicable).length ?? 0;
+  const skippedCount = suggestions?.filter((s) => s.kind !== 'no_change' && !isApplicable(s)).length ?? 0;
+  const undecidedCount = suggestions?.filter((s) => isApplicable(s) && s.undecidedQuantity).length ?? 0;
+  const toggleExclude = (key: string) =>
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const startEdit = (s: SuggestedLine) => {
+    setEditingKey(s.key);
+    setEditText(s.product.raw);
+    setEditError(null);
+  };
+  // 고친 상품 글자를 같은 규칙으로 다시 읽어서 그 줄만 새로 판정한다(신규/수정/변경 없음, 의심 표시가 다시 계산된다).
+  const applyEdit = async (s: Row) => {
+    if (!editText.trim()) return setEditError('상품을 입력해 주세요.');
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      const line = `${s.terminalName}/ ${s.businessNameRaw}/ ${editText.trim()}${s.memo ? ` #${s.memo}` : ''}`;
+      const result = await suggestOrderLines(line, orderDate);
+      if (result.length === 0) return setEditError('읽을 수 있는 상품이 없습니다.');
+      setSuggestions((prev) =>
+        prev ? prev.flatMap((x) => (x.key === s.key ? result.map((r, i) => ({ ...r, key: `${s.key}~e${i}`, edited: true })) : [x])) : prev,
+      );
+      setEditingKey(null);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : '수정을 적용하지 못했습니다.');
+    } finally {
+      setEditBusy(false);
+    }
+  };
 
   const handleConfirm = async () => {
     if (!suggestions) return;
     setCommitting(true);
     setError(null);
     try {
-      const decisions = suggestions.filter((s) => s.kind !== 'no_change').map((s) => ({
+      const decisions = suggestions.filter(isApplicable).map((s) => ({
         terminalName: s.terminalName,
         businessNameRaw: s.businessNameRaw,
         matchedBusinessId: s.matchedBusinessId,
@@ -203,7 +246,8 @@ export function NewOrderClient({
                 <div className="review-bar">
                   <span className="review-bar-text">
                     입력 결과 {suggestions.length}건
-                    {blockingCount > 0 && ` · 수정 필요 ${blockingCount}건 (메시지를 고친 뒤 다시 미리보기)`}
+                    {undecidedCount > 0 && ` · 수량 미정 ${undecidedCount}건`}
+                    {skippedCount > 0 && ` · 제외 ${skippedCount}건`}
                     {suggestions.some((s) => s.needsReview) && ` · 확인 필요 ${suggestions.filter((s) => s.needsReview).length}건`}
 </span>
                   {suggestions.some((s) => s.needsReview) && (
@@ -214,27 +258,32 @@ export function NewOrderClient({
                       확인 필요만 보기
                     </button>
                   )}
-                  <button className="btn-primary confirm-btn" onClick={handleConfirm} disabled={committing || changedCount === 0 || blockingCount > 0}>
-                    {committing ? '확정 중...' : `확정 (${changedCount}건)`}
+                  <button className="btn-primary confirm-btn" onClick={handleConfirm} disabled={committing || applicableCount === 0}>
+                    {committing ? '확정 중...' : `확정 (${applicableCount}건)`}
                   </button>
                 </div>
               )}
               {suggestions.filter((s) => !onlyReview || s.needsReview).map((s) => {
                 return (
-                  <div key={s.key} className={`review-row ${s.needsReview ? 'review-row-flag' : ''}`}>
+                  <div key={s.key} className={`review-row ${s.needsReview ? 'review-row-flag' : ''} ${s.kind !== 'no_change' && !isApplicable(s) ? 'review-row-off' : ''}`}>
                     <div className="review-row-main">
                       <span className="review-biz">{s.businessNameRaw}</span>
                       <span className="badge badge-muted">{s.terminalName}</span>
                       {s.isNewTerminal && <span className="new-tag">신규 터미널</span>}
                       {s.isNewBusiness && <span className="new-tag">신규 업체</span>}
                       <span className="review-product">{s.product.productName}</span>
-                      {s.kind !== 'cancel_line' && (
-                        <span className="review-qty">
-                          {s.product.quantity}
-                          {s.product.unit}
-                          {s.product.secondaryWeightKg != null && ` +${s.product.secondaryWeightKg}kg`}
-                        </span>
+                      {s.kind !== 'cancel_line' && !s.product.isCancel && (
+                        s.undecidedQuantity ? (
+                          <span className="review-qty review-qty-undecided">수량 미정</span>
+                        ) : (
+                          <span className="review-qty">
+                            {s.product.quantity}
+                            {s.product.unit}
+                            {s.product.secondaryWeightKg != null && ` +${s.product.secondaryWeightKg}kg`}
+                          </span>
+                        )
                       )}
+                      {s.edited && <span className="edited-tag">수정함</span>}
                       {s.source === 'ai' && (
                         <span className="badge badge-ai">
                           <Sparkles size={11} /> AI 보정
@@ -252,9 +301,34 @@ export function NewOrderClient({
                         </span>
                       )}
                     </div>
+                    <div className="review-row-actions">
+                      {s.kind !== 'no_change' && !s.blocking && (
+                        <button type="button" className="row-btn" onClick={() => startEdit(s)} title="이 줄의 상품을 고쳐서 다시 읽기"><Pencil size={12} /> 수정</button>
+                      )}
+                      {s.kind !== 'no_change' && !s.blocking && (
+                        <button type="button" className={`row-btn ${excluded.has(s.key) ? 'row-btn-on' : ''}`} onClick={() => toggleExclude(s.key)}>{excluded.has(s.key) ? '포함하기' : '이번엔 제외'}</button>
+                      )}
+                      {s.blocking && <span className="row-off-note">자동 제외</span>}
                     <span className={`kind-badge ${s.kind === 'update_line' ? 'kind-badge-update' : s.kind === 'no_change' ? 'kind-badge-same' : s.kind === 'cancel_line' ? 'kind-badge-cancel' : 'kind-badge-add'}`}>
                       {s.kind === 'update_line' ? '기존 상품 수정' : s.kind === 'no_change' ? '변경 없음' : s.kind === 'cancel_line' ? '취소' : '추가'}
                     </span>
+                    </div>
+                    {editingKey === s.key && (
+                      <div className="review-edit">
+                        <input
+                          className="review-edit-input"
+                          value={editText}
+                          onChange={(e) => setEditText(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') applyEdit(s); if (e.key === 'Escape') setEditingKey(null); }}
+                          placeholder="예: 하모 13미(7.9kg)"
+                          autoFocus
+                        />
+                        <button type="button" className="row-btn row-btn-on" onClick={() => applyEdit(s)} disabled={editBusy}>{editBusy ? '적용 중...' : '적용'}</button>
+                        <button type="button" className="row-btn" onClick={() => setEditingKey(null)}>취소</button>
+                        {editError && <span className="error-text">{editError}</span>}
+                        <span className="review-edit-hint">카톡에 쓰는 것처럼 고치세요. 수량 없이 두면 &quot;수량 미정&quot;으로 올라갑니다.</span>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -424,6 +498,18 @@ export function NewOrderClient({
           flex-wrap: wrap;
         }
         .review-row-flag { border-color: #fde68a; background: #fffce8; }
+        .review-row-off { opacity: 0.55; }
+        .review-row-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+        .row-btn { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.65rem; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--muted-foreground); cursor: pointer; }
+        .row-btn:hover { background: var(--muted); }
+        .row-btn-on { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .row-btn-on:hover { background: var(--primary-hover); }
+        .row-off-note { font-size: 0.75rem; color: var(--muted-foreground); }
+        .review-qty-undecided { background: #fef3c7; color: #92400e; }
+        .edited-tag { font-size: 0.7rem; font-weight: 700; color: #0369a1; background: #e0f2fe; padding: 0.1rem 0.45rem; border-radius: 6px; }
+        .review-edit { width: 100%; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding-top: 0.25rem; }
+        .review-edit-input { flex: 1; min-width: 14rem; padding: 0.45rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; font-size: 0.875rem; }
+        .review-edit-hint { width: 100%; font-size: 0.75rem; color: var(--muted-foreground); }
         .review-row-main { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
         .review-biz { font-weight: 700; color: var(--primary); font-size: 0.9rem; }
         .review-product { font-size: 0.875rem; color: var(--foreground); }

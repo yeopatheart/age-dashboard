@@ -42,6 +42,10 @@ const DATE_HEADER_RE = /^\d{1,2}\s*\/\s*\d{1,2}\s*(\([월화수목금토일]\))?
 const MULBONG_BOX_RE = /^물봉\s*(\d+)\s*박스$/;
 const GRAM_RE = /(\d+(?:\.\d+)?)\s*(?:g|그램)(?![a-zA-Z])/gi;
 // 수량은 항상 "이름 뒤 숫자+단위", 콤보는 "+숫자+단위"로 한 번 더 붙는다(항상 개수 다음 중량 순서)
+// "하모 13미 7.9kg"처럼 '+' 없이 개수와 무게를 나란히 쓰면 "13미를 7.9kg에 맞춰 담기"라는 뜻이라서
+// "하모 13미(7.9kg)"(사이즈 요청)로 읽는다. '+'가 있는 "1미+2.5kg"은 기존 규칙(QUANTITY_RE)을 그대로 쓴다.
+const COUNT_WEIGHT_RE = /^(.+?)\s*(\d+(?:\.\d+)?)\s*(미|마리)\s*(\d+(?:\.\d+)?)\s*(?:kg|키로)$/i;
+
 const QUANTITY_RE =
   /^(.+?)\s*(\d+(?:\.\d+)?)\s*(미|마리|키로|kg|팩|개)(?:\s*\+\s*(\d+(?:\.\d+)?)\s*(미|마리|키로|kg|팩|개))?$/i;
 
@@ -131,6 +135,16 @@ function parseProduct(original: string): ParsedProduct {
   // 그램(g)은 수량 합산이 kg 단위와 섞이지 않도록 kg으로 환산해서 읽는다 ("500g" → "0.5kg").
   body = body.replace(GRAM_RE, (_, n: string) => `${parseFloat((parseFloat(n) / 1000).toFixed(3))}kg`);
 
+  // 개수+무게 병기는 무게를 사이즈 요청으로 옮겨 표준 형식으로 정리한다.
+  let weightAsSize: string | null = null;
+  let countWeightNormalized = false;
+  const countWeight = body.match(COUNT_WEIGHT_RE);
+  if (countWeight) {
+    body = `${countWeight[1].trim()} ${countWeight[2]}${countWeight[3]}`;
+    weightAsSize = `${countWeight[4]}kg`;
+    countWeightNormalized = true;
+  }
+
   const qtyMatch = body.match(QUANTITY_RE);
   let productName = body;
   let quantity = 0;
@@ -159,7 +173,7 @@ function parseProduct(original: string): ParsedProduct {
   let mulbongBoxCount: number | null = null;
   let hasIcePack = false;
   let fromStock = false;
-  const sizeParts: string[] = [];
+  const sizeParts: string[] = weightAsSize ? [weightAsSize] : [];
 
   if (parenContent) {
     for (const token of parenContent.split(",").map((t) => t.trim()).filter(Boolean)) {
@@ -191,7 +205,7 @@ function parseProduct(original: string): ParsedProduct {
     hasIcePack,
     fromStock,
     isCancel: false,
-    normalizedFrom: normalized.changed ? original : undefined,
+    normalizedFrom: normalized.changed || countWeightNormalized ? original : undefined,
     needsReview,
     reviewReason,
   };

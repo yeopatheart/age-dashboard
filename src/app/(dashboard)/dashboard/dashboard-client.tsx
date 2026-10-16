@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useOptimistic, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
-import { getProductSummary, getTerminalBoxTotals, type OrderItem, type OrderRow, type ChangeStatus } from '@/lib/orders';
+import { getProductSummary, getTerminalBoxTotals, isUndecidedQuantity, type OrderItem, type OrderRow, type ChangeStatus } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import {
@@ -629,7 +629,7 @@ export function DashboardClient({
         if (!item) return '';
         const extra = [item.secondaryWeightKg != null ? `${item.secondaryWeightKg}kg` : null, item.sizeRequest].filter(Boolean).join(', ');
         const unshippedPrefix = item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' ? `[미출고 ${item.unshippedQuantity}] ` : '';
-        return `${STATUS_PREFIX[item.changeStatus] ?? ''}${unshippedPrefix}${item.productName} ${item.quantity}${item.unit}${extra ? ` (${extra})` : ''}`;
+        return `${STATUS_PREFIX[item.changeStatus] ?? ''}${unshippedPrefix}${item.productName} ${isUndecidedQuantity(item) ? '수량 미정' : `${item.quantity}${item.unit}`}${extra ? ` (${extra})` : ''}`;
       }),
     ]);
     const csv = [head, ...lines].map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -1077,10 +1077,14 @@ export function DashboardClient({
                               style={{ lineHeight: `${pillLineHeight}px`, maxHeight: pillLineHeight * 2 }}
                             >
                               <span className={highlightColor ? 'font-black' : `font-bold ${text}`} style={{ fontSize: pillNameFont, ...(highlightColor ? { color: highlightColor } : {}) }}>{item.productName}</span>
-                              <span className="whitespace-nowrap">
-                                <span className={`font-black ${text}`} style={{ fontSize: pillQtyFont }}>{item.quantity}</span>
-                                <span className={`ml-0.5 font-semibold ${text}`} style={{ fontSize: pillNameFont }}>{item.unit}</span>
-                              </span>
+                              {isUndecidedQuantity(item) ? (
+                                <span className="whitespace-nowrap rounded bg-amber-100 px-1 font-black text-amber-700" style={{ fontSize: pillNameFont }} title="주문에서 수량을 못 찾았습니다. 수정에서 수량을 채워 주세요">수량 미정</span>
+                              ) : (
+                                <span className="whitespace-nowrap">
+                                  <span className={`font-black ${text}`} style={{ fontSize: pillQtyFont }}>{item.quantity}</span>
+                                  <span className={`ml-0.5 font-semibold ${text}`} style={{ fontSize: pillNameFont }}>{item.unit}</span>
+                                </span>
+                              )}
                               {suffix && <span className="font-semibold text-sky-600" style={{ fontSize: pillNameFont }}>{suffix.trim()}</span>}
                             </div>
                             <div className={`absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity z-20`}>
@@ -1161,8 +1165,14 @@ export function DashboardClient({
                         return (
                           <div key={item.id} className={`relative group/pill flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
                             <span className="font-bold">{item.productName}</span>
-                            <span className="font-black text-sm">{item.quantity}</span>
-                            <span className="font-semibold">{item.unit}</span>
+                            {isUndecidedQuantity(item) ? (
+                              <span className="font-black text-amber-700">수량 미정</span>
+                            ) : (
+                              <>
+                                <span className="font-black text-sm">{item.quantity}</span>
+                                <span className="font-semibold">{item.unit}</span>
+                              </>
+                            )}
                             {suffixParts.length > 0 && <span className="font-semibold text-sky-600">({suffixParts.join(', ')})</span>}
                             {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
                               <span className="text-[10px] font-bold text-white bg-amber-500 rounded px-1 py-[1px]" title={item.unshippedReason ?? undefined}>미출고 {item.unshippedQuantity}</span>
