@@ -24,10 +24,18 @@ interface Business {
   notes: string | null;
   created_at: string;
   created_via: 'order' | 'manual';
+  business_registration_no: string | null;
+  representative_name: string | null;
 }
 
-type Draft = { name: string; terminalId: string; notes: string };
-const EMPTY_DRAFT: Draft = { name: '', terminalId: '', notes: '' };
+type Draft = { name: string; terminalId: string; notes: string; regNo: string; rep: string };
+const EMPTY_DRAFT: Draft = { name: '', terminalId: '', notes: '', regNo: '', rep: '' };
+
+// 입력하는 동안 숫자만 남기고 000-00-00000 모양으로 하이픈을 넣어 준다(최대 10자리).
+const formatRegNo = (v: string) => {
+  const d = v.replace(/\D/g, '').slice(0, 10);
+  return d.length <= 3 ? d : d.length <= 5 ? `${d.slice(0, 3)}-${d.slice(3)}` : `${d.slice(0, 3)}-${d.slice(3, 5)}-${d.slice(5)}`;
+};
 
 export function BusinessesClient({ businesses, terminals }: { businesses: Business[]; terminals: Terminal[] }) {
   const router = useRouter();
@@ -49,7 +57,14 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
   const filtered = useMemo(() => {
     const k = search.trim().toLowerCase();
     const list = businesses
-      .filter((b) => (k ? b.name.toLowerCase().includes(k) || (b.notes ?? '').toLowerCase().includes(k) : true))
+      .filter((b) =>
+        k
+          ? b.name.toLowerCase().includes(k) ||
+            (b.notes ?? '').toLowerCase().includes(k) ||
+            (b.representative_name ?? '').toLowerCase().includes(k) ||
+            (b.business_registration_no ?? '').replace(/-/g, '').includes(k.replace(/-/g, ''))
+          : true,
+      )
       .filter((b) => (terminalFilter === 'all' ? true : terminalFilter === 'none' ? !b.terminal_id : b.terminal_id === terminalFilter))
       .filter((b) => (viaFilter === 'all' ? true : b.created_via === viaFilter));
     return [...list].sort((a, b) => (sort === 'recent' ? b.created_at.localeCompare(a.created_at) : a.name.localeCompare(b.name, 'ko')));
@@ -65,7 +80,7 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
   };
   const openEdit = (b: Business) => {
     setPanel(b.id);
-    setDraft({ name: b.name, terminalId: b.terminal_id ?? '', notes: b.notes ?? '' });
+    setDraft({ name: b.name, terminalId: b.terminal_id ?? '', notes: b.notes ?? '', regNo: b.business_registration_no ?? '', rep: b.representative_name ?? '' });
     setConfirmDelete(false);
     setError(null);
   };
@@ -88,8 +103,9 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
     if (!draft.name.trim()) return;
     const terminalId = draft.terminalId || null;
     const notes = draft.notes.trim() || null;
+    const info = { businessRegistrationNo: draft.regNo, representativeName: draft.rep };
     const ok = await run(() =>
-      panel === 'new' ? createBusiness(draft.name, terminalId, notes) : updateBusiness(panel as string, draft.name, terminalId, notes),
+      panel === 'new' ? createBusiness(draft.name, terminalId, notes, info) : updateBusiness(panel as string, draft.name, terminalId, notes, info),
     );
     if (ok) setPanel(null);
   };
@@ -106,6 +122,8 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
         return <span className={`ak-badge ${p.className}`} style={p.style}>{t.name}</span>;
       },
     },
+    { key: 'rep', label: '대표자', render: (b) => (b.representative_name ? <span>{b.representative_name}</span> : <span className="ak-muted">—</span>) },
+    { key: 'regNo', label: '사업자등록번호', render: (b) => (b.business_registration_no ? <span style={{ fontVariantNumeric: 'tabular-nums' }}>{b.business_registration_no}</span> : <span className="ak-muted">—</span>) },
     { key: 'notes', label: '메모', render: (b) => (b.notes ? <span className="ak-ellipsis ak-muted">{b.notes}</span> : <span className="ak-muted">—</span>) },
     { key: 'via', label: '등록', render: (b) => <ViaTag via={b.created_via} date={b.created_at} /> },
   ];
@@ -115,7 +133,7 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
       <AdminHeader icon={<Building2 size={20} />} title="고객사 관리" sub="업체별로 보낼 터미널을 정해두면 주문이 들어올 때마다 다시 고르지 않아도 됩니다. 행을 누르면 수정할 수 있습니다." />
 
       <div className="ak-toolbar">
-        <SearchInput value={search} onChange={setSearch} placeholder="고객사·메모 검색" />
+        <SearchInput value={search} onChange={setSearch} placeholder="고객사·대표자·사업자번호·메모 검색" />
         <FilterSelect
           value={terminalFilter}
           onChange={setTerminalFilter}
@@ -186,6 +204,14 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
               <option value="">미지정</option>
               {terminals.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
+          </div>
+          <div className="ak-field">
+            <label>대표자명</label>
+            <input className="ak-input" value={draft.rep} onChange={(e) => setDraft({ ...draft, rep: e.target.value })} placeholder="예) 홍길동" />
+          </div>
+          <div className="ak-field">
+            <label>사업자등록번호</label>
+            <input className="ak-input" inputMode="numeric" value={draft.regNo} onChange={(e) => setDraft({ ...draft, regNo: formatRegNo(e.target.value) })} placeholder="000-00-00000" />
           </div>
           <div className="ak-field">
             <label>메모</label>

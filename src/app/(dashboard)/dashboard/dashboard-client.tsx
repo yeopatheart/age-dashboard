@@ -1,7 +1,7 @@
 'use client';
-import { useState, useRef, useEffect, useLayoutEffect, useOptimistic, useTransition } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useOptimistic, useSyncExternalStore, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
+import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
 import { getProductSummary, getTerminalBoxTotals, isUndecidedQuantity, type OrderItem, type OrderRow, type ChangeStatus } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
@@ -35,6 +35,39 @@ const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 // columns 값을 공유하는 CSS Grid로 바꿔서, 같은 칸은 항상 같은 폭이 되도록 강제한다.
 function productGridTemplate(slotCount: number) {
   return `40px 80px 144px 56px repeat(${slotCount}, minmax(130px, 1fr))`;
+}
+
+// 전체보기 위쪽 "품목별 수량" 카드를 접은 상태. 이 브라우저(PC·TV)마다 따로 기억한다 — 서버에는 저장하지 않는다.
+const SUMMARY_COLLAPSED_KEY = 'dash-summary-collapsed';
+const summaryListeners = new Set<() => void>();
+function useSummaryCollapsed(): [boolean, (next: boolean) => void] {
+  const collapsed = useSyncExternalStore(
+    (cb) => {
+      summaryListeners.add(cb);
+      window.addEventListener('storage', cb);
+      return () => {
+        summaryListeners.delete(cb);
+        window.removeEventListener('storage', cb);
+      };
+    },
+    () => {
+      try {
+        return localStorage.getItem(SUMMARY_COLLAPSED_KEY) === '1';
+      } catch {
+        return false;
+      }
+    },
+    () => false,
+  );
+  const set = (next: boolean) => {
+    try {
+      localStorage.setItem(SUMMARY_COLLAPSED_KEY, next ? '1' : '0');
+    } catch {
+      // localStorage가 막혀 있으면 저장 없이 이번 화면에서만 바뀐다
+    }
+    summaryListeners.forEach((l) => l());
+  };
+  return [collapsed, set];
 }
 
 // 오늘 강조한 상품의 상품명 글자색. 첫 번째는 빨강이고, 두 개 이상 고르면 고른 순서대로 서로 다른 색을 쓴다.
@@ -721,12 +754,33 @@ export function DashboardClient({
       {product.unshipped > 0 && <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded px-1">미출고 {product.unshipped}</span>}
     </div>
   ));
+  const [summaryCollapsed, setSummaryCollapsed] = useSummaryCollapsed();
+  // 접기 버튼은 카드 아래 가장자리 오른쪽에 반쯤 걸쳐 두어(엑셀의 그룹 접기 단추처럼) 자리를 따로 차지하지 않는다.
   const summaryCard = (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex-shrink-0 overflow-hidden" style={{ borderTop: '3px solid #003057' }}>
-      <div className="flex items-center gap-2 px-3 py-3 flex-wrap">
-        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg">품목별 수량</span>
-        {productChips}
+    <div className="relative flex-shrink-0">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden" style={{ borderTop: '3px solid #003057' }}>
+        {summaryCollapsed ? (
+          <div className="flex items-center gap-2 px-3 py-1">
+            <span className="text-xs font-bold text-slate-500">품목별 수량</span>
+            <span className="text-xs text-slate-400">{columns.length}종 · 접힘</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-3 flex-wrap">
+            <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg">품목별 수량</span>
+            {productChips}
+          </div>
+        )}
       </div>
+      <button
+        type="button"
+        onClick={() => setSummaryCollapsed(!summaryCollapsed)}
+        className="absolute right-3 -bottom-2 z-10 h-4 w-9 rounded-full border border-slate-300 bg-white text-slate-500 shadow-sm hover:bg-slate-100 hover:text-slate-800 flex items-center justify-center"
+        title={summaryCollapsed ? '품목별 수량 펼치기' : '품목별 수량 접기'}
+        aria-label={summaryCollapsed ? '품목별 수량 펼치기' : '품목별 수량 접기'}
+        aria-expanded={!summaryCollapsed}
+      >
+        {summaryCollapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+      </button>
     </div>
   );
 
