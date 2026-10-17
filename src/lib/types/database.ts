@@ -37,6 +37,9 @@ type Business = {
   notes: string | null;
   created_at: string;
   created_via: CreatedVia;
+  // 선택 입력(0024). 사업자등록번호는 000-00-00000 형식.
+  business_registration_no: string | null;
+  representative_name: string | null;
 };
 
 type Product = {
@@ -227,6 +230,8 @@ export type Database = {
           notes?: string | null;
           created_at?: string;
           created_via?: CreatedVia;
+          business_registration_no?: string | null;
+          representative_name?: string | null;
         }
       >;
       products: TableDef<
