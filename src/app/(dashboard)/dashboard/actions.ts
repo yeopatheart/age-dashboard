@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { findOrCreateBusiness, findOrCreateDailyBusiness } from '@/lib/business-lookup';
-import type { ChangeStatus } from '@/lib/orders';
+import type { ChangeStatus, OrderRound } from '@/lib/orders';
 
 export async function togglePacked(orderItemId: string, nextPacked: boolean) {
   const supabase = await createClient();
@@ -30,6 +30,7 @@ export async function updateTotalBoxes(dailyBusinessId: string, totalBoxes: numb
 
 export async function createManualOrder(
   orderDate: string,
+  round: OrderRound,
   businessName: string,
   terminalId: string | null,
   totalBoxes: number,
@@ -38,12 +39,21 @@ export async function createManualOrder(
   const businessId = await findOrCreateBusiness(supabase, businessName, terminalId);
   if (!businessId) return { error: '업체를 생성하지 못했습니다.' };
 
-  const dailyBusinessId = await findOrCreateDailyBusiness(supabase, orderDate, businessId);
+  const dailyBusinessId = await findOrCreateDailyBusiness(supabase, orderDate, businessId, round);
   if (!dailyBusinessId) return { error: '오늘자 주문 카드를 생성하지 못했습니다.' };
 
   await supabase.from('daily_businesses').update({ total_boxes: totalBoxes }).eq('id', dailyBusinessId);
   revalidatePath('/dashboard');
   return { error: null };
+}
+
+// 드래그로 바꾼 표시 순서를 저장한다. orderedIds는 그 날짜 카드 전체를 새 순서대로 담아야 한다.
+export async function reorderDailyBusinesses(orderedIds: string[]): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('reorder_daily_businesses', { p_ids: orderedIds });
+  revalidatePath('/dashboard');
+  revalidatePath('/packing-log');
+  return { error: error?.message ?? null };
 }
 
 // 업체명·터미널은 daily_businesses가 아니라 businesses 테이블 소속이라, 바꾸면 다른 날짜의

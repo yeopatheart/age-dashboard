@@ -3,14 +3,30 @@
 
 export type ChangeStatus = 'new' | 'modified' | 'cancelled' | 'none';
 
+// 주문 차수 — 같은 날 같은 고객사도 차수가 다르면 별개 업체 카드(daily_businesses)다.
+export type OrderRound = 1 | 2;
+
 // 매트릭스의 한 행 = 오늘자 업체 카드(daily_business) 하나. 상품이 아직 하나도 없어도
 // (예: "새 주문 추가" 직후) 행 자체는 존재해야 하므로 OrderItem과 별도 타입으로 둔다.
+// 같은 날 1차와 2차에 모두 주문이 있는 고객사의 id. 이 고객사만 업체명 옆에 차수를 붙인다
+// (한 차수에만 있으면 구분할 필요가 없어 TV 화면의 업체명 칸을 아낀다).
+export function businessIdsInBothRounds(rows: { businessId: string; round: OrderRound }[]): Set<string> {
+  const seen = new Map<string, Set<OrderRound>>();
+  for (const r of rows) seen.set(r.businessId, (seen.get(r.businessId) ?? new Set()).add(r.round));
+  return new Set([...seen].filter(([, rounds]) => rounds.size > 1).map(([id]) => id));
+}
+
+export function roundLabel(round: OrderRound): string {
+  return `${round}차`;
+}
+
 export interface OrderRow {
   dailyBusinessId: string;
   businessId: string;
   businessName: string;
   terminal: string;
   businessNumber: number;
+  round: OrderRound;
   totalBoxes: number;
   // 주문 입력의 "#메모" — 포장 담당에게 전하는 자유 메모
   memo: string | null;

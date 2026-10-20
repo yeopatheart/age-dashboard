@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
+import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { PackingLogClient, type PackingBusiness } from './packing-log-client';
 
 function todayKST() {
@@ -14,9 +15,9 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
 
   const { data: dailies, error: dailyError } = await supabase
     .from('daily_businesses')
-    .select('id, business_id, business_number')
+    .select('id, business_id, business_number, round')
     .eq('order_date', orderDate)
-    .order('business_number');
+    .order('sort_order');
   if (dailyError) throw new Error(`박스 기록 조회 실패: ${dailyError.message}`);
   const dailyRows = dailies ?? [];
   const dailyIds = dailyRows.map((d) => d.id);
@@ -58,12 +59,14 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
   const needsMulbong = new Map((products ?? []).map((p) => [p.name, p.needs_mulbong]));
   const recordByDaily = new Map((records ?? []).map((r) => [r.daily_business_id, r]));
 
+  const splitBusinessIds = businessIdsInBothRounds(dailyRows.map((d) => ({ businessId: d.business_id, round: d.round })));
   const rows: PackingBusiness[] = dailyRows.map((d) => {
     const business = businessById.get(d.business_id);
     const record = recordByDaily.get(d.id);
     return {
       id: d.id,
       number: d.business_number,
+      roundLabel: splitBusinessIds.has(d.business_id) ? roundLabel(d.round) : null,
       businessName: business?.name ?? '',
       terminal: business?.terminal_id ? terminalById.get(business.terminal_id) ?? '' : '',
       items: (items ?? [])

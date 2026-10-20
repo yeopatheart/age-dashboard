@@ -69,6 +69,10 @@ type DailyBusiness = {
   order_date: string;
   business_id: string;
   business_number: number;
+  // 1차/2차 (0025) — 같은 날 같은 고객사도 차수가 다르면 별개 카드
+  round: 1 | 2;
+  // 표시 순서 (0025) — 드래그로 바꾼다. business_number는 발급 번호라 바뀌지 않는다.
+  sort_order: number;
   next_product_sequence: number;
   // Figma 매트릭스의 "박스" 열 — 상품별 박스 추천과 별개로 사람이 직접 세서 적는 값
   total_boxes: number;
@@ -257,6 +261,8 @@ export type Database = {
         Pick<DailyBusiness, "order_date" | "business_id" | "business_number"> & {
           id?: string;
           next_product_sequence?: number;
+          round?: 1 | 2;
+          sort_order?: number;
           total_boxes?: number;
           memo?: string | null;
           created_at?: string;
@@ -377,6 +383,10 @@ export type Database = {
       assign_business_number: {
         Args: { p_order_date: string };
         Returns: number;
+      };
+      reorder_daily_businesses: {
+        Args: { p_ids: string[] };
+        Returns: undefined;
       };
       assign_product_sequence: {
         Args: { p_daily_business_id: string };

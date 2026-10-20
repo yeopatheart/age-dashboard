@@ -32,6 +32,8 @@ export interface PackingBusiness {
   id: string;
   number: number;
   businessName: string;
+  // 같은 고객사가 1차·2차 모두 있을 때만 값이 있다
+  roundLabel: string | null;
   terminal: string;
   items: PackingItem[];
   submitted: {
@@ -244,7 +246,7 @@ export function PackingLogClient({
       delete next[selected.id]; // 제출한 내용으로 다시 불러오게 한다
       return next;
     });
-    setNotice(`${selected.businessName} 박스 기록을 제출했습니다.`);
+    setNotice(`${selected.businessName}${selected.roundLabel ? ` (${selected.roundLabel})` : ''} 박스 기록을 제출했습니다.`);
     router.refresh();
   };
   const handleDeleteRecord = async () => {
@@ -302,7 +304,7 @@ export function PackingLogClient({
             {visibleRows.map((r) => (
               <button key={r.id} className={`pk-biz ${r.id === selectedId ? 'pk-biz-on' : ''}`} onClick={() => { setSelectedId(r.id); setError(null); setNotice(null); setConfirmDelete(false); }}>
                 <span className="pk-biz-top">
-                  <span className="pk-biz-name">{r.businessName}</span>
+                  <span className="pk-biz-name">{r.businessName}{r.roundLabel && ` (${r.roundLabel})`}</span>
                   {r.submitted ? <span className="ak-tag ak-tag-on">제출 · 박스 {r.submitted.boxes.length}</span> : <span className="ak-tag ak-tag-off">미기록</span>}
                 </span>
                 <span className="pk-biz-sub">{r.terminal || '터미널 없음'} · 상품 {r.items.length}개</span>
@@ -315,7 +317,7 @@ export function PackingLogClient({
               <section className="pk-work">
                 <div className="pk-work-head">
                   <div>
-                    <div className="pk-title">{selected.businessName}</div>
+                    <div className="pk-title">{selected.businessName}{selected.roundLabel && ` (${selected.roundLabel})`}</div>
                     <div className="ak-meta">{selected.terminal || '터미널 없음'} · 상품 {selected.items.length}개{selected.submitted ? ` · ${selected.submitted.submittedAt.slice(0, 16).replace('T', ' ')} 제출됨` : ''}</div>
                   </div>
                   <span className="ak-spacer" />
