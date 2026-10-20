@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Sparkles, Loader2, AlertTriangle, History, ChevronDown, ChevronUp, BookOpen, X, Pencil } from 'lucide-react';
 import { MarkdownView } from '@/components/markdown-view';
 import type { OrderRound } from '@/lib/orders';
+import { editableDateError } from '@/lib/order-date';
 import {
   suggestOrderLines,
   commitOrderLines,
@@ -63,7 +64,6 @@ export function NewOrderClient({
   const [onlyReview, setOnlyReview] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
-  const [historyDate, setHistoryDate] = useState(today);
   const [history, setHistory] = useState(initialHistory);
   const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -76,19 +76,15 @@ export function NewOrderClient({
     }
   };
 
-  const handleHistoryDateChange = (date: string) => {
-    setHistoryDate(date);
-    setExpandedHistoryId(null);
-    loadHistory(date);
-  };
-
   const handleOrderDateChange = (date: string) => {
     if (!date || date > today) return;
     setOrderDate(date);
     setSuggestions(null); // 다른 날짜 기준으로 만든 미리보기는 쓸 수 없다
     setDone(false);
     setError(null);
-    handleHistoryDateChange(date);
+    // 입력 이력은 헤더에서 고른 날짜를 그대로 따라간다
+    setExpandedHistoryId(null);
+    loadHistory(date);
   };
 
   const handleRoundChange = (next: OrderRound) => {
@@ -171,7 +167,7 @@ export function NewOrderClient({
       setDone(true);
       setSuggestions(null);
       setRawText('');
-      if (historyDate === orderDate) await loadHistory(orderDate);
+      await loadHistory(orderDate);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : '확정에 실패했습니다.');
@@ -180,20 +176,14 @@ export function NewOrderClient({
     }
   };
 
+  const dateError = editableDateError(orderDate, allowPast);
+
   return (
     <div className="new-order-root">
       <div className="page-header">
         <div className="page-header-icon"><Sparkles size={20} /></div>
-        <div>
-          <h1 className="page-title">주문 입력</h1>
-          {allowPast ? (
-            <p className="page-sub">
-              <input type="date" value={orderDate} max={today} onChange={(e) => handleOrderDateChange(e.target.value)} className="history-date-input" aria-label="주문 입력 날짜" />
-            </p>
-          ) : (
-            <p className="page-sub">{orderDate}</p>
-          )}
-        </div>
+        <h1 className="page-title">주문 입력</h1>
+        <input type="date" value={orderDate} max={today} onChange={(e) => handleOrderDateChange(e.target.value)} className="history-date-input header-date-input" aria-label="주문 입력 날짜" />
         <div className="round-toggle" role="group" aria-label="주문 차수">
           {([1, 2] as const).map((r) => (
             <button key={r} type="button" className={round === r ? 'active' : ''} aria-pressed={round === r} onClick={() => handleRoundChange(r)}>
@@ -241,7 +231,7 @@ export function NewOrderClient({
               onChange={(e) => setRawText(e.target.value)}
               rows={8}
             />
-            <button className="btn-primary analyze-btn" onClick={handleAnalyze} disabled={analyzing || !rawText.trim()}>
+            <button className="btn-primary analyze-btn" onClick={handleAnalyze} disabled={analyzing || !rawText.trim() || dateError !== null}>
               {analyzing ? (
                 <span className="btn-loading">
                   <Loader2 size={16} className="spin" /> 미리보기 중...
@@ -254,6 +244,7 @@ export function NewOrderClient({
             </button>
           </div>
 
+          {dateError && <p className="error-text">{dateError} (이 날짜의 입력 이력은 오른쪽에서 볼 수 있습니다.)</p>}
           {error && <p className="error-text">{error}</p>}
           {done && <p className="success-text">확정 완료 — 대시보드에 반영됐습니다.</p>}
 
@@ -359,18 +350,9 @@ export function NewOrderClient({
           <div className="history-panel-header">
             <History size={16} />
             <span>입력 이력</span>
-            <span className="history-count">{history.length}건</span>
-          </div>
-          <div className="history-date-row">
-            <input
-              type="date"
-              value={historyDate}
-              max={today}
-              onChange={(e) => handleHistoryDateChange(e.target.value)}
-              className="history-date-input"
-            />
-            {historyDate === today && <span className="badge badge-primary history-today-badge">오늘</span>}
+            <span className="history-date-label">{orderDate === today ? '오늘' : orderDate}</span>
             {historyLoading && <Loader2 size={14} className="spin history-date-loading" />}
+            <span className="history-count">{history.length}건</span>
           </div>
           <div className="history-list">
             {history.length === 0 && !historyLoading && <p className="empty-text">이 날짜에 입력된 메시지가 없습니다.</p>}
@@ -423,7 +405,6 @@ export function NewOrderClient({
           color: var(--foreground);
         }
         .history-count { margin-left: auto; font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); }
-        .history-date-row { display: flex; align-items: center; gap: 0.5rem; }
         .history-date-input {
           border: 1px solid var(--border);
           border-radius: var(--radius);
@@ -434,8 +415,8 @@ export function NewOrderClient({
           background: #fff;
         }
         .history-date-input:focus { outline: none; border-color: var(--primary); }
-        .history-today-badge { font-size: 0.7rem; }
-        .history-date-loading { color: var(--muted-foreground); margin-left: auto; }
+        .history-date-label { font-size: 0.75rem; font-weight: 700; color: var(--primary); background: var(--primary-light); padding: 0.1rem 0.5rem; border-radius: 999px; }
+        .history-date-loading { color: var(--muted-foreground); }
         .history-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; }
         .history-item {
           display: flex;
@@ -536,10 +517,11 @@ export function NewOrderClient({
         .badge-ai { display: inline-flex; align-items: center; gap: 0.25rem; background: #f5f3ff; color: #7c3aed; }
         .kind-badge { font-size: 0.8125rem; font-weight: 700; padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid; white-space: nowrap; }
         .kind-badge-add { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
-        .round-toggle { margin-left: auto; display: flex; padding: 3px; border-radius: 999px; border: 1px solid var(--border); background: #fff; }
+        .round-toggle { display: flex; padding: 3px; border-radius: 999px; border: 1px solid var(--border); background: #fff; }
         .round-toggle button { font-size: 0.875rem; font-weight: 700; padding: 0.35rem 1.1rem; border-radius: 999px; border: none; background: transparent; color: var(--muted-foreground); cursor: pointer; }
         .round-toggle button.active { background: var(--primary); color: #fff; }
-        .guide-btn { margin-left: 0.75rem; display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
+        .new-order-root .page-header { align-items: center; flex-wrap: wrap; row-gap: 0.5rem; }
+        .guide-btn { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
         .guide-btn:hover { background: var(--primary-light); }
         .guide-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
         .guide-modal { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); width: min(860px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
