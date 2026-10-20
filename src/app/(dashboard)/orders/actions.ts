@@ -38,16 +38,18 @@ export interface OrderHistoryEntry {
   rawText: string;
   createdAt: string;
   createdByName: string | null;
+  round: OrderRound;
+  // 그 차수의 첫 입력이면 true
   isFirst: boolean;
 }
 
-// 날짜별 카카오 메시지 입력 이력. 해당 날짜의 첫 로그(시간순)를 최초주문, 이후를 업데이트로
-// 구분한다 — 메시지 내용이 아니라 그날 몇 번째로 들어왔는지로만 판단한다.
+// 날짜별 카카오 메시지 입력 이력(1차·2차 모두, 시간순). 각 차수의 첫 로그를 최초주문, 이후를 업데이트로
+// 구분한다 — 메시지 내용이 아니라 그 차수에서 몇 번째로 들어왔는지로만 판단한다.
 export async function getOrderHistory(orderDate: string): Promise<OrderHistoryEntry[]> {
   const supabase = await createClient();
   const { data: logs } = await supabase
     .from('kakao_message_log')
-    .select('id, raw_text, created_at, created_by')
+    .select('id, raw_text, created_at, created_by, round')
     .eq('order_date', orderDate)
     .order('created_at', { ascending: true });
 
@@ -57,13 +59,19 @@ export async function getOrderHistory(orderDate: string): Promise<OrderHistoryEn
     : { data: [] };
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.display_name]));
 
-  return (logs ?? []).map((log, index) => ({
-    id: log.id,
-    rawText: log.raw_text,
-    createdAt: log.created_at,
-    createdByName: log.created_by ? nameById.get(log.created_by) ?? null : null,
-    isFirst: index === 0,
-  }));
+  const seenRounds = new Set<OrderRound>();
+  return (logs ?? []).map((log) => {
+    const isFirst = !seenRounds.has(log.round);
+    seenRounds.add(log.round);
+    return {
+      id: log.id,
+      rawText: log.raw_text,
+      createdAt: log.created_at,
+      createdByName: log.created_by ? nameById.get(log.created_by) ?? null : null,
+      round: log.round,
+      isFirst,
+    };
+  });
 }
 
 // no_change: 이미 등록된 상품과 수량/중량/옵션이 모두 같아서 확정해도 바뀌는 게 없는 줄.
@@ -325,7 +333,7 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
   // 상품은 "추가됨"(new)으로 구분한다 — 대시보드에서 오전 최초 주문과 이후 추가분을 한눈에 가른다.
   const isFirstInputOfDay = (logCount?.count ?? 0) === 0;
   if (rawText) {
-    await supabase.from('kakao_message_log').insert({ order_date: orderDate, raw_text: rawText, created_by: userId });
+    await supabase.from('kakao_message_log').insert({ order_date: orderDate, round, raw_text: rawText, created_by: userId });
   }
 
   const active = decisions.filter((d) => d.kind !== 'no_change');
