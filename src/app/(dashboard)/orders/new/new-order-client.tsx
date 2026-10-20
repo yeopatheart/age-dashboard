@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sparkles, Loader2, AlertTriangle, History, ChevronDown, ChevronUp, BookOpen, X, Pencil } from 'lucide-react';
 import { MarkdownView } from '@/components/markdown-view';
+import type { OrderRound } from '@/lib/orders';
 import {
   suggestOrderLines,
   commitOrderLines,
@@ -44,6 +45,8 @@ export function NewOrderClient({
   const router = useRouter();
   // 설정에서 과거 날짜 편집을 켜면 입력할 날짜를 바꿀 수 있다(기본은 오늘, 미래는 항상 막는다).
   const [orderDate, setOrderDate] = useState(today);
+  // 1차/2차 — 같은 고객사도 차수가 다르면 별개 카드로 들어가므로, 한 번 붙여넣은 메시지 전체가 한 차수에 속한다.
+  const [round, setRound] = useState<OrderRound>(1);
   const [rawText, setRawText] = useState('');
   type Row = SuggestedLine & { edited?: boolean };
   const [suggestions, setSuggestions] = useState<Row[] | null>(null);
@@ -88,13 +91,21 @@ export function NewOrderClient({
     handleHistoryDateChange(date);
   };
 
+  const handleRoundChange = (next: OrderRound) => {
+    if (next === round) return;
+    setRound(next);
+    setSuggestions(null); // 다른 차수 기준으로 만든 미리보기는 쓸 수 없다
+    setDone(false);
+    setError(null);
+  };
+
   const handleAnalyze = async () => {
     if (!rawText.trim()) return;
     setAnalyzing(true);
     setError(null);
     setDone(false);
     try {
-      const result = await suggestOrderLines(rawText, orderDate);
+      const result = await suggestOrderLines(rawText, orderDate, round);
       setSuggestions(result);
       setExcluded(new Set());
       setEditingKey(null);
@@ -129,7 +140,7 @@ export function NewOrderClient({
     setEditError(null);
     try {
       const line = `${s.terminalName}/ ${s.businessNameRaw}/ ${editText.trim()}${s.memo ? ` #${s.memo}` : ''}`;
-      const result = await suggestOrderLines(line, orderDate);
+      const result = await suggestOrderLines(line, orderDate, round);
       if (result.length === 0) return setEditError('읽을 수 있는 상품이 없습니다.');
       setSuggestions((prev) =>
         prev ? prev.flatMap((x) => (x.key === s.key ? result.map((r, i) => ({ ...r, key: `${s.key}~e${i}`, edited: true })) : [x])) : prev,
@@ -156,7 +167,7 @@ export function NewOrderClient({
         existingOrderItemId: s.existingOrderItemId,
         memo: s.memo,
       }));
-      await commitOrderLines(orderDate, decisions, rawText);
+      await commitOrderLines(orderDate, round, decisions, rawText);
       setDone(true);
       setSuggestions(null);
       setRawText('');
@@ -182,6 +193,13 @@ export function NewOrderClient({
           ) : (
             <p className="page-sub">{orderDate}</p>
           )}
+        </div>
+        <div className="round-toggle" role="group" aria-label="주문 차수">
+          {([1, 2] as const).map((r) => (
+            <button key={r} type="button" className={round === r ? 'active' : ''} aria-pressed={round === r} onClick={() => handleRoundChange(r)}>
+              {r}차
+            </button>
+          ))}
         </div>
         <button className="guide-btn" onClick={() => setGuideOpen(true)}>
           <BookOpen size={15} /> 입력 가이드
@@ -518,7 +536,10 @@ export function NewOrderClient({
         .badge-ai { display: inline-flex; align-items: center; gap: 0.25rem; background: #f5f3ff; color: #7c3aed; }
         .kind-badge { font-size: 0.8125rem; font-weight: 700; padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid; white-space: nowrap; }
         .kind-badge-add { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
-        .guide-btn { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
+        .round-toggle { margin-left: auto; display: flex; padding: 3px; border-radius: 999px; border: 1px solid var(--border); background: #fff; }
+        .round-toggle button { font-size: 0.875rem; font-weight: 700; padding: 0.35rem 1.1rem; border-radius: 999px; border: none; background: transparent; color: var(--muted-foreground); cursor: pointer; }
+        .round-toggle button.active { background: var(--primary); color: #fff; }
+        .guide-btn { margin-left: 0.75rem; display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
         .guide-btn:hover { background: var(--primary-light); }
         .guide-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
         .guide-modal { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); width: min(860px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }

@@ -1,8 +1,10 @@
 'use client';
 import { useState, useRef, useEffect, useLayoutEffect, useOptimistic, useSyncExternalStore, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
-import { getProductSummary, getTerminalBoxTotals, isUndecidedQuantity, type OrderItem, type OrderRow, type ChangeStatus } from '@/lib/orders';
+import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
+import { businessIdsInBothRounds, roundLabel, getProductSummary, getTerminalBoxTotals, isUndecidedQuantity, type OrderItem, type OrderRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import {
@@ -10,6 +12,7 @@ import {
   clearProductHighlights,
   togglePacked,
   updateTotalBoxes,
+  reorderDailyBusinesses,
   createManualOrder,
   updateOrder,
   deleteDailyBusiness,
@@ -33,6 +36,42 @@ const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 // 1~2px씩 미묘하게 달라져(브라우저의 flex 여유공간 분배가 셀 내용에 영향받는 경우가 있다)
 // 여러 줄에 걸쳐 누적되면 열 경계가 눈에 띄게 어긋났다. 헤더·모든 행이 똑같은 grid-template-
 // columns 값을 공유하는 CSS Grid로 바꿔서, 같은 칸은 항상 같은 폭이 되도록 강제한다.
+// 같은 고객사가 1차·2차에 모두 있을 때만 업체명 앞에 붙는 작은 배지 — 행 높이를 키우지 않도록 업체명 줄 안에 인라인으로 흐른다.
+function RoundBadge({ round }: { round: OrderRound }) {
+  return (
+    <span className={`inline-block align-middle mr-1 px-1 rounded border text-[10px] font-bold leading-[14px] ${round === 1 ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-violet-50 text-violet-700 border-violet-200'}`}>
+      {roundLabel(round)}
+    </span>
+  );
+}
+
+// 드래그로 순서를 바꾸는 표 행. 행 전체가 아니라 "번호" 칸의 손잡이로만 끌 수 있다 — 행 안의 상품 칩은 클릭(수정·포장)이 주 동작이라 충돌한다.
+function SortableRow({
+  id,
+  disabled,
+  className,
+  style,
+  children,
+}: {
+  id: string;
+  disabled: boolean;
+  className: string;
+  style: React.CSSProperties;
+  children: (handle: { ref: (el: HTMLElement | null) => void; props: Record<string, unknown> } | null) => React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`${className} ${isDragging ? 'relative z-10 bg-white shadow-lg opacity-90' : ''}`}
+      // 세로 이동만 허용한다(modifiers 패키지 없이 x를 버린다).
+      style={{ ...style, transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined, transition }}
+    >
+      {children(disabled ? null : { ref: setActivatorNodeRef, props: { ...attributes, ...listeners } })}
+    </div>
+  );
+}
+
 function productGridTemplate(slotCount: number) {
   return `40px 80px 144px 56px repeat(${slotCount}, minmax(130px, 1fr))`;
 }
@@ -210,16 +249,16 @@ function OrderFormModal({
   initial,
   terminals,
   businesses,
-  registeredBusinessIds = [],
+  registered = [],
   onSave,
   onClose,
 }: {
   initial?: { businessName: string; terminalId: string | null; totalBoxes: number };
   terminals: Terminal[];
   businesses: BusinessDirectoryEntry[];
-  // 이 날짜 대시보드에 이미 올라와 있는 업체 id — 새 주문 추가에서 중복 등록을 막는다.
-  registeredBusinessIds?: string[];
-  onSave: (data: { businessName: string; terminalId: string | null; totalBoxes: number }) => void;
+  // 이 날짜 대시보드에 이미 올라와 있는 (업체, 차수) — 새 주문 추가에서 같은 차수의 중복 등록을 막는다.
+  registered?: { businessId: string; round: OrderRound }[];
+  onSave: (data: { businessName: string; terminalId: string | null; totalBoxes: number; round: OrderRound }) => void;
   onClose: () => void;
 }) {
   const isEdit = Boolean(initial);
@@ -229,6 +268,7 @@ function OrderFormModal({
   const [totalBoxes, setTotalBoxes] = useState(initial?.totalBoxes?.toString() ?? '1');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState(false);
+  const [round, setRound] = useState<OrderRound>(1);
 
   // 새 주문 추가는 고객명을 직접 타이핑해서 확정하지 않는다 — 키워드로 고객사 관리의 등록 목록을
   // 검색해 고르게 해서 오타를 막고, 터미널은 그 고객에 등록된 매핑을 그대로 쓴다(주문 확정은 현장
@@ -250,12 +290,12 @@ function OrderFormModal({
 
   const handleSave = () => {
     if (!businessName.trim() || (!isEdit && !matchedBusiness)) return;
-    if (matchedBusiness && registeredBusinessIds.includes(matchedBusiness.id)) {
+    if (matchedBusiness && registered.some((r) => r.businessId === matchedBusiness.id && r.round === round)) {
       setDuplicateError(true);
       return;
     }
     const resolvedTerminalId = isEdit ? (terminalId || null) : (matchedTerminal?.id ?? null);
-    onSave({ businessName: (matchedBusiness?.name ?? businessName).trim(), terminalId: resolvedTerminalId, totalBoxes: parseInt(totalBoxes) || 1 });
+    onSave({ businessName: (matchedBusiness?.name ?? businessName).trim(), terminalId: resolvedTerminalId, totalBoxes: parseInt(totalBoxes) || 1, round });
   };
 
   return (
@@ -351,9 +391,27 @@ function OrderFormModal({
             </p>
           )}
         </div>
+        {!isEdit && (
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1">차수</label>
+            <div className="inline-flex p-0.5 rounded-lg border border-slate-300">
+              {([1, 2] as const).map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  aria-pressed={round === r}
+                  onClick={() => { setRound(r); setDuplicateError(false); }}
+                  className={`px-4 py-1.5 rounded-md text-sm font-bold transition-colors ${round === r ? 'bg-[#003057] text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                  {r}차
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {duplicateError && matchedBusiness && (
           <p className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-            &apos;{matchedBusiness.name}&apos;은(는) 이미 대시보드에 등록된 고객입니다. 상품은 해당 행의 + 버튼으로 추가해주세요.
+            &apos;{matchedBusiness.name}&apos;은(는) 이미 대시보드에 {round}차로 등록된 고객입니다. 상품은 해당 행의 + 버튼으로 추가해주세요.
           </p>
         )}
         <div>
@@ -569,7 +627,14 @@ export function DashboardClient({
   const separateNames = new Set(allTerminals.filter((t) => t.is_separate).map((t) => t.name));
   // 주문표 순서는 주문 입력된 순서 그대로다(업체 번호 = 입력 순서, 서버에서 업체 번호순으로 내려준다).
   // 터미널·상품 수 등으로 다시 정렬하지 않는다.
-  const allRows = rawRows;
+  // 드래그 직후 서버 반영 전까지 화면에 먼저 보여줄 순서(카드 id 배열). 서버 값이 오면 자연히 사라진다.
+  const [optimisticOrder, setOptimisticOrder] = useOptimistic<string[] | null, string[]>(null, (_, next) => next);
+  const [, startReorder] = useTransition();
+  const allRows = optimisticOrder
+    ? optimisticOrder.flatMap((id) => rawRows.find((r) => r.dailyBusinessId === id) ?? [])
+    : rawRows;
+  const splitBusinessIds = businessIdsInBothRounds(allRows);
+  const roundOf = (row: OrderRow): OrderRound | null => (splitBusinessIds.has(row.businessId) ? row.round : null);
   const separateRows = allRows.filter((r) => separateNames.has(r.terminal));
   const mainRows = allRows.filter((r) => !separateNames.has(r.terminal));
   const rows = mainRows;
@@ -623,6 +688,28 @@ export function DashboardClient({
   // 화면에 다 못 들어가는 줄은 이 화면에 표시하지 않고 다음 모니터로 넘긴다.
   const monitorSlice = isSplitMode ? rows.slice(startIndex, startIndex + ownCapacity) : rows;
   const displayedRows = monitorSlice;
+
+  const dragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  // 화면에 보이는 구간 안에서만 옮긴다(모니터를 넘나드는 이동은 전체보기에서). 별도 주문 터미널 행은 제자리에 둔다.
+  const handleRowDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const from = displayedRows.findIndex((r) => r.dailyBusinessId === active.id);
+    const to = displayedRows.findIndex((r) => r.dailyBusinessId === over.id);
+    if (from < 0 || to < 0) return;
+    const movedSlice = arrayMove(displayedRows, from, to);
+    const nextMain = [...rows.slice(0, startIndex), ...movedSlice, ...rows.slice(startIndex + displayedRows.length)];
+    let mainCursor = 0;
+    const orderedIds = allRows.map((r) => (separateNames.has(r.terminal) ? r.dailyBusinessId : nextMain[mainCursor++].dailyBusinessId));
+    startReorder(async () => {
+      setOptimisticOrder(orderedIds);
+      await reorderDailyBusinesses(orderedIds);
+      router.refresh();
+    });
+  };
   const rowSlotCount = isSplitMode ? ownCapacity : displayedRows.length;
   // gridTemplateRows를 고정하지 않으면 내용이 긴 칸 하나가 행 전체를 키워서 행 높이 규칙이 깨진다.
   const rowStyle = { height: rowHeight, gridTemplateRows: `${rowHeight}px` };
@@ -654,7 +741,7 @@ export function DashboardClient({
     const lines = mainRows.map((row, idx) => [
       idx + 1,
       row.terminal,
-      row.businessName,
+      `${row.businessName}${roundOf(row) ? ` (${roundLabel(roundOf(row) as OrderRound)})` : ''}`,
       row.totalBoxes,
       row.memo ?? '',
       ...Array.from({ length: maxItems }, (_, i) => {
@@ -709,13 +796,13 @@ export function DashboardClient({
     refresh();
   };
 
-  const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; totalBoxes: number }) => {
+  const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; totalBoxes: number; round: OrderRound }) => {
     if (editOrderModal) {
       await updateOrder(editOrderModal.dailyBusinessId, data.businessName, data.terminalId);
       await updateTotalBoxes(editOrderModal.dailyBusinessId, data.totalBoxes);
       setEditOrderModal(null);
     } else {
-      await createManualOrder(orderDate, data.businessName, data.terminalId, data.totalBoxes);
+      await createManualOrder(orderDate, data.round, data.businessName, data.terminalId, data.totalBoxes);
       setAddOrderModal(false);
     }
     refresh();
@@ -1004,6 +1091,8 @@ export function DashboardClient({
             </div>
 
             {/* 본문 — 모니터 1/2는 측정된 가용 높이에 들어가는 만큼(ROW_HEIGHT 단위)만 그려 스크롤이 없다 */}
+            <DndContext id="dashboard-dnd" sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
+            <SortableContext items={displayedRows.map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
             <div className={`flex flex-col ${isSplitMode ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
               {Array.from({ length: rowSlotCount }).map((_, index) => {
                 const row = displayedRows[index];
@@ -1021,13 +1110,29 @@ export function DashboardClient({
                   .sort((a, b) => a.productSequence - b.productSequence);
 
                 return (
-                  <div
+                  <SortableRow
                     key={row.dailyBusinessId}
-                    className={`grid border-b border-slate-100 hover:bg-slate-50/50 transition-colors shrink-0`}
+                    id={row.dailyBusinessId}
+                    disabled={readOnly}
+                    className="group/row grid border-b border-slate-100 hover:bg-slate-50/50 transition-colors shrink-0"
                     style={{ gridTemplateColumns: productGridTemplate(productSlotCount), ...rowStyle }}
                   >
+                    {(handle) => (
+                    <>
                     <div className="border-r border-slate-100 px-2 flex items-center justify-center text-xs font-bold text-slate-400 bg-slate-50">
-                      {index + startIndex + 1}
+                      {handle ? (
+                        <div
+                          ref={handle.ref}
+                          {...handle.props}
+                          className="relative w-full h-full flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
+                          title="끌어서 순서 변경"
+                        >
+                          <span className="group-hover/row:invisible">{index + startIndex + 1}</span>
+                          <GripVertical className="absolute w-4 h-4 text-slate-500 invisible group-hover/row:visible" />
+                        </div>
+                      ) : (
+                        index + startIndex + 1
+                      )}
                     </div>
                     <div className="border-r border-slate-100 px-2 flex items-center justify-center">
                       <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>
@@ -1037,7 +1142,7 @@ export function DashboardClient({
                     <div className="relative border-r border-slate-100 px-2 flex items-center group overflow-hidden">
                       {/* 업체명은 현장에서 정확히 보여야 하므로 말줄임 없이 전체 폭을 쓰고(최대 2줄, 행 높이 고정),
                           수정/삭제 버튼은 마우스를 올릴 때만 이름 위에 겹쳐 나타난다. */}
-                      <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{row.businessName}</span>
+                      <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
                       <div className={`absolute inset-y-0 right-0 pl-4 pr-1 flex items-center gap-1 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity bg-gradient-to-l from-white via-white to-transparent`}>
                       <button
@@ -1171,7 +1276,9 @@ export function DashboardClient({
                         </div>
                       );
                     })}
-                  </div>
+                    </>
+                    )}
+                  </SortableRow>
                 );
               })}
 
@@ -1183,6 +1290,8 @@ export function DashboardClient({
                 </div>
               )}
             </div>
+            </SortableContext>
+            </DndContext>
           </div>
         </div>
       </div>
@@ -1206,7 +1315,7 @@ export function DashboardClient({
                   <div key={row.dailyBusinessId} className="flex items-center gap-3 border border-slate-200 rounded-lg px-3 py-1.5 group">
                     <div className="w-72 flex-shrink-0 flex items-center gap-2">
                       <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
-                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{row.businessName}</span>
+                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
                       <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes}</span>
                     </div>
                     <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
@@ -1263,7 +1372,7 @@ export function DashboardClient({
       )}
 
       {addOrderModal && (
-        <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registeredBusinessIds={rows.map((r) => r.businessId)} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
+        <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={rows.map((r) => ({ businessId: r.businessId, round: r.round }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
       )}
       {editOrderModal && (
         <OrderFormModal

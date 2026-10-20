@@ -8,6 +8,7 @@ import { editableDateError } from '@/lib/order-date';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from '@/lib/kakao-parser';
 import { repairFailedLine } from '@/lib/kakao-ai-repair';
+import type { OrderRound } from '@/lib/orders';
 
 // parseLine이 "터미널/업체명/상품" 3분할 자체에 실패했을 때만 붙는 고정 reviewReason —
 // AI fallback은 이 줄 단위 실패 케이스만 대상으로 한다(상품 단위 사소한 오류는 그대로
@@ -96,7 +97,7 @@ export interface SuggestedLine {
 
 // 읽기 전용: 붙여넣은 텍스트를 파싱하고, 각 줄의 업체명을 업체 카탈로그 전체와 대조해서
 // 신규/업데이트를 줄 단위로 제안한다. 아무것도 쓰지 않는다 — 확정은 commitOrderLines가 한다.
-export async function suggestOrderLines(rawText: string, orderDate: string): Promise<SuggestedLine[]> {
+export async function suggestOrderLines(rawText: string, orderDate: string, round: OrderRound): Promise<SuggestedLine[]> {
   const supabase = await createClient();
   const parsedLines = parseKakaoMessage(rawText);
 
@@ -108,7 +109,7 @@ export async function suggestOrderLines(rawText: string, orderDate: string): Pro
 
     supabase.from('businesses').select('id, name'),
     supabase.from('terminals').select('name'),
-    supabase.from('daily_businesses').select('id, business_id').eq('order_date', orderDate),
+    supabase.from('daily_businesses').select('id, business_id').eq('order_date', orderDate).eq('round', round),
   ]);
   const businessList = allBusinesses ?? [];
   const terminalNameSet = new Set((registeredTerminals ?? []).map((t) => t.name));
@@ -307,7 +308,7 @@ async function registerNewProducts(supabase: Awaited<ReturnType<typeof createCli
 //
 // DB 왕복 횟수가 곧 지연 시간이므로(서버↔DB 왕복 1회 = 수십~수백 ms) 줄마다 조회/삽입하지 않고
 // 터미널 → 업체 → 오늘 카드 → 상품 순으로 단계별로 모아서 한 번에 처리한다.
-export async function commitOrderLines(orderDate: string, decisions: LineDecision[], rawText?: string) {
+export async function commitOrderLines(orderDate: string, round: OrderRound, decisions: LineDecision[], rawText?: string) {
   const supabase = await createClient();
   const [{ data: claims }, logCount, settings] = await Promise.all([
     supabase.auth.getClaims(),
@@ -388,14 +389,15 @@ export async function commitOrderLines(orderDate: string, decisions: LineDecisio
       .from('daily_businesses')
       .select('id, business_id')
       .eq('order_date', orderDate)
+      .eq('round', round)
       .in('business_id', businessIds);
     for (const d of existing ?? []) dailyIdByBusinessId.set(d.business_id, d.id);
 
-    const rowsToCreate: { order_date: string; business_id: string; business_number: number }[] = [];
+    const rowsToCreate: { order_date: string; business_id: string; business_number: number; round: OrderRound }[] = [];
     for (const businessId of businessIds) {
       if (dailyIdByBusinessId.has(businessId)) continue;
       const { data: businessNumber } = await supabase.rpc('assign_business_number', { p_order_date: orderDate });
-      rowsToCreate.push({ order_date: orderDate, business_id: businessId, business_number: businessNumber ?? 0 });
+      rowsToCreate.push({ order_date: orderDate, business_id: businessId, business_number: businessNumber ?? 0, round });
     }
     if (rowsToCreate.length > 0) {
       const { data: created } = await supabase.from('daily_businesses').insert(rowsToCreate).select('id, business_id');

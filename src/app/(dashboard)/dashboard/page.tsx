@@ -29,9 +29,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       supabase.from('businesses').select('id, name, terminal_id').order('name'),
       supabase
         .from('daily_businesses')
-        .select('id, business_id, business_number, total_boxes, memo')
+        .select('id, business_id, business_number, round, total_boxes, memo')
         .eq('order_date', orderDate)
-        .order('business_number'),
+        .order('sort_order'),
       supabase.from('products').select('name, fill_color, border_color'),
     ]);
   const [settings, { data: highlightRows, error: highlightError }] = await Promise.all([
@@ -60,6 +60,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         businessName: business.name,
         terminal: business.terminal_id ? terminalNameById.get(business.terminal_id) ?? '' : '',
         businessNumber: daily.business_number,
+        round: daily.round,
         totalBoxes: daily.total_boxes,
         memo: daily.memo,
       },
