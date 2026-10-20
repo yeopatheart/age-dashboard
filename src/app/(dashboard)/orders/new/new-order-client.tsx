@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sparkles, Loader2, AlertTriangle, History, ChevronDown, ChevronUp, BookOpen, X, Pencil } from 'lucide-react';
 import { MarkdownView } from '@/components/markdown-view';
-import type { OrderRound } from '@/lib/orders';
+import { roundLabel, type OrderRound } from '@/lib/orders';
 import { editableDateError } from '@/lib/order-date';
 import {
   suggestOrderLines,
@@ -366,6 +366,7 @@ export function NewOrderClient({
                   onClick={() => setExpandedHistoryId(expanded ? null : h.id)}
                 >
                   <div className="history-item-top">
+                    <span className={`badge history-round history-round-${h.round}`}>{roundLabel(h.round)}</span>
                     <span className={`badge ${h.isFirst ? 'badge-primary' : 'badge-info'}`}>
                       {h.isFirst ? '최초주문' : '업데이트'}
                     </span>
@@ -415,6 +416,8 @@ export function NewOrderClient({
           background: #fff;
         }
         .history-date-input:focus { outline: none; border-color: var(--primary); }
+        .history-round-1 { background: #f0f9ff; color: #0369a1; }
+        .history-round-2 { background: #f5f3ff; color: #6d28d9; }
         .history-date-label { font-size: 0.75rem; font-weight: 700; color: var(--primary); background: var(--primary-light); padding: 0.1rem 0.5rem; border-radius: 999px; }
         .history-date-loading { color: var(--muted-foreground); }
         .history-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; }

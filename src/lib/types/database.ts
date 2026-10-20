@@ -157,6 +157,8 @@ type KakaoMessageLog = {
   id: string;
   order_date: string;
   raw_text: string;
+  // 입력 당시 선택한 차수 (0026)
+  round: 1 | 2;
   created_by: string | null;
   created_at: string;
 };
@@ -299,6 +301,7 @@ export type Database = {
         KakaoMessageLog,
         Pick<KakaoMessageLog, "order_date" | "raw_text"> & {
           id?: string;
+          round?: 1 | 2;
           created_by?: string | null;
           created_at?: string;
         }
