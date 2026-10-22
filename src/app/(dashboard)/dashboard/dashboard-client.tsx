@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
-import { businessIdsInBothRounds, roundLabel, getProductSummary, getTerminalBoxTotals, isUndecidedQuantity, type OrderItem, type OrderRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
+import { businessIdsInBothRounds, roundLabel, getProductSummary, getTerminalBoxTotals, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import {
@@ -36,6 +36,68 @@ const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 // 1~2px씩 미묘하게 달라져(브라우저의 flex 여유공간 분배가 셀 내용에 영향받는 경우가 있다)
 // 여러 줄에 걸쳐 누적되면 열 경계가 눈에 띄게 어긋났다. 헤더·모든 행이 똑같은 grid-template-
 // columns 값을 공유하는 CSS Grid로 바꿔서, 같은 칸은 항상 같은 폭이 되도록 강제한다.
+// 품목별 수량 세로 패널(2열). 모니터 2 오른쪽과 별도 주문 팝업 오른쪽에서 같이 쓴다.
+// availHeight를 주면(모니터 2) 품목이 늘어도 스크롤이 생기지 않게 줄 높이·글자 크기를 그 높이에 맞춰 줄이고,
+// 안 주면(팝업) 고정 줄 높이로 그리고 넘치면 패널 안에서 스크롤한다.
+// 칸 하나에 이름+수량이 안 들어가는 긴 이름(말줄임이 생길 품목)은 한 줄 전체를 쓰게 하고 맨 뒤로 보낸다 —
+// 이름이 잘리면 현장에서 어떤 품목인지 알 수 없다. 칸 폭은 w-64(256) − 패널 여백(12) → 2열 사이 간격(4)을
+// 뺀 열당 약 120px, 칩 안쪽 여백(12)을 뺀 약 108px이다.
+function ProductSummaryPanel({
+  columns,
+  chipStyle,
+  availHeight,
+}: {
+  columns: ProductSummaryRow[];
+  chipStyle: (name: string) => React.CSSProperties;
+  availHeight?: number;
+}) {
+  const [longNames, setLongNames] = useState<Set<string>>(new Set());
+  const signature = columns.map((c) => `${c.key}:${c.total}:${c.unshipped}`).join('|');
+  useLayoutEffect(() => {
+    const measure = () => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (!ctx) return;
+      const family = getComputedStyle(document.body).fontFamily;
+      const width = (text: string, weight: number) => {
+        ctx.font = `${weight} 12px ${family}`;
+        return ctx.measureText(text).width;
+      };
+      const available = 108 - 4; // 이름과 수량 사이 간격(gap-1)
+      setLongNames(new Set(columns.filter((c) => width(c.label, 700) + width(`${c.total}${c.unit}${c.unshipped > 0 ? ` (미출고 ${c.unshipped})` : ''}`, 900) > available).map((c) => c.key)));
+    };
+    measure();
+    // 웹폰트가 늦게 로드되면 폭이 달라지므로 로드 후 한 번 더 잰다.
+    void document.fonts?.ready.then(measure);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+  const panelColumns = [...columns.filter((c) => !longNames.has(c.key)), ...columns.filter((c) => longNames.has(c.key))];
+  const shortCount = columns.length - longNames.size;
+  const itemHeight =
+    availHeight === undefined
+      ? 26
+      : Math.min(26, Math.max(14, Math.floor((Math.max(availHeight, 300) - 8) / Math.max(1, Math.ceil(shortCount / 2) + longNames.size))));
+  return (
+    <aside className="w-64 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ borderTop: '3px solid #003057' }}>
+      <div className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100 flex-shrink-0">품목별 수량</div>
+      <div className={`flex-1 min-h-0 grid grid-cols-2 content-start gap-x-1 p-1.5 ${availHeight === undefined ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+        {panelColumns.map((product) => (
+          <div
+            key={product.key}
+            className={`flex items-center justify-between gap-1 px-1.5 rounded border mb-px overflow-hidden ${longNames.has(product.key) ? 'col-span-2' : ''}`}
+            style={{ ...chipStyle(product.productName), height: itemHeight - 1, fontSize: Math.min(12, itemHeight - 6) }}
+          >
+            <span className="font-bold truncate leading-none">{product.label}</span>
+            <span className="font-black shrink-0 leading-none">
+              {product.total}{product.unit}
+              {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
 // 같은 고객사가 1차·2차에 모두 있을 때만 업체명 앞에 붙는 작은 배지 — 행 높이를 키우지 않도록 업체명 줄 안에 인라인으로 흐른다.
 function RoundBadge({ round }: { round: OrderRound }) {
   return (
@@ -639,7 +701,12 @@ export function DashboardClient({
   const mainRows = allRows.filter((r) => !separateNames.has(r.terminal));
   const rows = mainRows;
   const [separateOpen, setSeparateOpen] = useState(false);
-  const columns = getProductSummary(items);
+  // 품목별 수량은 일반 주문과 별도 주문(택배·직배송 등)을 나눠 센다 — 기본 화면에는 일반 주문 상품만, 별도 주문 상품은 팝업에서 본다.
+  const separateDailyIds = new Set(separateRows.map((r) => r.dailyBusinessId));
+  const mainItems = items.filter((i) => !separateDailyIds.has(i.dailyBusinessId));
+  const separateItems = items.filter((i) => separateDailyIds.has(i.dailyBusinessId));
+  const columns = getProductSummary(mainItems);
+  const separateColumns = getProductSummary(separateItems);
   // 터미널별 박스는 기본 주문표 기준이다 — 별도 주문 터미널은 "별도 주문" 팝업에서 따로 본다.
   const terminalBoxTotals = getTerminalBoxTotals(mainRows);
 
@@ -774,7 +841,8 @@ export function DashboardClient({
   const hlColor = new Map(hlList.map((name, i) => [name, HIGHLIGHT_COLORS[i % HIGHLIGHT_COLORS.length]]));
   const hlProducts = (() => {
     const counts = new Map<string, number>();
-    for (const i of items) counts.set(i.productName, (counts.get(i.productName) ?? 0) + 1);
+    // 강조 색은 일반 주문 표에만 적용되므로 일반 주문 상품만 고르게 한다.
+    for (const i of mainItems) counts.set(i.productName, (counts.get(i.productName) ?? 0) + 1);
     return [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ko'));
   })();
   const toggleHl = (name: string, on: boolean) =>
@@ -830,7 +898,7 @@ export function DashboardClient({
     const c = resolveColors(productColors[name]?.fill, productColors[name]?.border);
     return { backgroundColor: c.fill, borderColor: c.border, color: c.text };
   };
-  const productChips = columns.map((product) => (
+  const renderChips = (list: typeof columns) => list.map((product) => (
     <div
       key={product.key}
       className="flex items-center gap-1.5 border rounded-lg px-3 py-1.5"
@@ -841,6 +909,7 @@ export function DashboardClient({
       {product.unshipped > 0 && <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded px-1">미출고 {product.unshipped}</span>}
     </div>
   ));
+  const productChips = renderChips(columns);
   const [summaryCollapsed, setSummaryCollapsed] = useSummaryCollapsed();
   // 접기 버튼은 카드 아래 가장자리 오른쪽에 반쯤 걸쳐 두어(엑셀의 그룹 접기 단추처럼) 자리를 따로 차지하지 않는다.
   const summaryCard = (
@@ -871,55 +940,7 @@ export function DashboardClient({
     </div>
   );
 
-  // 세로 패널은 2열인데, 칸 하나에 이름+수량이 안 들어가는 긴 이름(말줄임이 생길 품목)은 한 줄 전체를
-  // 쓰게 하고 맨 뒤로 보낸다 — 이름이 잘리면 현장에서 어떤 품목인지 알 수 없다. 칸 폭은 w-64(256) − 패널
-  // 여백(12) → 2열 사이 간격(4)을 뺀 열당 약 120px, 칩 안쪽 여백(12)을 뺀 약 108px이다.
-  const [longNames, setLongNames] = useState<Set<string>>(new Set());
-  useLayoutEffect(() => {
-    const measure = () => {
-      const ctx = document.createElement('canvas').getContext('2d');
-      if (!ctx) return;
-      const family = getComputedStyle(document.body).fontFamily;
-      const width = (text: string, weight: number) => {
-        ctx.font = `${weight} 12px ${family}`;
-        return ctx.measureText(text).width;
-      };
-      const available = 108 - 4; // 이름과 수량 사이 간격(gap-1)
-      setLongNames(new Set(columns.filter((c) => width(c.label, 700) + width(`${c.total}${c.unit}${c.unshipped > 0 ? ` (미출고 ${c.unshipped})` : ''}`, 900) > available).map((c) => c.key)));
-    };
-    measure();
-    // 웹폰트가 늦게 로드되면 폭이 달라지므로 로드 후 한 번 더 잰다.
-    void document.fonts?.ready.then(measure);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
-  const panelColumns = [...columns.filter((c) => !longNames.has(c.key)), ...columns.filter((c) => longNames.has(c.key))];
-  const shortCount = columns.length - longNames.size;
-
-  // 세로 패널: 품목이 늘어도 스크롤이 생기지 않게 2열 그리드의 줄 높이·글자 크기를 패널 높이에 맞춰 줄인다.
-  const panelItemHeight = Math.min(
-    26,
-    Math.max(14, Math.floor((Math.max(availHeight, 300) - 8) / Math.max(1, Math.ceil(shortCount / 2) + longNames.size))),
-  );
-  const productPanel = (
-    <aside className="w-64 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ borderTop: '3px solid #003057' }}>
-      <div className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100 flex-shrink-0">품목별 수량</div>
-      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-2 content-start gap-x-1 p-1.5">
-        {panelColumns.map((product) => (
-          <div
-            key={product.key}
-            className={`flex items-center justify-between gap-1 px-1.5 rounded border mb-px overflow-hidden ${longNames.has(product.key) ? 'col-span-2' : ''}`}
-            style={{ ...chipStyle(product.productName), height: panelItemHeight - 1, fontSize: Math.min(12, panelItemHeight - 6) }}
-          >
-            <span className="font-bold truncate leading-none">{product.label}</span>
-            <span className="font-black shrink-0 leading-none">
-              {product.total}{product.unit}
-              {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
-            </span>
-          </div>
-        ))}
-      </div>
-    </aside>
-  );
+  const productPanel = <ProductSummaryPanel columns={columns} chipStyle={chipStyle} availHeight={availHeight} />;
 
   return (
     // 대시보드 페이지의 여백 자체는 dashboard-shell.tsx의 .main-content-tight가 담당한다
@@ -1300,12 +1321,13 @@ export function DashboardClient({
 
       {separateOpen && (
         <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4" onClick={() => setSeparateOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[88vh] flex flex-col border border-slate-200" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[88vh] flex flex-col border border-slate-200" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl flex-shrink-0" style={{ backgroundColor: '#003057' }}>
               <h3 className="text-sm font-bold text-white tracking-wide">별도 주문 ({separateRows.length}) — {[...separateNames].join(', ')}</h3>
               <button onClick={() => setSeparateOpen(false)} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
             </div>
-            <div className="overflow-y-auto p-4 flex flex-col gap-2">
+            <div className="flex-1 min-h-0 flex gap-3 p-4">
+            <div className="flex-1 min-w-0 overflow-y-auto flex flex-col gap-2">
               {separateRows.length === 0 && (
                 <p className="text-sm text-slate-400 text-center py-10">별도 주문이 없습니다. 터미널 관리에서 &apos;별도 주문&apos;으로 지정한 터미널의 주문이 여기에 모입니다.</p>
               )}
@@ -1366,6 +1388,8 @@ export function DashboardClient({
                   </div>
                 );
               })}
+            </div>
+            {separateColumns.length > 0 && <ProductSummaryPanel columns={separateColumns} chipStyle={chipStyle} />}
             </div>
           </div>
         </div>
