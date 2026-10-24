@@ -30,6 +30,8 @@ export interface OrderRow {
   totalBoxes: number;
   // 주문 입력의 "#메모" — 포장 담당에게 전하는 자유 메모
   memo: string | null;
+  // 박스 구성을 정한 뒤 주문이 바뀌어 박스를 다시 확인해야 한다 (박스 기록의 추천·제출 기준)
+  packingChanged?: boolean;
 }
 
 export interface OrderItem {

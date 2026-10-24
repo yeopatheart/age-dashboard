@@ -4,12 +4,16 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import { editableDateError } from '@/lib/order-date';
+import { assignToBoxes, trainModel, type PackingItem } from '@/lib/packing/model';
+import { compareWithRecommendation, getTodayModel, orderSignature } from '@/lib/packing/server';
 
 export interface PackingSubmission {
   dailyBusinessId: string;
   boxes: { boxId: string; items: { orderItemId: string; quantity: number }[] }[];
   // 선택 입력: 상품별 실측 중량(kg). 값이 없으면(null) 건드리지 않는다.
   weights: Record<string, number | null>;
+  // 상품 배치를 사람이 직접 확인했는지(상세 수정). 박스가 1개면 배치가 자명하므로 항상 확인된 것으로 저장한다.
+  itemsVerified: boolean;
 }
 
 const EPSILON = 0.0001;
@@ -75,6 +79,28 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   ]);
   const needsMulbong = new Map((products ?? []).map((p) => [p.name, p.needs_mulbong]));
 
+  // 박스 추천 shadow test: 제출 시점의 주문 내용에 대한 추천과 현장 결과를 비교해 함께 남긴다.
+  const signature = orderSignature(
+    liveItems.map((i) => ({
+      id: i.id,
+      name: i.product_name_raw,
+      unit: i.unit,
+      quantity: i.quantity,
+      mulbongFlag: i.is_mulbong || (needsMulbong.get(i.product_name_raw) ?? false),
+    })),
+  );
+  const comparison = await compareWithRecommendation(
+    supabase,
+    daily.id,
+    signature,
+    input.boxes.map((box) => ({
+      boxId: box.boxId,
+      boxName: boxById.get(box.boxId)!.name,
+      isMulbongBox: boxById.get(box.boxId)!.is_mulbong_box,
+      items: box.items.map((it) => ({ orderItemId: it.orderItemId, quantity: it.quantity })),
+    })),
+  );
+
   // 이전 제출 기록은 지우고 새로 만든다(하위 박스·상품은 cascade로 함께 삭제).
   await supabase.from('packing_records').delete().eq('daily_business_id', daily.id);
 
@@ -86,6 +112,9 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
       business_name: business?.name ?? '',
       terminal_name: terminal?.name ?? null,
       submitted_by: userId,
+      order_signature: signature,
+      items_verified: input.boxes.length === 1 || input.itemsVerified,
+      ...comparison,
     })
     .select('id')
     .single();
@@ -144,6 +173,60 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
 
   revalidatePath('/packing-log');
   return { error: null };
+}
+
+function todayKST() {
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+}
+
+// 수정 중인 박스 구성(박스 종류 목록)에 상품을 모델 규칙으로 자동으로 나눠 담은 결과를 돌려준다. 저장은 하지 않는다.
+// 반환 순서는 입력 boxIds 순서와 같다.
+export async function assignItemsToBoxes(input: {
+  dailyBusinessId: string;
+  boxIds: string[];
+}): Promise<{ error: string | null; boxes: { items: { orderItemId: string; quantity: number }[] }[] }> {
+  const fail = (error: string) => ({ error, boxes: [] });
+  if (input.boxIds.length === 0 || input.boxIds.length > 60) return fail('박스 개수가 올바르지 않습니다.');
+
+  const supabase = await createClient();
+  const [{ data: items }, { data: boxRows }] = await Promise.all([
+    supabase
+      .from('order_items')
+      .select('id, product_name_raw, unit, quantity, is_mulbong, change_status, unshipped_quantity')
+      .eq('daily_business_id', input.dailyBusinessId),
+    supabase.from('boxes').select('id, name, is_mulbong_box').in('id', [...new Set(input.boxIds)]),
+  ]);
+  const boxById = new Map((boxRows ?? []).map((b) => [b.id, b]));
+  const chosen = input.boxIds.map((id) => boxById.get(id));
+  if (chosen.some((b) => !b)) return fail('존재하지 않는 박스가 포함돼 있습니다.');
+
+  const liveItems = (items ?? [])
+    .filter((i) => i.change_status !== 'cancelled')
+    .map((i) => ({ ...i, quantity: Number(i.quantity) - Number(i.unshipped_quantity ?? 0) }))
+    .filter((i) => i.quantity > EPSILON);
+  const { data: products } = await supabase
+    .from('products')
+    .select('name, needs_mulbong')
+    .in('name', [...new Set(liveItems.map((i) => i.product_name_raw))]);
+  const needsMulbong = new Map((products ?? []).map((p) => [p.name, p.needs_mulbong]));
+  const packingItems: PackingItem[] = liveItems.map((i) => ({
+    name: i.product_name_raw,
+    unit: i.unit,
+    quantity: i.quantity,
+    mulbongFlag: i.is_mulbong || (needsMulbong.get(i.product_name_raw) ?? false),
+  }));
+
+  // 모델을 못 불러와도(저장 실패 등) 기본 규칙으로 배정할 수 있게 빈 모델로 대신한다.
+  const model = (await getTodayModel(supabase, todayKST())) ?? trainModel([], { version: 'fallback', trainedAt: new Date().toISOString() });
+  const assigned = assignToBoxes(
+    model,
+    packingItems,
+    chosen.map((b) => ({ boxName: b!.name, isMulbongBox: b!.is_mulbong_box })),
+  );
+  return {
+    error: null,
+    boxes: assigned.map((a) => ({ items: a.items.map((it) => ({ orderItemId: liveItems[it.index].id, quantity: it.quantity })) })),
+  };
 }
 
 export async function deletePackingRecord(dailyBusinessId: string): Promise<{ error: string | null }> {

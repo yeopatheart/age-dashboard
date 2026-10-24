@@ -126,6 +126,34 @@ type PackingRecord = {
   terminal_name: string | null;
   submitted_by: string | null;
   submitted_at: string;
+  // 추천 shadow test(0027): 제출 시점의 추천과 현장 결과의 비교
+  recommendation_id: string | null;
+  recommended_rank: number | null;
+  accepted_as_is: boolean | null;
+  order_signature: string | null;
+  // 상품 배치를 사람이 확인했는지(0028). null = 이전 기록
+  items_verified: boolean | null;
+};
+
+// 박스 추천 모델 버전(0027). model은 src/lib/packing/model.ts의 PackingModel을 JSON으로 저장한 것.
+type PackingModelVersion = {
+  version: string;
+  trained_at: string;
+  record_count: number;
+  single_box_count: number;
+  model: unknown;
+};
+
+// 업체·일자별 박스 추천 스냅샷(0027). candidates의 모양은 src/lib/packing/server.ts의 StoredPlan[].
+type PackingRecommendation = {
+  id: string;
+  daily_business_id: string;
+  model_version: string;
+  order_signature: string;
+  confidence: "high" | "medium" | "low";
+  confidence_score: number;
+  candidates: unknown;
+  created_at: string;
 };
 
 type PackingBox = {
@@ -356,7 +384,23 @@ export type Database = {
           terminal_name?: string | null;
           submitted_by?: string | null;
           submitted_at?: string;
+          recommendation_id?: string | null;
+          recommended_rank?: number | null;
+          accepted_as_is?: boolean | null;
+          order_signature?: string | null;
+          items_verified?: boolean | null;
         }
+      >;
+      packing_model_versions: TableDef<
+        PackingModelVersion,
+        Pick<PackingModelVersion, "version" | "record_count" | "single_box_count" | "model"> & { trained_at?: string }
+      >;
+      packing_recommendations: TableDef<
+        PackingRecommendation,
+        Pick<
+          PackingRecommendation,
+          "daily_business_id" | "model_version" | "order_signature" | "confidence" | "confidence_score" | "candidates"
+        > & { id?: string; created_at?: string }
       >;
       packing_boxes: TableDef<
         PackingBox,

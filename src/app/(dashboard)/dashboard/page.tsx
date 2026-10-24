@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import type { OrderItem, OrderRow } from '@/lib/orders';
+import { findChangedAfterPacking } from '@/lib/packing/server';
 import { DashboardClient } from './dashboard-client';
 
 function todayKST() {
@@ -72,6 +73,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     dailyBusinessIds.length > 0
       ? await supabase.from('order_items').select('*').in('daily_business_id', dailyBusinessIds)
       : { data: [] };
+
+  // 박스 구성을 정한 뒤 주문이 바뀐 업체에는 이름 옆에 작은 "박스" 배지를 단다(박스 상세는 박스 기록 화면에서 본다).
+  const changedAfterPacking = await findChangedAfterPacking(
+    supabase,
+    dailyBusinessIds.map((id) => ({
+      dailyBusinessId: id,
+      items: (orderItemRows ?? [])
+        .filter((r) => r.daily_business_id === id && r.change_status !== 'cancelled' && Number(r.quantity) - Number(r.unshipped_quantity ?? 0) > 0)
+        .map((r) => ({ id: r.id, name: r.product_name_raw, unit: r.unit, quantity: Number(r.quantity) - Number(r.unshipped_quantity ?? 0), mulbongFlag: r.is_mulbong })),
+    })),
+  );
+  for (const row of rows) row.packingChanged = changedAfterPacking.has(row.dailyBusinessId);
 
   const rowByDailyBusinessId = new Map(rows.map((r) => [r.dailyBusinessId, r]));
 

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "packing:backtest": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/packing-backtest.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
