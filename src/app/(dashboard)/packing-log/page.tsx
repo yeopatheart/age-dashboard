@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
+import { ensureRecommendations, getTodayModel, orderSignature, type LiveOrderItem, type RecommendationState } from '@/lib/packing/server';
 import { PackingLogClient, type PackingBusiness } from './packing-log-client';
 
 function todayKST() {
@@ -29,7 +30,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
       dailyIds.length
         ? supabase
             .from('order_items')
-            .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, measured_weight_kg, secondary_weight_kg, size_request, change_status, unshipped_quantity')
+            .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, measured_weight_kg, secondary_weight_kg, size_request, change_status, unshipped_quantity, is_mulbong')
             .in('daily_business_id', dailyIds)
             .order('product_sequence')
         : Promise.resolve({ data: [] }),
@@ -38,7 +39,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
         .select('id, name, is_active, inner_width_cm, inner_depth_cm, inner_height_cm, is_mulbong_box')
         .order('name'),
       dailyIds.length
-        ? supabase.from('packing_records').select('id, daily_business_id, submitted_at').in('daily_business_id', dailyIds)
+        ? supabase.from('packing_records').select('id, daily_business_id, submitted_at, order_signature').in('daily_business_id', dailyIds)
         : Promise.resolve({ data: [], error: null }),
       supabase.from('products').select('name, needs_mulbong'),
     ]);
@@ -58,6 +59,28 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
   const terminalById = new Map((terminals ?? []).map((t) => [t.id, t.name]));
   const needsMulbong = new Map((products ?? []).map((p) => [p.name, p.needs_mulbong]));
   const recordByDaily = new Map((records ?? []).map((r) => [r.daily_business_id, r]));
+
+  // 박스 추천: 미제출 업체의 현재 주문에 대한 추천이 없으면 오늘 모델로 만들어 저장한다.
+  const boxByName = new Map((boxes ?? []).map((b) => [b.name, { id: b.id, name: b.name, is_mulbong_box: b.is_mulbong_box }]));
+  const liveItemsOf = (dailyId: string): LiveOrderItem[] =>
+    (items ?? [])
+      .filter((i) => i.daily_business_id === dailyId && i.change_status !== 'cancelled' && Number(i.quantity) - Number(i.unshipped_quantity ?? 0) > 0)
+      .map((i) => ({
+        id: i.id,
+        name: i.product_name_raw,
+        unit: i.unit,
+        quantity: Number(i.quantity) - Number(i.unshipped_quantity ?? 0),
+        mulbongFlag: i.is_mulbong || (needsMulbong.get(i.product_name_raw) ?? false),
+      }));
+  const model = dailyRows.length ? await getTodayModel(supabase, todayKST()) : null;
+  const recommendations = model
+    ? await ensureRecommendations(
+        supabase,
+        model,
+        dailyRows.map((d) => ({ dailyBusinessId: d.id, items: liveItemsOf(d.id), submitted: recordByDaily.has(d.id) })),
+        boxByName,
+      )
+    : new Map<string, RecommendationState>();
 
   const splitBusinessIds = businessIdsInBothRounds(dailyRows.map((d) => ({ businessId: d.business_id, round: d.round })));
   const rows: PackingBusiness[] = dailyRows.map((d) => {
@@ -82,6 +105,11 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
           sizeRequest: i.size_request,
           needsMulbong: needsMulbong.get(i.product_name_raw) ?? false,
         })),
+      recommendation: recommendations.get(d.id)?.current ?? null,
+      // 미제출: 추천을 만든 뒤 주문이 바뀜 / 제출: 제출한 뒤 주문이 바뀜 → 박스를 다시 확인해야 한다
+      orderChanged: record
+        ? !!record.order_signature && record.order_signature !== orderSignature(liveItemsOf(d.id))
+        : recommendations.get(d.id)?.orderChanged ?? false,
       submitted: record
         ? {
             submittedAt: record.submitted_at,
