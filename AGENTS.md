@@ -15,6 +15,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ## 명령 (직접 실행해서 동작 확인한 것만 적는다)
 - 개발: `npm run dev`
 - 테스트: (v1은 자동 테스트 없음 — 수동 브라우저 테스트로 검증)
+- 박스 추천 백테스트: `npm run packing:backtest` (`.local-data/packing_export.csv` 필요 — 업체명이 들어 있어 커밋하지 않는다. 내보내는 쿼리는 docs/decisions/2026-10-24-box-recommendation-v1.md 참고)
 - 린트: `npm run lint` (기존 스캐폴드에 이미 있던 이슈 2건은 별도 — 아래 "알려진 이슈" 참고)
 - 타입 체크: `npx tsc --noEmit`
 - 빌드: `npm run build`
@@ -29,7 +30,7 @@ Prisma를 의도적으로 뺀다: 인증(Auth)이 어차피 Supabase Auth 몫이
 - **신규/업데이트 구분**: 붙여넣은 카카오 메시지의 각 줄을 오늘자 기존 주문의 업체명과 자동 대조해서 신규/업데이트를 제안하고, 사람이 확인 화면에서 줄 단위로 확정한다. 메시지 텍스트 자체에 의존하지 않는다.
 - **아크릴 카드**: 작업자가 실측 중량/사이즈를 적어두는 재사용 가능한 write-erase 카드. "업체번호-상품순서 코드 + 실측값"만 적는다. TV 화면에는 붙이지 않고 별도 트레이에 모아 일괄 촬영 → OCR로 반영.
 - **섀도우 모드**: 1차 버전을 실제 운영 전환 전에 어머니의 기존 화이트보드/형의 엑셀 기록과 병행 운영하며 정확도를 측정하는 기간. 형이 기존에 정리해온 엑셀 기록을 그대로 비교 기준(ground truth)으로 쓴다.
-- **박스 포장 추천**: 기존 엑셀/장부·화이트보드 사진 기반 학습 데이터 + 어머니 인터뷰로 뽑은 판단 규칙을 병행 반영. 구체 알고리즘은 실제 엑셀 데이터 확인 후 설계(아직 미정 — 지어내지 않는다).
+- **박스 포장 추천**: 박스 기록(`packing_records`)을 집계한 규칙+사례 모델(`src/lib/packing/model.ts`, v1). 1박스 기록은 상품 배치까지 정확해 학습에 쓰고, 2박스 이상 기록은 박스 종류·개수만 믿는다. 그날 첫 접속 시 자동 재학습하고, 추천은 shadow test로 현장 결과와 비교한다. 설계·정확도는 docs/decisions/2026-10-24-box-recommendation-v1.md.
 
 ## 코드 규칙
 - `any` 금지. 모르면 `unknown` 후 좁힌다.

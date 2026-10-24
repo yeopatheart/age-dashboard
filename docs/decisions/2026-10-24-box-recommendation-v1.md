@@ -1,0 +1,54 @@
+# 박스 추천 v1 — 설계 결정과 백테스트 (2026-10-24)
+
+## 데이터 (10/19~10/24, 6일)
+- 박스 기록 226건 / 업체 110곳. 1박스 160건(상품 배치 정확), 2박스 49건, 3박스 11건, 4박스 6건.
+- `measured_weight_kg`, `secondary_weight_kg`는 전부 null → 모델은 상품명·단위(미/kg)·수량만 쓴다.
+- 1박스 기록 박스 분포: 각굴 37, 10K 35, 장어박스 33, 선어박스 32, 물봉 21, 15K 2.
+
+## 결정
+1. **학습 데이터 신뢰도 2등급**: 1박스 기록 = 사례(kNN)·용량 추정에 사용. 2박스 이상 = 박스 종류·개수만 믿고 물봉 개수·분할 파라미터 추정에만 사용(상품 배치는 학습에서 제외).
+2. **모델은 규칙 + 사례 기반**(`src/lib/packing/model.ts`, 순수 함수). 1주일치로는 일반 ML이 맞지 않는다. 물봉 표시 상품은 물봉 박스로(박스 개수는 용량으로), 나머지 상품은 비슷한 과거 1박스 주문으로 박스 종류 후보 3개를 순위화, 많으면 용량 기준으로 분할.
+3. **자동 학습 = 그날 첫 접속 시 재학습**(`getTodayModel`). 처음 계획한 "새벽 cron"을 쓰지 않은 이유: service_role 키(서버 비밀)를 새로 들이지 않고도 되고, 학습이 수십 ms라 접속을 느리게 하지 않는다. 오늘 이전의 제출 기록만으로 학습해 하루 동안 추천이 흔들리지 않는다(버전 `v-YYYY-MM-DD`). 기록이 수만 건으로 커지면 cron으로 옮긴다.
+4. **shadow test**: 추천은 미제출 업체에만, 만든 시점의 주문 지문(`order_signature`)과 함께 append-only로 저장(`packing_recommendations`). 제출 시 현장 결과와 비교해 `recommended_rank`, `accepted_as_is`를 기록. 정확도는 `/packing-log/accuracy`.
+5. **대시보드(TV)에는 박스 상세를 넣지 않는다**(고정 행 높이). 박스 구성을 정한 뒤 주문이 바뀐 업체에만 이름 옆 "박스" 배지. 상세는 박스 기록 화면.
+
+## 백테스트 (`npm run packing:backtest`, 1박스 160건 + 2박스 이상 66건)
+| 방식 | 구분 | 1순위 정확 | 후보 3 안 | 박스 개수 일치 |
+|---|---|---|---|---|
+| leave-one-day-out | 1박스 | 49% | 78% | 90% |
+| leave-one-day-out | 2박스 이상 | 21% | 38% | 53% |
+| forward(과거만) | 1박스 | 48% | 77% | 88% |
+| forward(과거만) | 2박스 이상 | 17% | 37% | 58% |
+
+- 신뢰도 high 구간의 1순위 정확은 약 52~57%, medium/low는 20%대. 신뢰도 표시는 의미가 있다.
+- 각굴·물봉은 잘 맞고, 10K·장어박스·선어박스는 서로 혼동된다(같은 상품이 섞이고 길이만 다름). 생선 크기 정보가 없는 것이 원인으로 추정된다(검증 안 됨).
+- 하이퍼파라미터(kNN k=8, 가중 지수 6)는 160건 기준으로 고른 값이라 데이터가 늘면 `npm run packing:backtest`로 다시 확인한다.
+
+## 알려진 한계 / 다음에 볼 것
+- 2박스 이상의 상품 배치는 정확한 정답 데이터가 없어 v1은 용량 기준 균등 분할이다.
+- `accepted_as_is`는 기록만 하고 v1 학습은 아직 가중치를 낮추지 않는다(순환 학습 방지는 shadow 기록이 쌓인 뒤 도입).
+- 중간 박스 3종을 현장에서 무엇으로 고르는지(크기·길이·재고·터미널 규정)는 인터뷰로 확인하지 못했다.
+
+## 백테스트용 데이터 내보내기
+Supabase SQL Editor에서 실행하고 CSV를 `.local-data/packing_export.csv`로 저장한다. SQL Editor는 `limit`이 없으면 100행에서 자르므로 `limit`을 꼭 붙인다.
+
+```sql
+select r.order_date, r.business_name, r.terminal_name,
+       (select count(*) from packing_boxes x where x.record_id = r.id) as n_boxes,
+       b.position, b.box_name, b.inner_width_cm, b.inner_depth_cm, b.inner_height_cm,
+       i.product_name, i.unit, i.quantity, i.secondary_weight_kg, i.size_request,
+       i.is_mulbong, i.needs_mulbong, oi.measured_weight_kg
+from packing_records r
+join packing_boxes b on b.record_id = r.id
+join packing_box_items i on i.packing_box_id = b.id
+left join order_items oi on oi.id = i.order_item_id
+order by r.order_date, r.business_name, b.position
+limit 100000;
+```
+
+## 추가 결정: 어머니용 한 화면 입력 (2026-10-24, 먼저 만든 "박스 개수만 고르는 간편 입력"을 대체)
+- 입력은 PC에서 어머니가 한다. 업체를 열면 **한 화면**에서: 추천 박스와 박스별 담길 상품이 보이고(1·2·3순위 탭으로 후보 전환), 화면 자체가 곧 작성본이라 별도의 "수정" 버튼이나 화면 전환이 없다. 맞으면 `맞아요. 제출할게요.`, 다르면 상품을 박스 사이로 끌어다 놓거나 박스를 추가·삭제·종류 변경하면 된다.
+- 수정하면 추천이 아니라 **직접 입력**으로 처리된다: 상단이 `직접 입력 · 추천 N순위에서 수정함`으로 바뀌고 버튼이 `이대로 제출할게요`가 된다. 수정 여부는 "추천 N순위의 원래 구성과 달라졌는지"로 판단하므로 원래대로 돌려놓으면 다시 추천 상태가 된다. 수정 중에는 순위 탭을 숨기고 `추천대로 되돌리기`만 둔다(작업한 내용이 실수로 사라지지 않게). 수정한 업체는 목록에 `수정 중` 표시가 뜬다. 제출한 업체도 같은 화면이며 수정하면 `수정한 내용으로 다시 제출`.
+- 수정 중 `상품 자동으로 다시 나눠 담기`(서버 `assignItemsToBoxes`, 저장 없음)로 박스를 바꾼 뒤 상품을 처음부터 옮기는 수고를 줄인다.
+- `packing_records.items_verified`(0028): 수정했고 상품을 직접 옮겼을 때(`modified && Draft.source === 'manual'`)와 박스가 1개일 때만 true. 추천을 그대로 제출하거나 자동 배정을 그대로 쓰면 false → 학습의 물봉 통계(`mulbongStats`)에서 제외해 자기 규칙을 다시 학습하는 순환을 막는다. 이전 기록(null)은 확인된 것으로 본다.
+- 추천을 미리 보여주는 방식 유지(사용자 결정). "맞아요"가 습관적으로 눌릴 위험이 있어 정확도 화면에서 `그대로 제출` 비율을 `1순위 일치`와 따로 본다.
