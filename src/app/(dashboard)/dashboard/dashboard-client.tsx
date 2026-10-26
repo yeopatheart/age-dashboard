@@ -777,6 +777,21 @@ export function DashboardClient({
       router.refresh();
     });
   };
+  // 별도 주문 팝업 안에서 순서를 바꾼다. 전체 순서에서 별도 주문 행이 차지한 자리만 새 순서로 채우고, 일반 주문 행은 제자리에 둔다.
+  const handleSeparateDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const from = separateRows.findIndex((r) => r.dailyBusinessId === active.id);
+    const to = separateRows.findIndex((r) => r.dailyBusinessId === over.id);
+    if (from < 0 || to < 0) return;
+    const movedSeparate = arrayMove(separateRows, from, to);
+    let separateCursor = 0;
+    const orderedIds = allRows.map((r) => (separateNames.has(r.terminal) ? movedSeparate[separateCursor++].dailyBusinessId : r.dailyBusinessId));
+    startReorder(async () => {
+      setOptimisticOrder(orderedIds);
+      await reorderDailyBusinesses(orderedIds);
+      router.refresh();
+    });
+  };
   const rowSlotCount = isSplitMode ? ownCapacity : displayedRows.length;
   // gridTemplateRows를 고정하지 않으면 내용이 긴 칸 하나가 행 전체를 키워서 행 높이 규칙이 깨진다.
   const rowStyle = { height: rowHeight, gridTemplateRows: `${rowHeight}px` };
@@ -1332,10 +1347,30 @@ export function DashboardClient({
               {separateRows.length === 0 && (
                 <p className="text-sm text-slate-400 text-center py-10">별도 주문이 없습니다. 터미널 관리에서 &apos;별도 주문&apos;으로 지정한 터미널의 주문이 여기에 모입니다.</p>
               )}
+              <DndContext id="separate-dnd" sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleSeparateDragEnd}>
+              <SortableContext items={separateRows.map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
               {separateRows.map((row) => {
                 const rowItems = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence);
                 return (
-                  <div key={row.dailyBusinessId} className="flex items-center gap-3 border border-slate-200 rounded-lg px-3 py-1.5 group">
+                  <SortableRow
+                    key={row.dailyBusinessId}
+                    id={row.dailyBusinessId}
+                    disabled={readOnly}
+                    className="flex items-center gap-3 border border-slate-200 rounded-lg px-3 py-1.5 group bg-white"
+                    style={{}}
+                  >
+                    {(handle) => (
+                    <>
+                    {handle && (
+                      <div
+                        ref={handle.ref}
+                        {...handle.props}
+                        className="flex-shrink-0 -ml-1 p-1 rounded cursor-grab active:cursor-grabbing touch-none select-none text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                        title="끌어서 순서 변경"
+                      >
+                        <GripVertical className="w-4 h-4" />
+                      </div>
+                    )}
                     <div className="w-72 flex-shrink-0 flex items-center gap-2">
                       <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
                       <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
@@ -1386,9 +1421,13 @@ export function DashboardClient({
                         </button>
                       )}
                     </div>
-                  </div>
+                    </>
+                    )}
+                  </SortableRow>
                 );
               })}
+              </SortableContext>
+              </DndContext>
             </div>
             {separateColumns.length > 0 && <ProductSummaryPanel columns={separateColumns} chipStyle={chipStyle} />}
             </div>
