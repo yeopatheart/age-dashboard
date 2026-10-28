@@ -50,6 +50,8 @@ export interface OrderItem {
   quantity: number;
   unit: string;
   secondaryWeightKg?: number;
+  // 박스 할당에서 입력한 실측 중량(kg). 정산용 엑셀의 세부내역에 쓴다.
+  measuredWeightKg?: number;
   sizeRequest?: string;
   isMulbong: boolean;
   isPacked: boolean;
