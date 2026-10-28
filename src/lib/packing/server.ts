@@ -118,7 +118,18 @@ export async function getTodayModel(supabase: Client, today: string): Promise<Pa
     .from('packing_model_versions')
     .upsert({ version, record_count: model.recordCount, single_box_count: model.singleBoxCount, model }, { onConflict: 'version', ignoreDuplicates: true });
   if (error) return null;
+  await pruneOldModels(supabase, today);
   return (await read()) ?? model;
+}
+
+// 모델은 학습 사례(cases)가 담겨 이력에 비례해 커지고 매일 새 행으로 쌓인다. 추천 기록은 model_version 이름만 참조하고
+// 오늘 이전 버전의 모델 내용은 다시 읽지 않으므로, 보관 기간(14일)이 지난 버전은 행(버전·학습 시각·건수)만 남기고 model을 비운다.
+// 새 모델을 저장한 직후 하루에 한 번만 실행되고, 실패해도 추천에는 영향이 없다.
+const MODEL_RETENTION_DAYS = 14;
+async function pruneOldModels(supabase: Client, today: string) {
+  const cutoff = new Date(Date.parse(today) - MODEL_RETENTION_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const { error } = await supabase.from('packing_model_versions').update({ model: null }).lt('version', `v-${cutoff}`).not('model', 'is', null);
+  if (error) console.error('오래된 모델 정리 실패:', error.message);
 }
 
 // ─── 추천 스냅샷 ────────────────────────────────────────────────────────────
