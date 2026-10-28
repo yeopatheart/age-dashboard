@@ -108,11 +108,9 @@ type OrderItem = {
   has_ice_pack: boolean;
   from_stock: boolean;
   change_status: ChangeStatus;
-  measured_value: string | null;
   measured_weight_kg: number | null;
   is_packed: boolean;
   packed_at: string | null;
-  box_result: string | null;
   // 미출고(0021): 주문은 유효하지만 출고하지 못한 수량. 0이면 정상. 주문취소(change_status)와 별개.
   unshipped_quantity: number;
   unshipped_reason: string | null;
@@ -225,31 +223,6 @@ type KakaoMessageLog = {
   created_at: string;
 };
 
-type CardPhotoStatus = "pending" | "done";
-
-type CardPhoto = {
-  id: string;
-  order_date: string;
-  storage_path: string;
-  status: CardPhotoStatus;
-  taken_by: string | null;
-  taken_at: string;
-};
-
-type MatchStatus = "matched" | "unmatched" | "ambiguous" | "needs_review";
-
-type CardReading = {
-  id: string;
-  card_photo_id: string;
-  raw_code: string | null;
-  raw_value: string | null;
-  business_number: number | null;
-  product_sequence: number | null;
-  matched_order_item_id: string | null;
-  match_status: MatchStatus;
-  created_at: string;
-};
-
 // 박스 포장 추천 알고리즘은 아직 없다 — 우선 실측 치수를 등록하는 참조 테이블(0011)
 type Box = {
   id: string;
@@ -346,11 +319,9 @@ export type Database = {
           has_ice_pack?: boolean;
           from_stock?: boolean;
           change_status?: ChangeStatus;
-          measured_value?: string | null;
           measured_weight_kg?: number | null;
           is_packed?: boolean;
           packed_at?: string | null;
-          box_result?: string | null;
           unshipped_quantity?: number;
           unshipped_reason?: string | null;
           size_spec?: SizeSpec | null;
@@ -367,28 +338,6 @@ export type Database = {
           id?: string;
           round?: 1 | 2;
           created_by?: string | null;
-          created_at?: string;
-        }
-      >;
-      card_photos: TableDef<
-        CardPhoto,
-        Pick<CardPhoto, "order_date" | "storage_path"> & {
-          id?: string;
-          status?: CardPhotoStatus;
-          taken_by?: string | null;
-          taken_at?: string;
-        }
-      >;
-      card_readings: TableDef<
-        CardReading,
-        Pick<CardReading, "card_photo_id"> & {
-          id?: string;
-          raw_code?: string | null;
-          raw_value?: string | null;
-          business_number?: number | null;
-          product_sequence?: number | null;
-          matched_order_item_id?: string | null;
-          match_status?: MatchStatus;
           created_at?: string;
         }
       >;
