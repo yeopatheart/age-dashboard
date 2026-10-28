@@ -3,6 +3,7 @@ import { loadAppSettings } from '@/lib/settings-server';
 import type { OrderItem, OrderRow } from '@/lib/orders';
 import { findChangedAfterPacking } from '@/lib/packing/server';
 import { DashboardClient } from './dashboard-client';
+import { requireMenu } from '@/lib/permissions/access';
 
 function todayKST() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
@@ -15,6 +16,7 @@ function todayKST() {
 // 행(row)은 order_item이 아니라 daily_business 기준으로 만든다 — "새 주문 추가"로 방금 만든,
 // 아직 상품이 하나도 없는 업체도 매트릭스에 빈 줄로 보여야 하기 때문이다.
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
+  await requireMenu('dashboard');
   const supabase = await createClient();
   const today = todayKST();
   // ?date=YYYY-MM-DD로 과거 날짜를 조회한다. 형식이 틀리거나 미래면 오늘로 본다.

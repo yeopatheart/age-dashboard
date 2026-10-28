@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { BusinessesClient } from './businesses-client';
+import { requireMenu } from '@/lib/permissions/access';
 
 export default async function BusinessesPage() {
+  await requireMenu('businesses');
   const supabase = await createClient();
   const [{ data: businesses, error: businessError }, { data: terminals }] = await Promise.all([
     supabase.from('businesses').select('id, name, terminal_id, notes, created_at, created_via, business_registration_no, representative_name').order('name'),

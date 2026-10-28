@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { isValidBoxBarcode } from '@/lib/labels/barcode';
+import { requirePermission } from '@/lib/permissions/access';
 
 // 스캔 결과 화면에 보여줄 박스 정보
 export interface ScannedBox {
@@ -45,6 +46,7 @@ async function describe(supabase: Awaited<ReturnType<typeof createClient>>, labe
 
 // 바코드를 스캔해서 상차 완료로 처리한다. 같은 박스를 다시 스캔하면 상태를 바꾸지 않고 "이미 상차됨"으로 알려준다.
 export async function scanBarcode(raw: string): Promise<ScanResult> {
+  await requirePermission('scan:scan');
   const code = raw.replace(/\s+/g, '');
   if (!isValidBoxBarcode(code)) return { status: 'invalid', message: `우리 라벨 바코드가 아닙니다 (${code.slice(0, 20) || '빈 값'})` };
 
@@ -70,6 +72,7 @@ export async function scanBarcode(raw: string): Promise<ScanResult> {
 
 // 잘못 스캔한 박스를 상차 전 상태로 되돌린다.
 export async function undoScan(labelId: string): Promise<{ error: string | null }> {
+  await requirePermission('scan:undo');
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const { error } = await supabase.from('box_labels').update({ loaded_at: null, loaded_by: null }).eq('id', labelId);

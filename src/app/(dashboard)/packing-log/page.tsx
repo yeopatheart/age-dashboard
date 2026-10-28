@@ -3,12 +3,14 @@ import { loadAppSettings } from '@/lib/settings-server';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { ensureRecommendations, getTodayModel, orderSignature, type LiveOrderItem, type RecommendationState } from '@/lib/packing/server';
 import { PackingLogClient, type PackingBusiness } from './packing-log-client';
+import { requireMenu } from '@/lib/permissions/access';
 
 function todayKST() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 }
 
 export default async function PackingLogPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
+  await requireMenu('packing');
   const { date } = await searchParams;
   const today = todayKST();
   const orderDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today ? date : today;

@@ -5,9 +5,11 @@ import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import { mergeSettings, type AppSettings } from '@/lib/app-settings';
 import { parseSizeSpec } from '@/lib/size-spec';
+import { requirePermission } from '@/lib/permissions/access';
 
 // 설정 저장. 값은 서버에서 한 번 더 검증(범위를 벗어나면 기본값)한 뒤 키마다 한 행씩 저장한다.
 export async function saveSettings(input: AppSettings): Promise<{ error: string | null; settings: AppSettings }> {
+  await requirePermission('settings:edit');
   const supabase = await createClient();
   const settings = mergeSettings(input as unknown as Record<string, unknown>);
   const rows = Object.entries(settings).map(([key, value]) => ({ key, value, updated_at: new Date().toISOString() }));
@@ -22,6 +24,7 @@ export async function saveSettings(input: AppSettings): Promise<{ error: string 
 // 요구사항 해석 값(size_spec)은 주문 저장 시점의 설정으로 계산해서 저장해 둔다. 설정(허용 오차 등)을 바꾼 뒤에
 // 이미 저장된 주문에도 새 설정을 적용하고 싶을 때 쓴다. 서로 다른 표기 문자열마다 한 번씩만 갱신한다.
 export async function reapplySizeSpecs(): Promise<{ error: string | null; updated: number }> {
+  await requirePermission('settings:edit');
   const supabase = await createClient();
   const settings = await loadAppSettings(supabase);
 

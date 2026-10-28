@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { requirePermission } from '@/lib/permissions/access';
 
 export interface BoxFields {
   name: string;
@@ -14,6 +15,7 @@ export interface BoxFields {
 }
 
 export async function createBox(fields: BoxFields): Promise<{ error: string | null }> {
+  await requirePermission('boxes:edit');
   const supabase = await createClient();
   const { error } = await supabase.from('boxes').insert({
     name: fields.name.trim(),
@@ -30,6 +32,7 @@ export async function createBox(fields: BoxFields): Promise<{ error: string | nu
 }
 
 export async function updateBox(id: string, fields: BoxFields): Promise<{ error: string | null }> {
+  await requirePermission('boxes:edit');
   const supabase = await createClient();
   const { error } = await supabase
     .from('boxes')
@@ -49,6 +52,7 @@ export async function updateBox(id: string, fields: BoxFields): Promise<{ error:
 }
 
 export async function setBoxActive(id: string, isActive: boolean): Promise<{ error: string | null }> {
+  await requirePermission('boxes:edit');
   const supabase = await createClient();
   const { error } = await supabase.from('boxes').update({ is_active: isActive }).eq('id', id);
   if (error) return { error: error.message };
@@ -57,6 +61,7 @@ export async function setBoxActive(id: string, isActive: boolean): Promise<{ err
 }
 
 export async function deleteBox(id: string): Promise<{ error: string | null }> {
+  await requirePermission('boxes:delete');
   const supabase = await createClient();
   const { error } = await supabase.from('boxes').delete().eq('id', id);
   if (error) return { error: error.message };

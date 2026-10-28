@@ -5,6 +5,7 @@ import { Sparkles, Loader2, AlertTriangle, History, ChevronDown, ChevronUp, Book
 import { MarkdownView } from '@/components/markdown-view';
 import { roundLabel, type OrderRound } from '@/lib/orders';
 import { editableDateError } from '@/lib/order-date';
+import { useCan } from '@/components/permissions-context';
 import {
   suggestOrderLines,
   commitOrderLines,
@@ -43,6 +44,7 @@ export function NewOrderClient({
   initialHistory: OrderHistoryEntry[];
   guideMarkdown: string;
 }) {
+  const canEdit = useCan()('orders:edit');
   const router = useRouter();
   // 설정에서 과거 날짜 편집을 켜면 입력할 날짜를 바꿀 수 있다(기본은 오늘, 미래는 항상 막는다).
   const [orderDate, setOrderDate] = useState(today);
@@ -231,7 +233,7 @@ export function NewOrderClient({
               onChange={(e) => setRawText(e.target.value)}
               rows={8}
             />
-            <button className="btn-primary analyze-btn" onClick={handleAnalyze} disabled={analyzing || !rawText.trim() || dateError !== null}>
+            <button className="btn-primary analyze-btn" onClick={handleAnalyze} disabled={!canEdit || analyzing || !rawText.trim() || dateError !== null}>
               {analyzing ? (
                 <span className="btn-loading">
                   <Loader2 size={16} className="spin" /> 미리보기 중...
@@ -267,7 +269,7 @@ export function NewOrderClient({
                       확인 필요만 보기
                     </button>
                   )}
-                  <button className="btn-primary confirm-btn" onClick={handleConfirm} disabled={committing || applicableCount === 0}>
+                  <button className="btn-primary confirm-btn" onClick={handleConfirm} disabled={!canEdit || committing || applicableCount === 0}>
                     {committing ? '확정 중...' : `확정 (${applicableCount}건)`}
                   </button>
                 </div>

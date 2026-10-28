@@ -30,7 +30,7 @@ export default function LoginPage() {
     }
 
     await logLoginEvent();
-    router.push('/dashboard');
+    router.push('/');
   };
 
   return (

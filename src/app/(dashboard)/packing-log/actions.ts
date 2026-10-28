@@ -6,6 +6,7 @@ import { loadAppSettings } from '@/lib/settings-server';
 import { editableDateError } from '@/lib/order-date';
 import { assignToBoxes, trainModel, type PackingItem } from '@/lib/packing/model';
 import { compareWithRecommendation, getTodayModel, orderSignature } from '@/lib/packing/server';
+import { requirePermission } from '@/lib/permissions/access';
 
 export interface PackingSubmission {
   dailyBusinessId: string;
@@ -22,6 +23,7 @@ const EPSILON = 0.0001;
 // 저장한다(이미 제출한 업체를 다시 제출하면 이전 기록을 대체한다). 박스·상품 정보는 이 시점 값을 복사해서
 // 남긴다 — 박스 추천 모델의 학습 데이터라서 나중에 주문이나 박스 정보가 바뀌어도 변하면 안 된다.
 export async function submitPacking(input: PackingSubmission): Promise<{ error: string | null }> {
+  await requirePermission('packing:submit');
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const userId = claims?.claims.sub ?? null;
@@ -190,6 +192,7 @@ export async function assignItemsToBoxes(input: {
   dailyBusinessId: string;
   boxIds: string[];
 }): Promise<{ error: string | null; boxes: { items: { orderItemId: string; quantity: number }[] }[] }> {
+  await requirePermission('packing:submit');
   const fail = (error: string) => ({ error, boxes: [] });
   if (input.boxIds.length === 0 || input.boxIds.length > 60) return fail('박스 개수가 올바르지 않습니다.');
 
@@ -235,6 +238,7 @@ export async function assignItemsToBoxes(input: {
 }
 
 export async function deletePackingRecord(dailyBusinessId: string): Promise<{ error: string | null }> {
+  await requirePermission('packing:delete');
   const supabase = await createClient();
   const { data: daily } = await supabase.from('daily_businesses').select('order_date').eq('id', dailyBusinessId).maybeSingle();
   if (daily) {

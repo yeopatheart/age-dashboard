@@ -56,7 +56,7 @@ export function ViaTag({ via, date }: { via: 'order' | 'manual'; date?: string }
   );
 }
 
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
     <button
       type="button"
@@ -64,6 +64,7 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
       aria-checked={checked}
       aria-label={label}
       className="ak-toggle"
+      disabled={disabled}
       onClick={(e) => {
         e.stopPropagation(); // 행 클릭(상세 패널 열기)과 겹치지 않게
         onChange(!checked);

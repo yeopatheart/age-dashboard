@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { ScanClient, type ScanCard } from './scan-client';
+import { requireMenu } from '@/lib/permissions/access';
 
 function todayKST() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
@@ -7,6 +8,7 @@ function todayKST() {
 
 // 상차 스캔 화면. 그날 발급된 박스 라벨을 업체 카드별·터미널별로 모아 "상차 몇 박스 / 전체 몇 박스"를 보여준다.
 export default async function ScanPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
+  await requireMenu('scan');
   const { date } = await searchParams;
   const today = todayKST();
   const orderDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today ? date : today;

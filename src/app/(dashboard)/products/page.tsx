@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { ProductsClient } from './products-client';
+import { requireMenu } from '@/lib/permissions/access';
 
 export default async function ProductsPage() {
+  await requireMenu('products');
   const supabase = await createClient();
   const { data: products, error } = await supabase
     .from('products')

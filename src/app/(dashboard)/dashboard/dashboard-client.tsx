@@ -7,6 +7,7 @@ import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, Chevr
 import { businessIdsInBothRounds, roundLabel, getProductSummary, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
+import { useCan } from '@/components/permissions-context';
 import {
   setProductHighlight,
   clearProductHighlights,
@@ -675,7 +676,10 @@ export function DashboardClient({
   // 과거 날짜는 기본적으로 조회 전용 — 실수로 지난 기록을 고치지 않게 편집 수단을 숨긴다.
   // 설정에서 "과거 날짜 편집"을 켜면 오늘과 똑같이 편집할 수 있다.
   const isPast = orderDate !== today;
-  const readOnly = isPast && !allowPast;
+  // 수정 권한이 없는 계정도 조회 전용이다. 삭제·취소는 별도 권한(dashboard:delete)이다.
+  const can = useCan();
+  const canDelete = can('dashboard:delete');
+  const readOnly = (isPast && !allowPast) || !can('dashboard:edit');
 
   const dashboardUrl = (mode: string, date: string) =>
     `/dashboard?monitor=${mode}${date === today ? '' : `&date=${date}`}`;
@@ -1261,13 +1265,13 @@ export function DashboardClient({
                       >
                         <Pencil className="w-2.5 h-2.5 text-slate-500 hover:text-white" />
                       </button>
-                      <button
+                      {canDelete && <button
                         onClick={() => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
                         className="w-5 h-5 rounded bg-rose-100 hover:bg-rose-500 flex items-center justify-center flex-shrink-0"
                         title="주문 삭제"
                       >
                         <Trash2 className="w-2.5 h-2.5 text-rose-500 hover:text-white" />
-                      </button>
+                      </button>}
                       </div>
                     </div>
                     <div className="border-r border-slate-100 px-2 bg-slate-50/60 flex items-center justify-center">
@@ -1367,18 +1371,18 @@ export function DashboardClient({
                                   title="미출고 처리 (주문은 유효, 출고만 못 함)"
                                 ><PackageX className="w-2.5 h-2.5" /></button>
                               )}
-                              {item.changeStatus !== 'cancelled' && (
+                              {canDelete && item.changeStatus !== 'cancelled' && (
                                 <button
                                   onClick={async (e) => { e.stopPropagation(); await cancelOrderItem(item.id); refresh(); }}
                                   className="w-4 h-4 rounded bg-amber-400 text-white flex items-center justify-center hover:bg-amber-500 transition-colors"
                                   title="주문 취소 (주문 자체가 없어짐)"
                                 ><X className="w-2.5 h-2.5" /></button>
                               )}
-                              <button
+                              {canDelete && <button
                                 onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: 'item', itemId: item.id }); }}
                                 className="w-4 h-4 rounded bg-rose-400 text-white flex items-center justify-center hover:bg-rose-600 transition-colors"
                                 title="삭제"
-                              ><Trash2 className="w-2.5 h-2.5" /></button>
+                              ><Trash2 className="w-2.5 h-2.5" /></button>}
                             </div>
                           </div>
                         </div>

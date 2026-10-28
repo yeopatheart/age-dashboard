@@ -4,8 +4,10 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { findOrCreateBusiness, findOrCreateDailyBusiness } from '@/lib/business-lookup';
 import type { ChangeStatus, OrderRound } from '@/lib/orders';
+import { requirePermission } from '@/lib/permissions/access';
 
 export async function togglePacked(orderItemId: string, nextPacked: boolean) {
+  await requirePermission('dashboard:edit');
   const supabase = await createClient();
   await supabase
     .from('order_items')
@@ -15,6 +17,7 @@ export async function togglePacked(orderItemId: string, nextPacked: boolean) {
 }
 
 export async function acknowledgeChange(orderItemId: string) {
+  await requirePermission('dashboard:edit');
   const supabase = await createClient();
   await supabase.from('order_items').update({ change_status: 'none' }).eq('id', orderItemId);
   revalidatePath('/dashboard');
@@ -28,6 +31,7 @@ export async function createManualOrder(
   businessName: string,
   terminalId: string | null,
 ): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
   const supabase = await createClient();
   const businessId = await findOrCreateBusiness(supabase, businessName, terminalId);
   if (!businessId) return { error: '업체를 생성하지 못했습니다.' };
@@ -41,6 +45,7 @@ export async function createManualOrder(
 
 // 드래그로 바꾼 표시 순서를 저장한다. orderedIds는 그 날짜 카드 전체를 새 순서대로 담아야 한다.
 export async function reorderDailyBusinesses(orderedIds: string[]): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
   const supabase = await createClient();
   const { error } = await supabase.rpc('reorder_daily_businesses', { p_ids: orderedIds });
   revalidatePath('/dashboard');
@@ -52,6 +57,7 @@ export async function reorderDailyBusinesses(orderedIds: string[]): Promise<{ er
 // 터미널은 그날 카드(daily_businesses)의 값이라 이 주문만 바뀌고, 업체의 기본 터미널과 다른 날짜는 그대로다.
 // 같은 날·차수·업체에 이미 그 터미널의 카드가 있으면 합칠 수 없어 오류를 돌려준다.
 export async function updateOrder(dailyBusinessId: string, businessName: string, terminalId: string | null): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
   const supabase = await createClient();
   const { data: daily } = await supabase
     .from('daily_businesses')
@@ -71,6 +77,7 @@ export async function updateOrder(dailyBusinessId: string, businessName: string,
 
 // order_items는 daily_businesses에 on delete cascade로 걸려있어(0003) 함께 삭제된다.
 export async function deleteDailyBusiness(dailyBusinessId: string) {
+  await requirePermission('dashboard:delete');
   const supabase = await createClient();
   await supabase.from('daily_businesses').delete().eq('id', dailyBusinessId);
   revalidatePath('/dashboard');
@@ -86,6 +93,7 @@ export interface ManualItemFields {
 }
 
 export async function addOrderItemManual(dailyBusinessId: string, fields: ManualItemFields) {
+  await requirePermission('dashboard:edit');
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   const userId = claims?.claims.sub ?? null;
@@ -109,6 +117,7 @@ export async function addOrderItemManual(dailyBusinessId: string, fields: Manual
 }
 
 export async function updateOrderItemManual(orderItemId: string, fields: ManualItemFields) {
+  await requirePermission('dashboard:edit');
   const supabase = await createClient();
   await supabase
     .from('order_items')
@@ -128,6 +137,7 @@ export async function updateOrderItemManual(orderItemId: string, fields: ManualI
 
 // 미출고: 주문은 유효하지만 현장에서 출고하지 못한 수량과 사유를 기록한다(취소와 별개). 0이면 해제.
 export async function setItemUnshipped(orderItemId: string, quantity: number, reason: string | null): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
   const supabase = await createClient();
   const { data: item } = await supabase.from('order_items').select('quantity').eq('id', orderItemId).maybeSingle();
   if (!item) return { error: '상품을 찾지 못했습니다.' };
@@ -144,12 +154,14 @@ export async function setItemUnshipped(orderItemId: string, quantity: number, re
 }
 
 export async function cancelOrderItem(orderItemId: string) {
+  await requirePermission('dashboard:delete');
   const supabase = await createClient();
   await supabase.from('order_items').update({ change_status: 'cancelled' }).eq('id', orderItemId);
   revalidatePath('/dashboard');
 }
 
 export async function deleteOrderItem(orderItemId: string) {
+  await requirePermission('dashboard:delete');
   const supabase = await createClient();
   await supabase.from('order_items').delete().eq('id', orderItemId);
   revalidatePath('/dashboard');
@@ -158,6 +170,7 @@ export async function deleteOrderItem(orderItemId: string) {
 // 대시보드 주문표에서 상품명을 강조할 상품을 날짜별로 켜고 끈다. 보기 설정이라 과거 날짜 편집 설정과 무관하게 항상 쓸 수 있다.
 // 켤 때는 그날 이미 고른 개수 다음 순서를 준다(색은 이 순서로 다르게 나눠 준다).
 export async function setProductHighlight(orderDate: string, productName: string, on: boolean): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
   const supabase = await createClient();
   if (!on) {
     const { error } = await supabase.from('daily_product_highlights').delete().eq('order_date', orderDate).eq('product_name', productName);
@@ -179,6 +192,7 @@ export async function setProductHighlight(orderDate: string, productName: string
 }
 
 export async function clearProductHighlights(orderDate: string): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
   const supabase = await createClient();
   const { error } = await supabase.from('daily_product_highlights').delete().eq('order_date', orderDate);
   if (error) return { error: error.message };

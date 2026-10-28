@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Building2, Plus, Trash2 } from 'lucide-react';
 import { createBusiness, updateBusiness, deleteBusiness } from './actions';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
+import { useCan } from '@/components/permissions-context';
 import {
   AdminHeader,
   ColumnMenu,
@@ -38,6 +39,9 @@ const formatRegNo = (v: string) => {
 };
 
 export function BusinessesClient({ businesses, terminals }: { businesses: Business[]; terminals: Terminal[] }) {
+  const can = useCan();
+  const canEdit = can('businesses:edit');
+  const canDelete = can('businesses:delete');
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [terminalFilter, setTerminalFilter] = useState('all');
@@ -152,7 +156,7 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
         <span className="ak-count">{filtered.length}곳{filtered.length !== businesses.length ? ` / 전체 ${businesses.length}곳` : ''}</span>
         <span className="ak-spacer" />
         <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
-        <button className="ak-btn ak-btn-primary" onClick={openNew}><Plus size={14} /> 고객사 추가</button>
+        {canEdit && <button className="ak-btn ak-btn-primary" onClick={openNew}><Plus size={14} /> 고객사 추가</button>}
       </div>
 
       <DataTable
@@ -186,10 +190,10 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
               </>
             ) : (
               <>
-                {panel !== 'new' && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
+                {canDelete && panel !== 'new' && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
                 <span className="ak-spacer" />
                 <button className="ak-btn" onClick={() => setPanel(null)}>취소</button>
-                <button className="ak-btn ak-btn-primary" disabled={busy || !draft.name.trim()} onClick={handleSave}>저장</button>
+                {canEdit && <button className="ak-btn ak-btn-primary" disabled={busy || !draft.name.trim()} onClick={handleSave}>저장</button>}
               </>
             )
           }

@@ -6,9 +6,11 @@ import { loadAppSettings } from '@/lib/settings-server';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
 import { buildTemplate, parseElements, type LabelData, type LabelKind, type LabelTemplate } from '@/lib/labels/template';
 import { loadCardLabels, loadLabelTemplates, type CardLabelInfo } from '@/lib/labels/server';
+import { requirePermission } from '@/lib/permissions/access';
 
 // 라벨 디자인 저장(종류별로 한 행). 값은 서버에서 한 번 더 검증한다.
 export async function saveLabelTemplate(input: LabelTemplate): Promise<{ error: string | null; template: LabelTemplate }> {
+  await requirePermission('labels:edit');
   if (input.kind !== 'top' && input.kind !== 'side') return { error: '라벨 종류가 올바르지 않습니다.', template: input };
   const template = buildTemplate(input.kind, { width_mm: input.widthMm, height_mm: input.heightMm, elements: parseElements(input.elements) });
   const supabase = await createClient();
@@ -21,6 +23,7 @@ export async function saveLabelTemplate(input: LabelTemplate): Promise<{ error: 
 }
 
 export async function getCardLabels(dailyBusinessId: string): Promise<CardLabelInfo[]> {
+  await requirePermission('packing:view');
   const supabase = await createClient();
   return loadCardLabels(supabase, dailyBusinessId);
 }
@@ -35,6 +38,7 @@ export interface LabelPrintPayload {
 // 박스 순번(seqs)의 라벨을 출력할 준비를 한다: 아직 바코드가 없는 순번에는 바코드를 발급하고, 출력 이력을 남기고,
 // 인쇄에 필요한 라벨 디자인과 값을 돌려준다. 같은 박스를 다시 부르면 같은 바코드로 재출력이 된다.
 export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: number[]; kind: LabelKind }): Promise<LabelPrintPayload> {
+  await requirePermission('packing:print');
   const fail = (error: string): LabelPrintPayload => ({ error, template: null, labels: [], infos: [] });
   const seqs = [...new Set(input.seqs)].filter((n) => Number.isInteger(n) && n >= 1 && n <= 99).sort((a, b) => a - b);
   if (seqs.length === 0) return fail('출력할 박스를 선택해주세요.');
