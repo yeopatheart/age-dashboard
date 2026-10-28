@@ -563,28 +563,6 @@ export function PackingLogClient({
         .pk-edited { background: #fef3c7; color: #92400e; border-radius: 999px; padding: 0.15rem 0.7rem; font-size: 0.8125rem; font-weight: 800; }
         .pk-editing { background: #dbeafe; color: #1d4ed8; border-radius: 999px; padding: 0.1rem 0.5rem; font-size: 0.6875rem; font-weight: 800; white-space: nowrap; }
         .pk-view { padding: 1rem 1.1rem; }
-        .pk-labels { border-top: 1px solid var(--border); padding: 0.9rem 1.1rem 1.1rem; display: flex; flex-direction: column; gap: 0.7rem; }
-        .pk-labels-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.9375rem; }
-        .pk-label-boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.7rem; }
-        .pk-label-box { display: flex; flex-direction: column; gap: 0.5rem; border: 2px solid var(--border); border-radius: 12px; padding: 0.55rem 0.7rem 0.7rem; cursor: pointer; background: #fff; min-width: 0; }
-        .pk-label-top { display: flex; align-items: center; gap: 0.5rem; }
-        .pk-label-top input { width: 1.1rem; height: 1.1rem; }
-        .pk-label-no { font-size: 1.15rem; font-weight: 900; line-height: 1; }
-        .pk-label-st { font-size: 0.8125rem; font-weight: 800; color: var(--muted-foreground); margin-left: auto; }
-        .pk-label-preview { display: flex; justify-content: center; overflow-x: auto; padding: 0.25rem; background: #f1f5f9; border-radius: 8px; }
-        .pk-label-preview > div { box-shadow: 0 0 0 1px #cbd5e1; }
-        .pk-label-kinds { display: inline-flex; gap: 0.3rem; }
-        .pk-label-kind-on { background: var(--primary); color: #fff; }
-        .pk-label-new { border-color: #fcd34d; background: #fffbeb; }
-        .pk-label-new .pk-label-st { color: #92400e; }
-        .pk-label-printed .pk-label-st { color: #1d4ed8; }
-        .pk-label-done { background: #f0fdf4; border-color: #86efac; }
-        .pk-label-done .pk-label-st { color: #15803d; }
-        .pk-label-on { outline: 3px solid var(--primary); outline-offset: 1px; }
-        .pk-label-warn { font-size: 0.8125rem; font-weight: 700; color: #92400e; background: #fffbeb; border-radius: 10px; padding: 0.45rem 0.7rem; }
-        .pk-label-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
-        .pk-label-actions .pk-big { display: inline-flex; align-items: center; gap: 0.5rem; }
-        .pk-label-note { font-size: 0.75rem; }
         .pk-date { height: 2.25rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 0.8rem; font-size: 0.875rem; font-weight: 700; background: #fff; }
         .pk-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 600; color: var(--muted-foreground); cursor: pointer; }
         .pk-layout { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 0.9rem; align-items: start; }

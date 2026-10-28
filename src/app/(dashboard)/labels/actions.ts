@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
 import { buildTemplate, parseElements, type LabelData, type LabelKind, type LabelTemplate } from '@/lib/labels/template';
-import { loadCardLabelBase, loadCardLabels, loadLabelTemplates, type CardLabelBase, type CardLabelInfo } from '@/lib/labels/server';
+import { LABEL_MARGIN_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelTemplates, type CardLabelBase, type CardLabelInfo } from '@/lib/labels/server';
 import { requirePermission } from '@/lib/permissions/access';
 
 // 라벨 디자인 저장(종류별로 한 행). 값은 서버에서 한 번 더 검증한다.
@@ -19,6 +19,17 @@ export async function saveLabelTemplate(input: LabelTemplate): Promise<{ error: 
   if (error) return { error: error.message, template };
   revalidatePath('/labels');
   return { error: null, template };
+}
+
+// 프린터 출력 여백 저장(라벨 종류와 무관하게 프린터 하나에 하나).
+export async function saveLabelMargin(mm: number): Promise<{ error: string | null; marginMm: number }> {
+  await requirePermission('labels:edit');
+  const marginMm = clampLabelMargin(mm);
+  const supabase = await createClient();
+  const { error } = await supabase.from('app_settings').upsert({ key: LABEL_MARGIN_KEY, value: marginMm, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) return { error: error.message, marginMm };
+  revalidatePath('/labels');
+  return { error: null, marginMm };
 }
 
 // 박스 할당 화면의 라벨 영역이 처음 열릴 때 읽는다: 박스별 출력 상태 + 미리보기에 필요한 라벨 디자인·공통 값.
