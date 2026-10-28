@@ -39,7 +39,7 @@ export async function createManualOrder(
   const businessId = await findOrCreateBusiness(supabase, businessName, terminalId);
   if (!businessId) return { error: '업체를 생성하지 못했습니다.' };
 
-  const dailyBusinessId = await findOrCreateDailyBusiness(supabase, orderDate, businessId, round);
+  const dailyBusinessId = await findOrCreateDailyBusiness(supabase, orderDate, businessId, round, terminalId);
   if (!dailyBusinessId) return { error: '오늘자 주문 카드를 생성하지 못했습니다.' };
 
   await supabase.from('daily_businesses').update({ total_boxes: totalBoxes }).eq('id', dailyBusinessId);
@@ -56,21 +56,25 @@ export async function reorderDailyBusinesses(orderedIds: string[]): Promise<{ er
   return { error: error?.message ?? null };
 }
 
-// 업체명·터미널은 daily_businesses가 아니라 businesses 테이블 소속이라, 바꾸면 다른 날짜의
-// 과거 기록 표시에도 영향을 준다(호출하는 쪽 UI에서 이 점을 안내해야 한다).
-export async function updateOrder(dailyBusinessId: string, businessName: string, terminalId: string | null) {
+// 업체명은 businesses 테이블 소속이라 바꾸면 다른 날짜의 과거 기록 표시에도 영향을 준다.
+// 터미널은 그날 카드(daily_businesses)의 값이라 이 주문만 바뀌고, 업체의 기본 터미널과 다른 날짜는 그대로다.
+// 같은 날·차수·업체에 이미 그 터미널의 카드가 있으면 합칠 수 없어 오류를 돌려준다.
+export async function updateOrder(dailyBusinessId: string, businessName: string, terminalId: string | null): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const { data: daily } = await supabase
     .from('daily_businesses')
     .select('business_id')
     .eq('id', dailyBusinessId)
     .maybeSingle();
-  if (!daily) return;
-  await supabase
-    .from('businesses')
-    .update({ name: businessName, terminal_id: terminalId })
-    .eq('id', daily.business_id);
+  if (!daily) return { error: '주문을 찾지 못했습니다.' };
+  const { error: terminalError } = await supabase.from('daily_businesses').update({ terminal_id: terminalId }).eq('id', dailyBusinessId);
+  if (terminalError) {
+    return { error: terminalError.code === '23505' ? '같은 차수에 이 터미널의 같은 업체 주문이 이미 있습니다.' : terminalError.message };
+  }
+  await supabase.from('businesses').update({ name: businessName }).eq('id', daily.business_id);
   revalidatePath('/dashboard');
+  revalidatePath('/packing-log');
+  return { error: null };
 }
 
 // order_items는 daily_businesses에 on delete cascade로 걸려있어(0003) 함께 삭제된다.

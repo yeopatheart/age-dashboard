@@ -336,9 +336,10 @@ function OrderFormModal({
   initial?: { businessName: string; terminalId: string | null; totalBoxes: number };
   terminals: Terminal[];
   businesses: BusinessDirectoryEntry[];
-  // 이 날짜 대시보드에 이미 올라와 있는 (업체, 차수) — 새 주문 추가에서 같은 차수의 중복 등록을 막는다.
-  registered?: { businessId: string; round: OrderRound }[];
-  onSave: (data: { businessName: string; terminalId: string | null; totalBoxes: number; round: OrderRound }) => void;
+  // 이 날짜 대시보드에 이미 올라와 있는 (업체, 차수, 터미널) — 새 주문 추가에서 같은 차수·터미널의 중복 등록을 막는다.
+  registered?: { businessId: string; round: OrderRound; terminal: string }[];
+  // 저장에 실패하면 화면에 보여줄 오류 문구를 돌려준다(성공하면 null).
+  onSave: (data: { businessName: string; terminalId: string | null; totalBoxes: number; round: OrderRound }) => Promise<string | null>;
   onClose: () => void;
 }) {
   const isEdit = Boolean(initial);
@@ -348,6 +349,7 @@ function OrderFormModal({
   const [totalBoxes, setTotalBoxes] = useState(initial?.totalBoxes?.toString() ?? '1');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [round, setRound] = useState<OrderRound>(1);
 
   // 새 주문 추가는 고객명을 직접 타이핑해서 확정하지 않는다 — 키워드로 고객사 관리의 등록 목록을
@@ -368,14 +370,16 @@ function OrderFormModal({
     ? terminals.find((t) => t.id === matchedBusiness.terminal_id) ?? null
     : null;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!businessName.trim() || (!isEdit && !matchedBusiness)) return;
-    if (matchedBusiness && registered.some((r) => r.businessId === matchedBusiness.id && r.round === round)) {
+    if (matchedBusiness && registered.some((r) => r.businessId === matchedBusiness.id && r.round === round && r.terminal === (matchedTerminal?.name ?? ''))) {
       setDuplicateError(true);
       return;
     }
     const resolvedTerminalId = isEdit ? (terminalId || null) : (matchedTerminal?.id ?? null);
-    onSave({ businessName: (matchedBusiness?.name ?? businessName).trim(), terminalId: resolvedTerminalId, totalBoxes: parseInt(totalBoxes) || 1, round });
+    setSaveError(null);
+    const error = await onSave({ businessName: (matchedBusiness?.name ?? businessName).trim(), terminalId: resolvedTerminalId, totalBoxes: parseInt(totalBoxes) || 1, round });
+    if (error) setSaveError(error);
   };
 
   return (
@@ -493,6 +497,9 @@ function OrderFormModal({
           <p className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
             &apos;{matchedBusiness.name}&apos;은(는) 이미 대시보드에 {round}차로 등록된 고객입니다. 상품은 해당 행의 + 버튼으로 추가해주세요.
           </p>
+        )}
+        {saveError && (
+          <p className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{saveError}</p>
         )}
         <div>
           <label className="block text-xs font-bold text-slate-600 mb-1">박스 수량</label>
@@ -898,16 +905,19 @@ export function DashboardClient({
     refresh();
   };
 
-  const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; totalBoxes: number; round: OrderRound }) => {
+  const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; totalBoxes: number; round: OrderRound }): Promise<string | null> => {
     if (editOrderModal) {
-      await updateOrder(editOrderModal.dailyBusinessId, data.businessName, data.terminalId);
+      const { error } = await updateOrder(editOrderModal.dailyBusinessId, data.businessName, data.terminalId);
+      if (error) return error;
       await updateTotalBoxes(editOrderModal.dailyBusinessId, data.totalBoxes);
       setEditOrderModal(null);
     } else {
-      await createManualOrder(orderDate, data.round, data.businessName, data.terminalId, data.totalBoxes);
+      const { error } = await createManualOrder(orderDate, data.round, data.businessName, data.terminalId, data.totalBoxes);
+      if (error) return error;
       setAddOrderModal(false);
     }
     refresh();
+    return null;
   };
 
   const handleBoxesInput = async (row: OrderRow, value: string) => {
@@ -1456,7 +1466,7 @@ export function DashboardClient({
       )}
 
       {addOrderModal && (
-        <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={rows.map((r) => ({ businessId: r.businessId, round: r.round }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
+        <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={allRows.map((r) => ({ businessId: r.businessId, round: r.round, terminal: r.terminal }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
       )}
       {editOrderModal && (
         <OrderFormModal

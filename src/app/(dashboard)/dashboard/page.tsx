@@ -30,7 +30,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       supabase.from('businesses').select('id, name, terminal_id').order('name'),
       supabase
         .from('daily_businesses')
-        .select('id, business_id, business_number, round, total_boxes, memo')
+        .select('id, business_id, business_number, round, total_boxes, memo, terminal_id')
         .eq('order_date', orderDate)
         .order('sort_order'),
       supabase.from('products').select('name, fill_color, border_color'),
@@ -59,7 +59,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         dailyBusinessId: daily.id,
         businessId: business.id,
         businessName: business.name,
-        terminal: business.terminal_id ? terminalNameById.get(business.terminal_id) ?? '' : '',
+        // 터미널은 그날 카드의 값이다(고객사의 터미널은 기본값일 뿐, 날짜별로 다를 수 있다).
+        terminal: daily.terminal_id ? terminalNameById.get(daily.terminal_id) ?? '' : '',
         businessNumber: daily.business_number,
         round: daily.round,
         totalBoxes: daily.total_boxes,
