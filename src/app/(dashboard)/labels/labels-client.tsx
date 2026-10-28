@@ -17,7 +17,7 @@ import {
   type LabelKind,
   type LabelTemplate,
 } from '@/lib/labels/template';
-import { saveLabelTemplate } from './actions';
+import { saveLabelMargin, saveLabelTemplate } from './actions';
 import { useCan } from '@/components/permissions-context';
 
 const SCALE = 4; // 화면에서 1mm를 4px로 그린다
@@ -49,11 +49,11 @@ const newElement = (type: LabelElementType): LabelElement => {
   const id = `e-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
   if (type === 'barcode') return { id, type, x: 5, y: 5, w: 60, h: 18, showText: true };
   if (type === 'line') return { id, type, x: 5, y: 5, w: 50, h: 0.4 };
-  if (type === 'field') return { id, type, field: 'business', x: 5, y: 5, w: 50, h: 10, fontSize: 18, bold: true, align: 'left' };
+  if (type === 'field') return { id, type, field: 'businessBox', x: 5, y: 5, w: 50, h: 10, fontSize: 18, bold: true, align: 'left' };
   return { id, type: 'text', text: '문구', x: 5, y: 5, w: 40, h: 8, fontSize: 14, bold: false, align: 'left' };
 };
 
-export function LabelsClient({ initial, company, contact }: { initial: Record<LabelKind, LabelTemplate>; company: string; contact: string }) {
+export function LabelsClient({ initial, company, contact, initialMarginMm }: { initial: Record<LabelKind, LabelTemplate>; company: string; contact: string; initialMarginMm: number }) {
   const canEdit = useCan()('labels:edit');
   const [templates, setTemplates] = useState(initial);
   const [kind, setKind] = useState<LabelKind>('top');
@@ -63,6 +63,9 @@ export function LabelsClient({ initial, company, contact }: { initial: Record<La
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [printJob, setPrintJob] = useState<LabelPrintJob | null>(null);
+  // 프린터가 찍지 못하는 가장자리(mm). 빗금으로 보여주고, 여백에 걸친 항목에는 경고한다.
+  const [marginMm, setMarginMm] = useState(initialMarginMm);
+  const [marginDirty, setMarginDirty] = useState(false);
   const drag = useRef<DragState | null>(null);
 
   const template = templates[kind];
@@ -150,13 +153,27 @@ export function LabelsClient({ initial, company, contact }: { initial: Record<La
   const save = async () => {
     setBusy(true);
     setError(null);
-    const result = await saveLabelTemplate(template);
+    // 이 라벨 디자인과 프린터 여백 중 바뀐 것만 저장한다.
+    const [templateResult, marginResult] = await Promise.all([
+      dirty[kind] ? saveLabelTemplate(template) : null,
+      marginDirty ? saveLabelMargin(marginMm) : null,
+    ]);
     setBusy(false);
-    if (result.error) return setError(result.error);
-    setTemplates((prev) => ({ ...prev, [kind]: result.template }));
-    setDirty((d) => ({ ...d, [kind]: false }));
-    setNotice(`${LABEL_KIND_NAMES[kind]} 디자인을 저장했습니다.`);
+    const failure = templateResult?.error ?? marginResult?.error;
+    if (failure) return setError(failure);
+    if (templateResult) {
+      setTemplates((prev) => ({ ...prev, [kind]: templateResult.template }));
+      setDirty((d) => ({ ...d, [kind]: false }));
+    }
+    if (marginResult) {
+      setMarginMm(marginResult.marginMm);
+      setMarginDirty(false);
+    }
+    setNotice('저장했습니다.');
   };
+  // 프린터가 찍지 못하는 여백(바깥 marginMm)에 한 조각이라도 걸쳐 있는 항목
+  const outOfPrintArea = (el: LabelElement) =>
+    marginMm > 0 && (el.x < marginMm - 0.01 || el.y < marginMm - 0.01 || el.x + el.w > template.widthMm - marginMm + 0.01 || el.y + el.h > template.heightMm - marginMm + 0.01);
   const resetToDefault = () => {
     updateTemplate(() => DEFAULT_TEMPLATES[kind]);
     setSelectedId(null);
@@ -186,7 +203,7 @@ export function LabelsClient({ initial, company, contact }: { initial: Record<La
         <button className="ak-btn" onClick={() => setPrintJob({ template, labels: [sample] })} disabled={busy} title="지금 화면의 디자인을 샘플 값으로 한 장 출력합니다. 용지 크기와 위치를 확인할 때 씁니다.">
           <Printer size={14} /> 테스트 출력
         </button>
-        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !dirty[kind]}>저장</button>
+        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !(dirty[kind] || marginDirty)}>저장</button>
       </div>
 
       <div className="lb-layout">
@@ -199,6 +216,27 @@ export function LabelsClient({ initial, company, contact }: { initial: Record<La
               {numberInput('세로', template.heightMm, (v) => updateTemplate((t) => ({ ...t, heightMm: clamp(v, 10, 300) })), 1)}
             </div>
             <p className="ak-muted">프린터 용지 크기와 같아야 합니다. 크기를 줄이면 밖으로 나간 항목은 잘리니 위치를 다시 맞춰주세요.</p>
+          </section>
+
+          <section className="lb-card">
+            <h3>프린터 출력 여백 (mm)</h3>
+            <div className="lb-size">
+              {numberInput('가장자리 여백', marginMm, (v) => { setMarginMm(Math.min(10, Math.max(0, v))); setMarginDirty(true); setNotice(null); }, 0.5)}
+            </div>
+            <p className="ak-muted">프린터는 용지 가장자리를 찍지 못합니다. 라벨에서 빗금으로 표시된 바깥 영역은 출력되지 않으니, 점선 안쪽에 항목을 두세요. 여백에 걸친 항목은 빨간 점선으로 표시됩니다. 프린터마다 달라서 테스트 출력으로 확인해 맞추세요(보통 1~3mm).</p>
+          </section>
+
+          <section className="lb-card">
+            <details className="lb-guide">
+              <summary>프린터 설정 안내 (출력용 PC에서 처음 한 번)</summary>
+              <ol>
+                <li>Windows 설정에서 라벨 프린터를 <strong>기본 프린터</strong>로 지정합니다.</li>
+                <li>프린터 기본 설정에서 용지 크기를 라벨 크기(상단 {templates.top.widthMm}×{templates.top.heightMm}mm, 측면 {templates.side.widthMm}×{templates.side.heightMm}mm)로 등록하고, 인쇄 여백은 <strong>없음(0)</strong>으로 둡니다.</li>
+                <li><strong>인쇄 창 없이 바로 출력</strong>하려면 Chrome 바로가기를 우클릭 → 속성 → 대상 끝에 <code>--kiosk-printing</code>을 붙이고(앞에 공백 한 칸), 이 바로가기로 시스템을 엽니다. 그러면 박스 할당 / 라벨 출력 화면에서 출력 버튼을 누르는 즉시 기본 프린터로 나갑니다.</li>
+                <li>이 설정을 하지 않아도 출력은 되지만 매번 인쇄 창이 뜨고, 거기서 프린터와 용지 크기를 확인해야 합니다.</li>
+              </ol>
+              <p className="ak-muted">브라우저가 보안상 프로그램에서 인쇄 창을 건너뛰지 못하게 막기 때문에, 위 설정은 PC(브라우저)에서 한 번 해두는 방식입니다.</p>
+            </details>
           </section>
 
           <section className="lb-card">
@@ -216,6 +254,7 @@ export function LabelsClient({ initial, company, contact }: { initial: Record<La
               <p className="ak-muted">라벨 위의 항목을 눌러 선택하세요. 방향키로 0.5mm씩(Shift는 2mm) 움직이고 Delete로 지웁니다.</p>
             ) : (
               <div className="lb-props">
+                {outOfPrintArea(selected) && <p className="lb-warn">출력 여백({marginMm}mm)에 걸쳐 있어 프린터에서 잘릴 수 있습니다. 점선 안쪽으로 옮겨주세요.</p>}
                 <div className="lb-row"><strong>{ELEMENT_TYPE_NAMES[selected.type]}</strong><span className="ak-spacer" /><button className="ak-btn ak-btn-danger" onClick={() => removeElement(selected.id)}><Trash2 size={13} /> 삭제</button></div>
                 {selected.type === 'field' && (
                   <label className="lb-field">
@@ -261,14 +300,24 @@ export function LabelsClient({ initial, company, contact }: { initial: Record<La
         <div className="lb-stage" tabIndex={0} onKeyDown={onKeyDown} onPointerDown={() => setSelectedId(null)}>
           <div className="lb-paper" style={{ width: template.widthMm * SCALE, height: template.heightMm * SCALE }}>
             <LabelView template={template} data={sample} unit={`${SCALE}px`} />
+            {marginMm > 0 && (
+              <div className="lb-margin" aria-hidden>
+                <span style={{ left: 0, top: 0, right: 0, height: marginMm * SCALE }} />
+                <span style={{ left: 0, bottom: 0, right: 0, height: marginMm * SCALE }} />
+                <span style={{ left: 0, top: marginMm * SCALE, bottom: marginMm * SCALE, width: marginMm * SCALE }} />
+                <span style={{ right: 0, top: marginMm * SCALE, bottom: marginMm * SCALE, width: marginMm * SCALE }} />
+                <i style={{ left: marginMm * SCALE, top: marginMm * SCALE, right: marginMm * SCALE, bottom: marginMm * SCALE }} />
+              </div>
+            )}
             <div className="lb-overlay">
               {template.elements.map((el) => {
                 const isSel = el.id === selectedId;
+                const outside = outOfPrintArea(el);
                 const hit = Math.max(el.h * SCALE, 8);
                 return (
                   <div
                     key={el.id}
-                    className={`lb-hit ${isSel ? 'lb-hit-on' : ''}`}
+                    className={`lb-hit ${isSel ? 'lb-hit-on' : ''} ${outside ? 'lb-hit-out' : ''}`}
                     style={{ left: el.x * SCALE, top: el.y * SCALE - (hit - el.h * SCALE) / 2, width: el.w * SCALE, height: hit }}
                     onPointerDown={(e) => startDrag(e, el, 'move')}
                     onPointerMove={onDragMove}
@@ -296,7 +345,7 @@ export function LabelsClient({ initial, company, contact }: { initial: Record<La
               })}
             </div>
           </div>
-          <p className="ak-muted lb-hint">미리보기는 샘플 값(스시고유, 박스 2번 등)입니다. 실제 라벨은 고객사 값으로 채워집니다. 눈금은 5mm입니다.</p>
+          <p className="ak-muted lb-hint">미리보기는 샘플 값(스시고유 #2 등)입니다. 실제 라벨은 고객사 값으로 채워지고, 글자가 칸보다 길면 크기가 자동으로 줄어듭니다. 눈금은 5mm, 빗금은 프린터가 찍지 못하는 여백입니다.</p>
         </div>
       </div>
 
@@ -328,6 +377,14 @@ export function LabelsClient({ initial, company, contact }: { initial: Record<La
         .lb-hit:hover { outline: 1px dashed #3b82f6; }
         .lb-hit-on { outline: 1px solid #2563eb; }
         .lb-frame { position: absolute; left: 0; right: 0; pointer-events: none; }
+        .lb-margin { position: absolute; inset: 0; pointer-events: none; }
+        .lb-margin span { position: absolute; background: repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.22) 0 3px, rgba(239, 68, 68, 0.06) 3px 7px); }
+        .lb-margin i { position: absolute; border: 1px dashed rgba(220, 38, 38, 0.8); }
+        .lb-hit-out { outline: 1px dashed #dc2626; background: rgba(239, 68, 68, 0.08); }
+        .lb-guide summary { font-size: 0.8125rem; font-weight: 800; cursor: pointer; }
+        .lb-guide ol { margin: 0.6rem 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8125rem; line-height: 1.45; }
+        .lb-guide code { background: #f1f5f9; border-radius: 6px; padding: 0.05rem 0.35rem; font-size: 0.78rem; }
+        .lb-warn { font-size: 0.8125rem; font-weight: 700; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 0.45rem 0.65rem; }
         .lb-handle { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid #2563eb; border-radius: 2px; pointer-events: auto; touch-action: none; }
         .lb-hint { margin: 0.75rem 0 0; text-align: center; }
         @media (max-width: 1000px) { .lb-layout { grid-template-columns: 1fr; } }
