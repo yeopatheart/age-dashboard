@@ -3,8 +3,8 @@ import '@/components/admin/admin.css';
 import { BarChart3 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { requireMenu } from '@/lib/permissions/access';
+import { fetchAll } from '@/lib/supabase/fetch-all';
 
-const PAGE = 1000;
 
 interface Stat {
   total: number;
@@ -15,26 +15,17 @@ interface Stat {
 const emptyStat = (): Stat => ({ total: 0, top1: 0, top3: 0, asIs: 0 });
 const pct = (n: number, d: number) => (d === 0 ? '-' : `${Math.round((n / d) * 100)}%`);
 
-async function fetchAll<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
-  const all: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await page(from, from + PAGE - 1);
-    if (error) throw new Error(`정확도 조회 실패(마이그레이션 0027 적용 필요): ${error.message}`);
-    all.push(...(data ?? []));
-    if ((data ?? []).length < PAGE) return all;
-  }
-}
-
 // shadow test 정확도: 제출한 박스 기록을 제출 시점의 추천과 비교한다. 추천이 없던 기록(기능 도입 전)은 제외한다.
 export default async function PackingAccuracyPage() {
   await requireMenu('packing');
   const supabase = await createClient();
+  const ERR = '정확도 조회 실패(마이그레이션 0027 적용 필요): ';
   const [records, recs, boxes] = await Promise.all([
     fetchAll((from, to) =>
       supabase.from('packing_records').select('id, order_date, recommendation_id, recommended_rank, accepted_as_is').not('recommendation_id', 'is', null).order('id').range(from, to),
-    ),
-    fetchAll((from, to) => supabase.from('packing_recommendations').select('id, model_version, confidence').order('id').range(from, to)),
-    fetchAll((from, to) => supabase.from('packing_boxes').select('id, record_id').order('id').range(from, to)),
+    ERR),
+    fetchAll((from, to) => supabase.from('packing_recommendations').select('id, model_version, confidence').order('id').range(from, to), ERR),
+    fetchAll((from, to) => supabase.from('packing_boxes').select('id, record_id').order('id').range(from, to), ERR),
   ]);
   const recById = new Map(recs.map((r) => [r.id, r]));
   const boxCount = new Map<string, number>();

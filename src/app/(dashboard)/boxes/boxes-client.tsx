@@ -1,6 +1,5 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Package, Plus, Trash2 } from 'lucide-react';
 import { createBox, updateBox, deleteBox, setBoxActive, type BoxFields } from './actions';
 import { useCan } from '@/components/permissions-context';
@@ -71,7 +70,6 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
   const can = useCan();
   const canEdit = can('boxes:edit');
   const canDelete = can('boxes:delete');
-  const router = useRouter();
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
   const [kindFilter, setKindFilter] = useState('all');
@@ -105,7 +103,6 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
       setError(result.error);
       return false;
     }
-    router.refresh();
     return true;
   };
 
@@ -134,7 +131,6 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
       setError(result.error);
       return;
     }
-    router.refresh();
   };
 
   const columns: Column<Box>[] = [

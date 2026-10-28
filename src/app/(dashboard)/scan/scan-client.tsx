@@ -1,7 +1,6 @@
 'use client';
 import '@/components/admin/admin.css';
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { AlertTriangle, Camera, CheckCircle2, Keyboard, ScanLine, Undo2, X, XCircle } from 'lucide-react';
@@ -33,8 +32,6 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
   const can = useCan();
   const canScan = can('scan:scan');
   const canUndo = can('scan:undo');
-  const router = useRouter();
-  const [, startRefresh] = useTransition();
   const [banner, setBanner] = useState<Banner | null>(null);
   const [recent, setRecent] = useState<{ time: string; text: string; tone: Banner['tone'] }[]>([]);
   const [manual, setManual] = useState('');
@@ -82,9 +79,8 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       setBanner(next);
       setRecent((prev) => [{ time, text: next.title, tone: next.tone }, ...prev].slice(0, 8));
       beep(next.tone);
-      startRefresh(() => router.refresh());
     },
-    [beep, router],
+    [beep],
   );
 
   const submitCode = useCallback(
@@ -185,7 +181,6 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
     if (result.error) return setBanner({ tone: 'bad', title: '되돌리지 못했습니다', detail: result.error });
     setBanner({ tone: 'dup', title: '상차를 취소했습니다', detail: '이 박스는 다시 상차 전 상태입니다.' });
     last.current = null;
-    startRefresh(() => router.refresh());
   };
 
   // 터미널별 합계와 아직 안 끝난 업체

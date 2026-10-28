@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
-import { editableDateError } from '@/lib/order-date';
+import { editableDateError, todayKST } from '@/lib/order-date';
 import { assignToBoxes, trainModel, type PackingItem } from '@/lib/packing/model';
 import { compareWithRecommendation, getTodayModel, orderSignature } from '@/lib/packing/server';
 import { requirePermission } from '@/lib/permissions/access';
@@ -180,10 +180,6 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   revalidatePath('/packing-log');
   revalidatePath('/dashboard');
   return { error: null };
-}
-
-function todayKST() {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 }
 
 // 수정 중인 박스 구성(박스 종류 목록)에 상품을 모델 규칙으로 자동으로 나눠 담은 결과를 돌려준다. 저장은 하지 않는다.

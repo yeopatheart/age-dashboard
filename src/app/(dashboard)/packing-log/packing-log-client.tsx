@@ -312,7 +312,6 @@ export function PackingLogClient({
       return next;
     });
     setNotice(`${selected.businessName}${selected.roundLabel ? ` (${selected.roundLabel})` : ''} 박스 할당을 제출했습니다.`);
-    router.refresh();
   };
   const handleDeleteRecord = async () => {
     if (!selected) return;
@@ -326,7 +325,6 @@ export function PackingLogClient({
       delete next[selected.id];
       return next;
     });
-    router.refresh();
   };
 
   // ─── 한 화면 흐름: 화면의 박스·상품이 곧 작성본이다. 건드리면 추천이 아니라 직접 입력으로 처리된다. ───────

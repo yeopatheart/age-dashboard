@@ -16,13 +16,6 @@ export async function togglePacked(orderItemId: string, nextPacked: boolean) {
   revalidatePath('/dashboard');
 }
 
-export async function acknowledgeChange(orderItemId: string) {
-  await requirePermission('dashboard:edit');
-  const supabase = await createClient();
-  await supabase.from('order_items').update({ change_status: 'none' }).eq('id', orderItemId);
-  revalidatePath('/dashboard');
-}
-
 // ── 매트릭스 대시보드의 수동 편집 액션 ──────────────────────────────────────────
 
 export async function createManualOrder(

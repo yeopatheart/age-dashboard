@@ -1,8 +1,6 @@
 // 박스 바코드 번호: YYMMDD(주문일) + 업체번호 3자리 + 박스 순번 2자리 + 확인 숫자 1자리 = 숫자 12자리(Code128).
 // 같은 날 업체번호는 겹치지 않고(업체 카드마다 하나씩 발급, 재사용 없음) 순번은 박스마다 다르므로 번호가 겹치지 않는다.
 // 확인 숫자는 EAN과 같은 방식(앞 11자리에 1,3을 번갈아 곱한 합)이라 스캔 오류나 잘못 입력한 번호를 걸러낸다.
-export const BARCODE_LENGTH = 12;
-
 function checkDigit(first11: string): number {
   let sum = 0;
   for (let i = 0; i < first11.length; i++) sum += Number(first11[i]) * (i % 2 === 0 ? 1 : 3);

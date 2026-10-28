@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect, useLayoutEffect, useOptimistic, useSyncExternalStore, useTransition } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useOptimistic, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -8,6 +8,7 @@ import { businessIdsInBothRounds, roundLabel, getProductSummary, getTerminalBoxT
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
+import { useLocalFlag } from '@/lib/use-local-flag';
 import {
   setProductHighlight,
   clearProductHighlights,
@@ -159,36 +160,6 @@ function productGridMinWidth(slotCount: number, nameColumn: number) {
 
 // 전체보기 위쪽 "품목별 수량" 카드를 접은 상태. 이 브라우저(PC·TV)마다 따로 기억한다 — 서버에는 저장하지 않는다.
 const SUMMARY_COLLAPSED_KEY = 'dash-summary-collapsed';
-const summaryListeners = new Set<() => void>();
-function useSummaryCollapsed(): [boolean, (next: boolean) => void] {
-  const collapsed = useSyncExternalStore(
-    (cb) => {
-      summaryListeners.add(cb);
-      window.addEventListener('storage', cb);
-      return () => {
-        summaryListeners.delete(cb);
-        window.removeEventListener('storage', cb);
-      };
-    },
-    () => {
-      try {
-        return localStorage.getItem(SUMMARY_COLLAPSED_KEY) === '1';
-      } catch {
-        return false;
-      }
-    },
-    () => false,
-  );
-  const set = (next: boolean) => {
-    try {
-      localStorage.setItem(SUMMARY_COLLAPSED_KEY, next ? '1' : '0');
-    } catch {
-      // localStorage가 막혀 있으면 저장 없이 이번 화면에서만 바뀐다
-    }
-    summaryListeners.forEach((l) => l());
-  };
-  return [collapsed, set];
-}
 
 // 오늘 강조한 상품의 상품명 글자색. 첫 번째는 빨강이고, 두 개 이상 고르면 고른 순서대로 서로 다른 색을 쓴다.
 // 상태 색(신규 초록, 수정 노랑, 취소 빨강)과 헷갈리지 않게 파랑·보라·분홍·청록·갈색 계열로 이어 간다.
@@ -648,7 +619,7 @@ function ConfirmModal({ message, onConfirm, onClose }: { message: string; onConf
 // ─── 메인 대시보드 ──────────────────────────────────────────────────────────────
 export function DashboardClient({
   rows: rawRows,
-  items,
+  items: serverItems,
   allTerminals,
   businessDirectory,
   orderDate,
@@ -672,6 +643,11 @@ export function DashboardClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   const monitorMode = searchParams.get('monitor') || '1';
+
+  // 포장 체크를 서버 응답을 기다리지 않고 바로 보여주기 위한 사본(서버가 새 화면을 보내면 그 값으로 바뀐다).
+  const [items, setOptimisticPacked] = useOptimistic(serverItems, (state: OrderItem[], change: { id: string; packed: boolean }) =>
+    state.map((i) => (i.id === change.id ? { ...i, isPacked: change.packed } : i)),
+  );
 
   // 과거 날짜는 기본적으로 조회 전용 — 실수로 지난 기록을 고치지 않게 편집 수단을 숨긴다.
   // 설정에서 "과거 날짜 편집"을 켜면 오늘과 똑같이 편집할 수 있다.
@@ -821,7 +797,6 @@ export function DashboardClient({
     startReorder(async () => {
       setOptimisticOrder(orderedIds);
       await reorderDailyBusinesses(orderedIds);
-      router.refresh();
     });
   };
   // 별도 주문 팝업 안에서 순서를 바꾼다. 전체 순서에서 별도 주문 행이 차지한 자리만 새 순서로 채우고, 일반 주문 행은 제자리에 둔다.
@@ -836,7 +811,6 @@ export function DashboardClient({
     startReorder(async () => {
       setOptimisticOrder(orderedIds);
       await reorderDailyBusinesses(orderedIds);
-      router.refresh();
     });
   };
   const rowSlotCount = isSplitMode ? ownCapacity : displayedRows.length;
@@ -923,8 +897,6 @@ export function DashboardClient({
     URL.revokeObjectURL(a.href);
   };
 
-  const refresh = () => router.refresh();
-
   // 강조 상품: 날짜별로 DB에 저장해서 PC와 TV가 같은 선택을 본다. 누르는 즉시 화면에 반영하고 저장은 뒤에서 한다.
   const [hlOpen, setHlOpen] = useState(false);
   const [, startHlTransition] = useTransition();
@@ -944,19 +916,21 @@ export function DashboardClient({
     startHlTransition(async () => {
       setHlOptimistic({ name, on });
       await setProductHighlight(orderDate, name, on);
-      router.refresh();
     });
   const clearHl = () =>
     startHlTransition(async () => {
       setHlOptimistic({ name: null, on: false });
       await clearProductHighlights(orderDate);
-      router.refresh();
     });
 
-  const handleTogglePacked = async (item: OrderItem) => {
+  // 포장 체크는 누르는 즉시 화면에 반영하고 저장은 뒤에서 한다(서버가 응답과 함께 최신 화면을 돌려준다).
+  const [, startPackedTransition] = useTransition();
+  const handleTogglePacked = (item: OrderItem) => {
     if (item.changeStatus === 'cancelled') return;
-    await togglePacked(item.id, !item.isPacked);
-    refresh();
+    startPackedTransition(async () => {
+      setOptimisticPacked({ id: item.id, packed: !item.isPacked });
+      await togglePacked(item.id, !item.isPacked);
+    });
   };
 
   const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; round: OrderRound }): Promise<string | null> => {
@@ -969,7 +943,6 @@ export function DashboardClient({
       if (error) return error;
       setAddOrderModal(false);
     }
-    refresh();
     return null;
   };
 
@@ -981,7 +954,6 @@ export function DashboardClient({
       await addOrderItemManual(addItemModal.row.dailyBusinessId, fields);
       setAddItemModal(null);
     }
-    refresh();
   };
 
   // 품목별 수량: 모니터 2는 오른쪽 세로 패널, 전체보기(모바일 포함)는 표 위 카드로 보여준다.
@@ -1001,7 +973,7 @@ export function DashboardClient({
     </div>
   ));
   const productChips = renderChips(columns);
-  const [summaryCollapsed, setSummaryCollapsed] = useSummaryCollapsed();
+  const [summaryCollapsed, setSummaryCollapsed] = useLocalFlag(SUMMARY_COLLAPSED_KEY);
   // 접기 버튼은 카드 아래 가장자리 오른쪽에 반쯤 걸쳐 두어(엑셀의 그룹 접기 단추처럼) 자리를 따로 차지하지 않는다.
   const summaryCard = (
     <div className="relative flex-shrink-0">
@@ -1373,7 +1345,7 @@ export function DashboardClient({
                               )}
                               {canDelete && item.changeStatus !== 'cancelled' && (
                                 <button
-                                  onClick={async (e) => { e.stopPropagation(); await cancelOrderItem(item.id); refresh(); }}
+                                  onClick={async (e) => { e.stopPropagation(); await cancelOrderItem(item.id); }}
                                   className="w-4 h-4 rounded bg-amber-400 text-white flex items-center justify-center hover:bg-amber-500 transition-colors"
                                   title="주문 취소 (주문 자체가 없어짐)"
                                 ><X className="w-2.5 h-2.5" /></button>
@@ -1544,7 +1516,6 @@ export function DashboardClient({
             const result = await setItemUnshipped(unshippedModal.id, qty, reason);
             if (result.error) return result.error;
             setUnshippedModal(null);
-            refresh();
             return null;
           }}
           onClose={() => setUnshippedModal(null)}
@@ -1578,7 +1549,6 @@ export function DashboardClient({
             } else if (confirmDelete.itemId) {
               await deleteOrderItem(confirmDelete.itemId);
             }
-            refresh();
           }}
           onClose={() => setConfirmDelete(null)}
         />

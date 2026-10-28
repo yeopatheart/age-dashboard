@@ -1,10 +1,11 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import { MENU_DEFS, type MenuKey } from '@/lib/permissions/catalog';
+import { useLocalFlag } from '@/lib/use-local-flag';
 import {
   LayoutDashboard,
   Sparkles,
@@ -59,30 +60,9 @@ export function DashboardShell({
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-
-  // 새로고침해도 접힘 상태가 유지되도록 마운트 후 복원한다. 서버 렌더는 항상 펼침 상태라
-  // 접혀 있던 사용자는 아주 짧게 펼침→접힘으로 바뀌는 걸 볼 수 있지만(테마처럼 크게 눈에
-  // 띄는 전환은 아니라) 감수할 만한 수준이다.
-  useEffect(() => {
-    try {
-      setCollapsed(localStorage.getItem(COLLAPSE_STORAGE_KEY) === '1');
-    } catch {
-      // localStorage가 막혀있으면(시크릿 모드 등) 그냥 펼친 상태로 둔다
-    }
-  }, []);
-
-  const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(COLLAPSE_STORAGE_KEY, next ? '1' : '0');
-      } catch {
-        // 저장 실패해도 이번 세션 안에서는 토글 자체는 동작하게 둔다
-      }
-      return next;
-    });
-  };
+  // 사이드바 접힘은 이 브라우저에 저장한다. 서버 렌더는 항상 펼친 상태로 그리고 하이드레이션 뒤에 저장된 값으로 바뀐다.
+  const [collapsed, setCollapsed] = useLocalFlag(COLLAPSE_STORAGE_KEY);
+  const toggleCollapsed = () => setCollapsed(!collapsed);
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -110,7 +90,7 @@ export function DashboardShell({
         {/* Brand */}
         <div className="sidebar-brand">
           <div className="sidebar-logo">
-            <Image src="/logo-navy.png" alt="통영아재수산" width={26} height={26} unoptimized priority />
+            <Image src="/logo-navy.png" alt="통영아재수산" width={26} height={26} unoptimized />
           </div>
           {!effectiveCollapsed && (
             <div className="sidebar-brand-text">
@@ -182,7 +162,7 @@ export function DashboardShell({
             <Menu size={22} />
           </button>
           <div className="topbar-brand">
-            <Image src="/logo-navy.png" alt="통영아재수산" width={20} height={20} unoptimized priority />
+            <Image src="/logo-navy.png" alt="통영아재수산" width={20} height={20} unoptimized />
             <span>통영아재수산</span>
           </div>
           <div className="topbar-user">

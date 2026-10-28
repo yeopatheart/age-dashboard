@@ -4,62 +4,46 @@ import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { ensureRecommendations, getTodayModel, orderSignature, type LiveOrderItem, type RecommendationState } from '@/lib/packing/server';
 import { PackingLogClient, type PackingBusiness } from './packing-log-client';
 import { requireMenu } from '@/lib/permissions/access';
-
-function todayKST() {
-  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
-}
+import { fetchAll } from '@/lib/supabase/fetch-all';
+import { todayKST } from '@/lib/order-date';
 
 export default async function PackingLogPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
-  await requireMenu('packing');
+  const accessCheck = requireMenu('packing'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 await로 확정)
   const { date } = await searchParams;
   const today = todayKST();
   const orderDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today ? date : today;
   const supabase = await createClient();
 
-  const { data: dailies, error: dailyError } = await supabase
-    .from('daily_businesses')
-    .select('id, business_id, business_number, round, terminal_id')
-    .eq('order_date', orderDate)
-    .order('sort_order');
+  // 1단계: 서로 의존하지 않는 조회를 한 번에 보낸다.
+  const [, { data: dailies, error: dailyError }, businesses, { data: terminals }, { data: boxes }, products, settings] = await Promise.all([
+    accessCheck,
+    supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id').eq('order_date', orderDate).order('sort_order'),
+    fetchAll((from, to) => supabase.from('businesses').select('id, name').order('id').range(from, to), '업체 조회 실패: '),
+    supabase.from('terminals').select('id, name'),
+    supabase.from('boxes').select('id, name, is_active, inner_width_cm, inner_depth_cm, inner_height_cm, is_mulbong_box').order('name'),
+    fetchAll((from, to) => supabase.from('products').select('name, needs_mulbong').order('id').range(from, to), '상품 조회 실패: '),
+    loadAppSettings(supabase),
+  ]);
   if (dailyError) throw new Error(`박스 할당 조회 실패: ${dailyError.message}`);
   const dailyRows = dailies ?? [];
   const dailyIds = dailyRows.map((d) => d.id);
 
-  const [{ data: businesses }, { data: terminals }, { data: items }, { data: boxes }, { data: records, error: recordError }, { data: products }] =
-    await Promise.all([
-      supabase.from('businesses').select('id, name'),
-      supabase.from('terminals').select('id, name'),
-      dailyIds.length
-        ? supabase
-            .from('order_items')
-            .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, measured_weight_kg, secondary_weight_kg, size_request, change_status, unshipped_quantity, is_mulbong')
-            .in('daily_business_id', dailyIds)
-            .order('product_sequence')
-        : Promise.resolve({ data: [] }),
-      supabase
-        .from('boxes')
-        .select('id, name, is_active, inner_width_cm, inner_depth_cm, inner_height_cm, is_mulbong_box')
-        .order('name'),
-      dailyIds.length
-        ? supabase.from('packing_records').select('id, daily_business_id, submitted_at, order_signature').in('daily_business_id', dailyIds)
-        : Promise.resolve({ data: [], error: null }),
-      supabase.from('products').select('name, needs_mulbong'),
-    ]);
-  const settings = await loadAppSettings(supabase);
+  // 2단계: 오늘 카드의 주문 줄과 제출 기록.
+  const [{ data: items }, { data: records, error: recordError }] = dailyIds.length
+    ? await Promise.all([
+        supabase
+          .from('order_items')
+          .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, measured_weight_kg, secondary_weight_kg, size_request, change_status, unshipped_quantity, is_mulbong')
+          .in('daily_business_id', dailyIds)
+          .order('product_sequence'),
+        supabase.from('packing_records').select('id, daily_business_id, submitted_at, order_signature').in('daily_business_id', dailyIds),
+      ])
+    : [{ data: [] }, { data: [], error: null }];
   if (recordError) throw new Error(`박스 할당 조회 실패: ${recordError.message}`);
 
-  const recordIds = (records ?? []).map((r) => r.id);
-  const { data: packedBoxes } = recordIds.length
-    ? await supabase.from('packing_boxes').select('id, record_id, box_id, position, box_name').in('record_id', recordIds).order('position')
-    : { data: [] };
-  const packedBoxIds = (packedBoxes ?? []).map((b) => b.id);
-  const { data: packedItems } = packedBoxIds.length
-    ? await supabase.from('packing_box_items').select('packing_box_id, order_item_id, quantity').in('packing_box_id', packedBoxIds)
-    : { data: [] };
-
-  const businessById = new Map((businesses ?? []).map((b) => [b.id, b]));
+  const businessById = new Map(businesses.map((b) => [b.id, b]));
   const terminalById = new Map((terminals ?? []).map((t) => [t.id, t.name]));
-  const needsMulbong = new Map((products ?? []).map((p) => [p.name, p.needs_mulbong]));
+  const needsMulbong = new Map(products.map((p) => [p.name, p.needs_mulbong]));
   const recordByDaily = new Map((records ?? []).map((r) => [r.daily_business_id, r]));
 
   // 박스 추천: 미제출 업체의 현재 주문에 대한 추천이 없으면 오늘 모델로 만들어 저장한다.
@@ -74,15 +58,30 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
         quantity: Number(i.quantity) - Number(i.unshipped_quantity ?? 0),
         mulbongFlag: i.is_mulbong || (needsMulbong.get(i.product_name_raw) ?? false),
       }));
-  const model = dailyRows.length ? await getTodayModel(supabase, todayKST()) : null;
-  const recommendations = model
-    ? await ensureRecommendations(
-        supabase,
-        model,
-        dailyRows.map((d) => ({ dailyBusinessId: d.id, items: liveItemsOf(d.id), submitted: recordByDaily.has(d.id) })),
-        boxByName,
-      )
-    : new Map<string, RecommendationState>();
+
+  // 3단계: 제출한 박스·상품 상세(박스 → 상품, 두 번 순서대로)와 추천 확인(필요할 때만 모델 로드)은 서로 무관해서 같이 보낸다.
+  const recordIds = (records ?? []).map((r) => r.id);
+  const loadPacked = async () => {
+    const { data: packedBoxes } = recordIds.length
+      ? await supabase.from('packing_boxes').select('id, record_id, box_id, position, box_name').in('record_id', recordIds).order('position')
+      : { data: [] };
+    const packedBoxIds = (packedBoxes ?? []).map((b) => b.id);
+    const { data: packedItems } = packedBoxIds.length
+      ? await supabase.from('packing_box_items').select('packing_box_id, order_item_id, quantity').in('packing_box_id', packedBoxIds)
+      : { data: [] };
+    return { packedBoxes: packedBoxes ?? [], packedItems: packedItems ?? [] };
+  };
+  const [{ packedBoxes, packedItems }, recommendations] = await Promise.all([
+    loadPacked(),
+    dailyRows.length
+      ? ensureRecommendations(
+          supabase,
+          () => getTodayModel(supabase, todayKST()),
+          dailyRows.map((d) => ({ dailyBusinessId: d.id, items: liveItemsOf(d.id), submitted: recordByDaily.has(d.id) })),
+          boxByName,
+        )
+      : Promise.resolve(new Map<string, RecommendationState>()),
+  ]);
 
   const splitBusinessIds = businessIdsInBothRounds(dailyRows.map((d) => ({ businessId: d.business_id, round: d.round })));
   const rows: PackingBusiness[] = dailyRows.map((d) => {
@@ -115,7 +114,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
       submitted: record
         ? {
             submittedAt: record.submitted_at,
-            boxes: (packedBoxes ?? [])
+            boxes: packedBoxes
               .filter((b) => b.record_id === record.id)
               .map((b) => ({
                 boxId: b.box_id,
