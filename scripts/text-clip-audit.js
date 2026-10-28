@@ -5,6 +5,7 @@
 // 사용: 브라우저에서 확인할 화면을 연 뒤 개발자 도구 콘솔에 이 파일 내용을 붙여넣고 `await textClipAudit('main')`을 실행한다.
 //   대시보드: 모니터 1(?monitor=1), 모니터 2(?monitor=2), 전체보기를 각각, 그리고 별도 주문 팝업을 연 상태에서 `await textClipAudit('.fixed.inset-0')`.
 //   창 높이를 바꿔 행 높이 단계(40/36/32/30px)별로도 확인한다.
+// 정렬은 같은 파일의 textBaselineAudit(칩 선택자)로 확인한다(아래 설명 참고).
 // 해석: 스크롤 영역 가장자리에 반쯤 걸친 줄이나 의도적인 말줄임(line-clamp)은 위반으로 나올 수 있다. text와 clipper를 보고 판단한다.
 async function textClipAudit(scopeSelector) {
   const ctx = document.createElement('canvas').getContext('2d');
@@ -70,4 +71,45 @@ async function textClipAudit(scopeSelector) {
     }
   }
   return { checked, violations: violations.length, sample: violations.slice(0, 10) };
+}
+
+// 글자 정렬 점검: 한 칩 안에서 같은 줄에 놓인 글자 조각들(품목명·수량·단위·사이즈 표기)의 기준선이 같은지 잰다.
+// 글자 크기가 다른 조각(예: 수량 숫자만 크게)을 가운데 정렬(items-center)하면 기준선이 어긋나 읽기 어렵다 — 줄 안의 조각은 기준선 정렬(items-baseline).
+// 사용: `await textBaselineAudit('[data-pill], .group\\/pill')` 처럼 칩을 고르는 선택자를 준다. violations가 0이어야 한다.
+async function textBaselineAudit(chipSelector) {
+  const MAX_BASELINE_DIFF_PX = 0.6;
+  const chips = [...document.querySelectorAll(chipSelector)];
+  const violations = [];
+  for (const chip of chips) {
+    const segments = [];
+    const walker = document.createTreeWalker(chip, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.textContent.replace(/\s+/g, ' ').trim();
+      const el = node.parentElement;
+      if (!text || !el) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rects = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+      if (!rects.length) continue;
+      const probe = document.createElement('span');
+      probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+      el.insertBefore(probe, node);
+      const ascentOffset = probe.getBoundingClientRect().bottom - rects[0].top;
+      el.removeChild(probe);
+      for (const r of rects) segments.push({ text, baseline: r.top + ascentOffset, center: (r.top + r.bottom) / 2, height: r.height });
+    }
+    // 세로 중심이 가까운 조각끼리 같은 줄로 묶는다(다른 줄과는 줄 간격만큼 떨어져 있다).
+    const lines = [];
+    for (const seg of segments.sort((a, b) => a.center - b.center)) {
+      const line = lines.find((l) => Math.abs(l.center - seg.center) < 0.5 * Math.min(l.height, seg.height));
+      if (line) { line.items.push(seg); } else { lines.push({ center: seg.center, height: seg.height, items: [seg] }); }
+    }
+    for (const line of lines) {
+      if (line.items.length < 2) continue;
+      const baselines = line.items.map((s) => s.baseline);
+      const spread = Math.max(...baselines) - Math.min(...baselines);
+      if (spread > MAX_BASELINE_DIFF_PX) violations.push({ chip: line.items.map((s) => s.text).join(' | ').slice(0, 40), spreadPx: +spread.toFixed(1) });
+    }
+  }
+  return { chips: chips.length, violations: violations.length, sample: violations.slice(0, 8) };
 }
