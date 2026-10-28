@@ -82,6 +82,14 @@ export interface ProductSummaryRow {
 // 주문 입력에서 수량을 못 찾아 "수량 미정"으로 올린 상품(수량 0, 단위 없음). 합계·포장에서는 빠지고 대시보드에 "수량 미정"으로 보인다.
 export const isUndecidedQuantity = (item: Pick<OrderItem, 'quantity' | 'unit'>) => item.quantity === 0 && !item.unit;
 
+// 업체 카드(행)의 모든 상품이 끝났는지: 취소되지 않은 상품이 하나 이상 있고, 전부 포장 완료이거나 전량 미출고여야 한다.
+// 수량 미정인 상품이 하나라도 있으면 아직 끝난 것이 아니다(수량을 채워야 한다).
+export function isCardComplete(items: Pick<OrderItem, 'changeStatus' | 'isPacked' | 'quantity' | 'unit' | 'unshippedQuantity'>[]): boolean {
+  const live = items.filter((i) => i.changeStatus !== 'cancelled');
+  if (live.length === 0) return false;
+  return live.every((i) => !isUndecidedQuantity(i) && (i.isPacked || i.quantity - i.unshippedQuantity <= 0));
+}
+
 export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
   const map = new Map<string, ProductSummaryRow>();
   for (const item of items) {

@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
-import { businessIdsInBothRounds, roundLabel, getProductSummary, getTerminalBoxTotals, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
+import { businessIdsInBothRounds, roundLabel, getProductSummary, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import {
@@ -95,6 +95,15 @@ function RoundBadge({ round }: { round: OrderRound }) {
   return (
     <span className={`inline-block align-middle mr-1 px-1 rounded border text-[10px] font-bold leading-[14px] ${round === 1 ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-violet-50 text-violet-700 border-violet-200'}`}>
       {roundLabel(round)}
+    </span>
+  );
+}
+
+// 업체의 모든 상품이 끝났을 때 업체명 앞에 붙는 표시 — 업체명 줄 안에 인라인으로 흐르므로 행 높이를 키우지 않는다.
+function DoneBadge() {
+  return (
+    <span className="inline-flex items-center gap-0.5 align-middle mr-1 px-1 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold leading-[14px]" title="이 업체의 모든 상품이 완료되었습니다">
+      <Check className="w-2.5 h-2.5" strokeWidth={4} />완료
     </span>
   );
 }
@@ -1226,10 +1235,10 @@ export function DashboardClient({
                         {row.terminal || '-'}
                       </span>
                     </div>
-                    <div className="relative border-r border-slate-100 px-2 flex items-center group overflow-hidden">
+                    <div className={`relative border-r border-slate-100 px-2 flex items-center group overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : ''}`}>
                       {/* 업체명은 현장에서 정확히 보여야 하므로 말줄임 없이 전체 폭을 쓰고(최대 2줄, 행 높이 고정),
                           수정/삭제 버튼은 마우스를 올릴 때만 이름 위에 겹쳐 나타난다. */}
-                      <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
+                      <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
                       {row.packingChanged && <span className="ml-1 shrink-0 rounded border border-rose-300 bg-rose-50 px-1 text-[10px] font-extrabold leading-tight text-rose-600" title="주문이 바뀌었습니다 — 박스 할당에서 박스 구성을 다시 확인하세요">박스</span>}
                       <div className={`absolute inset-y-0 right-0 pl-4 pr-1 flex items-center gap-1 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity bg-gradient-to-l from-white via-white to-transparent`}>
@@ -1430,7 +1439,7 @@ export function DashboardClient({
                     )}
                     <div className="w-72 flex-shrink-0 flex items-center gap-2">
                       <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
-                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
+                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
                       <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes}</span>
                     </div>
                     <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">

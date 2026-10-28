@@ -19,6 +19,8 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
     pendingKeywords: initial.pendingKeywords.join(', '),
     optionalKeywords: initial.optionalKeywords.join(', '),
     unshippedReasons: initial.unshippedReasons.join(', '),
+    companyName: initial.companyName,
+    contactPhone: initial.contactPhone,
   });
   const [allowPast, setAllowPast] = useState(initial.allowPastOrderEdit);
   const [sample, setSample] = useState('2.5kg내외, 피빼기');
@@ -35,6 +37,8 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       optionalKeywords: toList(form.optionalKeywords),
       unshippedReasons: toList(form.unshippedReasons),
       allowPastOrderEdit: allowPast,
+      companyName: form.companyName.trim(),
+      contactPhone: form.contactPhone.trim(),
     }),
     [form, allowPast],
   );
@@ -69,6 +73,8 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       pendingKeywords: DEFAULT_SETTINGS.pendingKeywords.join(', '),
       optionalKeywords: DEFAULT_SETTINGS.optionalKeywords.join(', '),
       unshippedReasons: DEFAULT_SETTINGS.unshippedReasons.join(', '),
+      companyName: DEFAULT_SETTINGS.companyName,
+      contactPhone: DEFAULT_SETTINGS.contactPhone,
     });
     setAllowPast(DEFAULT_SETTINGS.allowPastOrderEdit);
   };
@@ -143,6 +149,21 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
           <input className="ak-input" value={form.unshippedReasons} onChange={set('unshippedReasons')} />
           <small>쉼표로 구분 — 예: 재고없음, 폐사, 품질불량</small>
         </label>
+      </section>
+
+      <section className="st-card">
+        <h2 className="st-title">송장 라벨 정보</h2>
+        <p className="st-desc">박스 라벨에 찍히는 상호와 연락처입니다. 라벨 설정 메뉴에서 라벨에 넣을 위치를 정합니다.</p>
+        <div className="st-grid">
+          <label className="ak-field">
+            <span>상호</span>
+            <input className="ak-input" value={form.companyName} onChange={set('companyName')} maxLength={60} />
+          </label>
+          <label className="ak-field">
+            <span>연락처</span>
+            <input className="ak-input" value={form.contactPhone} onChange={set('contactPhone')} maxLength={60} placeholder="예: 055-000-0000" inputMode="tel" />
+          </label>
+        </div>
       </section>
 
       <section className="st-card">
