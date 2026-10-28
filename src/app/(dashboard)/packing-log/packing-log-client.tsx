@@ -564,11 +564,16 @@ export function PackingLogClient({
         .pk-view { padding: 1rem 1.1rem; }
         .pk-labels { border-top: 1px solid var(--border); padding: 0.9rem 1.1rem 1.1rem; display: flex; flex-direction: column; gap: 0.7rem; }
         .pk-labels-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.9375rem; }
-        .pk-label-boxes { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-        .pk-label-box { display: flex; align-items: center; gap: 0.5rem; border: 2px solid var(--border); border-radius: 12px; padding: 0.45rem 0.8rem; cursor: pointer; background: #fff; }
-        .pk-label-box input { width: 1.1rem; height: 1.1rem; }
-        .pk-label-no { font-size: 1.35rem; font-weight: 900; line-height: 1; }
-        .pk-label-st { font-size: 0.8125rem; font-weight: 800; color: var(--muted-foreground); }
+        .pk-label-boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.7rem; }
+        .pk-label-box { display: flex; flex-direction: column; gap: 0.5rem; border: 2px solid var(--border); border-radius: 12px; padding: 0.55rem 0.7rem 0.7rem; cursor: pointer; background: #fff; min-width: 0; }
+        .pk-label-top { display: flex; align-items: center; gap: 0.5rem; }
+        .pk-label-top input { width: 1.1rem; height: 1.1rem; }
+        .pk-label-no { font-size: 1.15rem; font-weight: 900; line-height: 1; }
+        .pk-label-st { font-size: 0.8125rem; font-weight: 800; color: var(--muted-foreground); margin-left: auto; }
+        .pk-label-preview { display: flex; justify-content: center; overflow-x: auto; padding: 0.25rem; background: #f1f5f9; border-radius: 8px; }
+        .pk-label-preview > div { box-shadow: 0 0 0 1px #cbd5e1; }
+        .pk-label-kinds { display: inline-flex; gap: 0.3rem; }
+        .pk-label-kind-on { background: var(--primary); color: #fff; }
         .pk-label-new { border-color: #fcd34d; background: #fffbeb; }
         .pk-label-new .pk-label-st { color: #92400e; }
         .pk-label-printed .pk-label-st { color: #1d4ed8; }

@@ -48,7 +48,7 @@ const newElement = (type: LabelElementType): LabelElement => {
   const id = `e-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
   if (type === 'barcode') return { id, type, x: 5, y: 5, w: 60, h: 18, showText: true };
   if (type === 'line') return { id, type, x: 5, y: 5, w: 50, h: 0.4 };
-  if (type === 'field') return { id, type, field: 'business', x: 5, y: 5, w: 50, h: 10, fontSize: 18, bold: true, align: 'left' };
+  if (type === 'field') return { id, type, field: 'businessBox', x: 5, y: 5, w: 50, h: 10, fontSize: 18, bold: true, align: 'left' };
   return { id, type: 'text', text: '문구', x: 5, y: 5, w: 40, h: 8, fontSize: 14, bold: false, align: 'left' };
 };
 
