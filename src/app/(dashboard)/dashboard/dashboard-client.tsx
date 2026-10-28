@@ -36,13 +36,12 @@ const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 // 1~2px씩 미묘하게 달라져(브라우저의 flex 여유공간 분배가 셀 내용에 영향받는 경우가 있다)
 // 여러 줄에 걸쳐 누적되면 열 경계가 눈에 띄게 어긋났다. 헤더·모든 행이 똑같은 grid-template-
 // columns 값을 공유하는 CSS Grid로 바꿔서, 같은 칸은 항상 같은 폭이 되도록 강제한다.
-// 품목별 수량 세로 패널(2열). 모니터 2 오른쪽과 별도 주문 팝업 오른쪽에서 같이 쓴다.
-// availHeight를 주면(모니터 2) 품목이 늘어도 스크롤이 생기지 않게 줄 높이·글자 크기를 그 높이에 맞춰 줄이고,
-// 안 주면(팝업) 고정 줄 높이로 그리고 넘치면 패널 안에서 스크롤한다.
-// 칸 하나에 이름+수량이 안 들어가 말줄임(...)이 생길 품목은 한 줄 전체를 쓰게 한다 — 이름이 잘리면 현장에서 어떤 품목인지
-// 알 수 없다. 순서는 바꾸지 않는다(품목명 한글 오름차순 그대로라 비슷한 품목이 붙어 있다). 잘리는지는 글자 폭을 추정하지 않고
-// 그려진 결과(scrollWidth > clientWidth)로 직접 확인해서, 글꼴·스크롤바·여백 차이로 어긋나지 않게 한다.
-const NO_NAMES: Set<string> = new Set();
+// 품목별 수량 세로 패널. 모니터 2 오른쪽과 별도 주문 팝업 오른쪽에서 같이 쓴다.
+// 칩 크기는 고정하지 않고 글자 길이에 맞춘다: 품목명 한글 오름차순 순서 그대로 한 줄에 들어가는 만큼 채우고(flex-wrap),
+// 남는 폭은 그 줄의 칩이 나눠 가진다. 긴 이름은 자연히 한 줄 전체를 쓰고, 이름을 말줄임(...)으로 자르지 않는다.
+// availHeight를 주면(모니터 2) 품목이 늘어도 스크롤이 생기지 않게, 넘칠 때만 칩 높이·글자를 한 단계씩 줄인다.
+// 안 주면(팝업) 기본 크기로 그리고 넘치면 패널 안에서 스크롤한다.
+const SUMMARY_ITEM_HEIGHTS = [26, 24, 22, 20, 18, 16, 14];
 function ProductSummaryPanel({
   columns,
   chipStyle,
@@ -53,55 +52,34 @@ function ProductSummaryPanel({
   availHeight?: number;
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
-  const signature = columns.map((c) => `${c.key}:${c.total}:${c.unshipped}`).join('|');
-  // 한 줄 전체로 올린 이름 목록. 품목·수량(signature)이 바뀌면 이전 목록은 버리고 전부 한 칸으로 다시 그려 본다.
-  const [longState, setLongState] = useState<{ signature: string; names: Set<string> }>({ signature: '', names: NO_NAMES });
-  const longNames = longState.signature === signature ? longState.names : NO_NAMES;
-  // 그려진 뒤 이름이 잘린 칩을 찾아 한 줄 전체로 올린다(그려지기 전에 끝나므로 깜빡임이 없다). 이미 한 줄 전체인 칩은 건너뛴다.
+  const signature = `${columns.map((c) => `${c.key}:${c.total}:${c.unshipped}`).join('|')}@${availHeight ?? ''}`;
+  // 품목·수량·높이가 바뀌면 가장 큰 크기부터 다시 시도한다.
+  const [fit, setFit] = useState<{ signature: string; level: number }>({ signature: '', level: 0 });
+  const level = availHeight === undefined ? 0 : fit.signature === signature ? fit.level : 0;
   useLayoutEffect(() => {
-    const verify = () => {
+    if (availHeight === undefined) return;
+    const check = () => {
       const grid = gridRef.current;
       if (!grid) return;
-      const truncated = [...grid.querySelectorAll<HTMLElement>('[data-label-key]')]
-        .filter((el) => el.scrollWidth > el.clientWidth + 1)
-        .map((el) => el.dataset.labelKey as string)
-        .filter((key) => !longNames.has(key));
-      if (truncated.length > 0) setLongState({ signature, names: new Set([...longNames, ...truncated]) });
+      if (grid.scrollHeight > grid.clientHeight + 1 && level < SUMMARY_ITEM_HEIGHTS.length - 1) setFit({ signature, level: level + 1 });
     };
-    verify();
-    // 웹폰트가 늦게 로드되면 폭이 달라지므로 로드 후 한 번 더 확인한다.
-    void document.fonts?.ready.then(verify);
-  }, [signature, longNames]);
-  // 한 줄 전체 칩 앞에 한 칸만 남은 줄은 비워 둔다(순서를 지키기 위해). 높이 계산에도 그만큼 센다.
-  let layoutRows = 0;
-  let pendingShort = false;
-  for (const c of columns) {
-    if (longNames.has(c.key)) {
-      if (pendingShort) layoutRows += 1;
-      pendingShort = false;
-      layoutRows += 1;
-    } else if (pendingShort) {
-      layoutRows += 1;
-      pendingShort = false;
-    } else {
-      pendingShort = true;
-    }
-  }
-  if (pendingShort) layoutRows += 1;
-  const itemHeight =
-    availHeight === undefined ? 26 : Math.min(26, Math.max(14, Math.floor((Math.max(availHeight, 300) - 8) / Math.max(1, layoutRows))));
+    check();
+    // 웹폰트가 늦게 로드되면 글자 폭이 달라지므로 로드 후 한 번 더 확인한다.
+    void document.fonts?.ready.then(check);
+  }, [signature, level, availHeight]);
+  const itemHeight = SUMMARY_ITEM_HEIGHTS[level];
   return (
     <aside className="w-64 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ borderTop: '3px solid #003057' }}>
       <div className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100 flex-shrink-0">품목별 수량</div>
-      <div ref={gridRef} className={`flex-1 min-h-0 grid grid-cols-2 content-start gap-x-1 p-1.5 ${availHeight === undefined ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+      <div ref={gridRef} className={`flex-1 min-h-0 flex flex-wrap content-start gap-x-1 p-1.5 ${availHeight === undefined ? 'overflow-y-auto' : 'overflow-hidden'}`}>
         {columns.map((product) => (
           <div
             key={product.key}
-            className={`flex items-center justify-between gap-1 px-1.5 rounded border mb-px overflow-hidden ${longNames.has(product.key) ? 'col-span-2' : ''}`}
-            style={{ ...chipStyle(product.productName), height: itemHeight - 1, fontSize: Math.min(12, itemHeight - 6) }}
+            className="flex items-center justify-between gap-1 px-1.5 rounded border mb-px"
+            style={{ ...chipStyle(product.productName), minHeight: itemHeight - 1, fontSize: Math.min(12, itemHeight - 6), flex: '1 1 auto', maxWidth: '100%' }}
           >
-            <span data-label-key={product.key} className="font-bold truncate leading-none">{product.label}</span>
-            <span className="font-black shrink-0 leading-none">
+            <span className="font-bold break-keep leading-tight">{product.label}</span>
+            <span className="font-black shrink-0 whitespace-nowrap leading-tight">
               {product.total}{product.unit}
               {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
             </span>
@@ -148,12 +126,20 @@ function SortableRow({
   );
 }
 
-function productGridTemplate(slotCount: number) {
-  return `40px 80px 144px 56px repeat(${slotCount}, minmax(130px, 1fr))`;
+// flexible = 모니터 1/2: 열을 화면 폭에 맞춰 줄여서 가로 스크롤이 생기지 않게 한다(스크롤 밖의 상품을 놓치지 않도록).
+// 마지막 칸은 "+" 추가 버튼 자리라 좁게 고정하고, 나머지 폭을 상품 칸이 나눠 쓴다.
+// 전체보기는 열마다 최소 폭을 두고 필요하면 옆으로 스크롤한다.
+const ADD_COLUMN_WIDTH = 36;
+function productGridTemplate(slotCount: number, flexible = false) {
+  const fixed = '40px 80px 144px 56px';
+  if (!flexible) return `${fixed} repeat(${slotCount}, minmax(130px, 1fr))`;
+  const productColumns = slotCount - 1;
+  return `${fixed} ${productColumns > 0 ? `repeat(${productColumns}, minmax(0, 1fr)) ` : ''}${ADD_COLUMN_WIDTH}px`;
 }
 // 위 열 정의의 최소 폭 합. 표 전체 폭을 이 값 이상으로 잡아야 옆으로 스크롤해도 헤더·행 배경이 끝까지 이어진다.
+const PRODUCT_GRID_FIXED_WIDTH = 40 + 80 + 144 + 56;
 function productGridMinWidth(slotCount: number) {
-  return 40 + 80 + 144 + 56 + slotCount * 130;
+  return PRODUCT_GRID_FIXED_WIDTH + slotCount * 130;
 }
 
 // 전체보기 위쪽 "품목별 수량" 카드를 접은 상태. 이 브라우저(PC·TV)마다 따로 기억한다 — 서버에는 저장하지 않는다.
@@ -756,6 +742,7 @@ export function DashboardClient({
   // 표 본문에 쓸 수 있는 높이(스크롤 영역 − 헤더)를 측정해서 행 높이 단계와 줄 수를 정한다.
   // 두 모니터가 같은 높이를 쓰므로 모니터 2는 모니터 1이 가져간 줄 수(ownCapacity) 다음부터 시작한다.
   const [availHeight, setAvailHeight] = useState(0);
+  const [availWidth, setAvailWidth] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
 
@@ -763,7 +750,10 @@ export function DashboardClient({
     const scrollEl = scrollRef.current;
     const headerEl = headerRef.current;
     if (!scrollEl || !headerEl) return;
-    const measure = () => setAvailHeight(Math.max(0, scrollEl.clientHeight - headerEl.offsetHeight));
+    const measure = () => {
+      setAvailHeight(Math.max(0, scrollEl.clientHeight - headerEl.offsetHeight));
+      setAvailWidth(scrollEl.clientWidth);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(scrollEl);
@@ -820,14 +810,12 @@ export function DashboardClient({
   const rowSlotCount = isSplitMode ? ownCapacity : displayedRows.length;
   // gridTemplateRows를 고정하지 않으면 내용이 긴 칸 하나가 행 전체를 키워서 행 높이 규칙이 깨진다.
   const rowStyle = { height: rowHeight, gridTemplateRows: `${rowHeight}px` };
-  // 상품 팁은 한 줄에 다 들어가면 한 줄, 아니면 같은 행 높이 안에서 2줄로 나눠 보여준다(상품명을 말줄임하지
-  // 않는다). 2줄이 팁 안에 들어가도록 글자 크기·줄 높이를 행 높이 단계에 맞춰 정한다 — 행이 높은 단계(40/36px)
-  // 에서는 기본 크기(상품명 11px / 수량 14px) 그대로이고, 가장 촘촘한 30px 단계에서만 10px / 12px까지 줄어든다.
+  // 상품 팁은 한 줄에 다 들어가면 한 줄, 아니면 같은 행 높이 안에서 2줄로 나눠 보여준다(상품명을 말줄임하지 않는다).
+  // 글자가 잘리지 않도록 줄 높이는 글자 크기의 1.15배로 두고(고정 px가 아니라 비율이라 kg의 g처럼 아래로 내려오는 글자도 안 잘린다),
+  // 크기는 3단계를 준비한다: 한 줄일 때(기본) / 두 줄이 팁 안에 들어가는 크기 / 그래도 넘칠 때의 가장 작은 크기.
+  // 실제로 어느 단계가 필요한지는 그려진 결과(넘침)를 보고 아래 효과에서 팁마다 정한다.
   // 팁 안쪽 높이 = 행 높이 − 테두리 1 − 칸 여백 4 − 팁 테두리 2.
-  const pillLineHeight = Math.floor((rowHeight - 7) / 2);
-  // 글자 높이가 줄 높이보다 크면 2번째 줄(사이즈 표기 등) 아래가 잘리므로, 줄 높이보다 2px 작게 잡는다.
-  const pillNameFont = Math.min(11, pillLineHeight - 2);
-  const pillQtyFont = Math.min(14, pillLineHeight + 1);
+  const pillInnerHeight = rowHeight - 7;
 
   // 열 개수는 "이 화면에 실제로 보이는 행" 중 상품이 가장 많은 업체 기준 + 1(추가 버튼 열)이다.
   // 모니터마다 다른 업체가 보이므로 전체 기준이 아니라 화면에 표시되는 행 기준으로 센다.
@@ -836,6 +824,30 @@ export function DashboardClient({
     return Math.max(max, count);
   }, 0);
   const productSlotCount = maxProductCount + 1;
+  const gridTemplate = productGridTemplate(productSlotCount, isSplitMode);
+  // 모니터 1/2는 열 폭이 화면 폭으로 정해진다. 상품이 많아 열이 좁아지면 글자도 그만큼 줄인다.
+  const colWidth = isSplitMode && availWidth > 0 ? (availWidth - PRODUCT_GRID_FIXED_WIDTH - ADD_COLUMN_WIDTH) / Math.max(1, productSlotCount - 1) : Infinity;
+  const widthShrink = colWidth >= 120 ? 0 : colWidth >= 100 ? 1 : colWidth >= 88 ? 2 : 3;
+  const shrinkPill = (q: number, f: number) => ({ q: Math.max(8, q - widthShrink), f: Math.max(7, f - widthShrink) });
+  const q2 = Math.min(14, Math.floor((pillInnerHeight - 1) / 2.3));
+  const pillSteps = [shrinkPill(14, 11), shrinkPill(q2, Math.min(11, q2 - 1)), shrinkPill(q2 - 2, Math.min(11, q2 - 3))];
+  const pillStepsAttr = pillSteps.map((p) => `${p.q},${p.f}`).join('|');
+
+  // 팁마다 글자 크기 단계를 정한다: 기본 단계부터 시작해, 팁 안쪽 높이를 넘치면 한 단계씩 줄인다.
+  useLayoutEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    for (const el of root.querySelectorAll<HTMLElement>('[data-pill]')) {
+      const steps = (el.dataset.sizes ?? '').split('|').map((p) => p.split(','));
+      let step = Number(el.dataset.start ?? 0);
+      const apply = (n: number) => {
+        el.style.setProperty('--pq', `${steps[n][0]}px`);
+        el.style.setProperty('--pn', `${steps[n][1]}px`);
+      };
+      apply(step);
+      while (el.scrollHeight > el.clientHeight + 2 && step < steps.length - 1) apply(++step);
+    }
+  });
 
   // 전체보기 기준(기본 주문표 전체, 입력 순서) 주문 목록을 엑셀에서 열리는 CSV로 내려받는다.
   // 상품 칸은 "상품명 수량단위 (사이즈·중량)"이고, 추가/수정/취소된 상품은 앞에 표시한다.
@@ -1134,12 +1146,12 @@ export function DashboardClient({
           </div>
         )}
         <div ref={scrollRef} className={`flex-1 min-h-0 overflow-x-auto ${isSplitMode ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
-          <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`} style={{ minWidth: productGridMinWidth(productSlotCount) }}>
+          <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`} style={isSplitMode ? undefined : { minWidth: productGridMinWidth(productSlotCount) }}>
             {/* 헤더 */}
             <div
               ref={headerRef}
               className={`grid text-white text-xs font-bold flex-shrink-0 ${!isSplitMode ? 'sticky top-0 z-10' : ''}`}
-              style={{ backgroundColor: '#003057', gridTemplateColumns: productGridTemplate(productSlotCount) }}
+              style={{ backgroundColor: '#003057', gridTemplateColumns: gridTemplate }}
             >
               <div className="border-r border-b-2 border-white/20 px-2 py-1.5 flex items-center justify-center">No</div>
               <div className="border-r border-b-2 border-white/20 px-2 py-1.5 flex items-center justify-center">터미널</div>
@@ -1150,7 +1162,7 @@ export function DashboardClient({
                   key={i}
                   className="border-r last:border-r-0 border-b-2 border-white/20 px-1.5 py-1.5 flex items-center justify-center text-center"
                 >
-                  상품 {i + 1}
+                  {isSplitMode && i === productSlotCount - 1 ? '' : `상품 ${i + 1}`}
                 </div>
               ))}
             </div>
@@ -1180,7 +1192,7 @@ export function DashboardClient({
                     id={row.dailyBusinessId}
                     disabled={readOnly}
                     className="group/row grid border-b border-slate-100 hover:bg-slate-50/50 transition-colors shrink-0"
-                    style={{ gridTemplateColumns: productGridTemplate(productSlotCount), ...rowStyle }}
+                    style={{ gridTemplateColumns: gridTemplate, ...rowStyle }}
                   >
                     {(handle) => (
                     <>
@@ -1297,20 +1309,23 @@ export function DashboardClient({
                               <Check className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-slate-400/30" strokeWidth={4} />
                             )}
                             <div
+                              data-pill
+                              data-sizes={pillStepsAttr}
+                              data-start={suffix ? 1 : 0}
                               onClick={() => !readOnly && handleTogglePacked(item)}
                               className="w-full min-w-0 flex flex-wrap items-center justify-center gap-x-1 z-10 cursor-pointer select-none overflow-hidden break-keep [overflow-wrap:anywhere]"
-                              style={{ lineHeight: `${pillLineHeight}px`, maxHeight: pillLineHeight * 2 }}
+                              style={{ lineHeight: 1.15, maxHeight: pillInnerHeight }}
                             >
-                              <span className={highlightColor ? 'font-black' : `font-bold ${text}`} style={{ fontSize: pillNameFont, height: pillLineHeight, ...(highlightColor ? { color: highlightColor } : {}) }}>{item.productName}</span>
+                              <span className={highlightColor ? 'font-black' : `font-bold ${text}`} style={{ fontSize: 'var(--pn)', ...(highlightColor ? { color: highlightColor } : {}) }}>{item.productName}</span>
                               {isUndecidedQuantity(item) ? (
-                                <span className="whitespace-nowrap rounded bg-amber-100 px-1 font-black text-amber-700" style={{ fontSize: pillNameFont }} title="주문에서 수량을 못 찾았습니다. 수정에서 수량을 채워 주세요">수량 미정</span>
+                                <span className="whitespace-nowrap rounded bg-amber-100 px-1 font-black text-amber-700" style={{ fontSize: 'var(--pn)' }} title="주문에서 수량을 못 찾았습니다. 수정에서 수량을 채워 주세요">수량 미정</span>
                               ) : (
-                                <span className="whitespace-nowrap" style={{ height: pillLineHeight }}>
-                                  <span className={`font-black ${text}`} style={{ fontSize: pillQtyFont }}>{item.quantity}</span>
-                                  <span className={`ml-0.5 font-semibold ${text}`} style={{ fontSize: pillNameFont }}>{item.unit}</span>
+                                <span className="whitespace-nowrap">
+                                  <span className={`font-black ${text}`} style={{ fontSize: 'var(--pq)' }}>{item.quantity}</span>
+                                  <span className={`ml-0.5 font-semibold ${text}`} style={{ fontSize: 'var(--pn)' }}>{item.unit}</span>
                                 </span>
                               )}
-                              {suffix && <span className="font-semibold text-sky-600" style={{ fontSize: pillNameFont, height: pillLineHeight }}>{suffix.trim()}</span>}
+                              {suffix && <span className="font-semibold text-sky-600" style={{ fontSize: 'var(--pn)' }}>{suffix.trim()}</span>}
                             </div>
                             <div className={`absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity z-20`}>
                               <button
