@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
-import { Noto_Sans_KR } from "next/font/google";
+// 글꼴(Noto Sans KR)은 npm 패키지(@fontsource)로 앱에 포함한다 — 빌드할 때 Google Fonts 접속이 필요 없다(next/font/google은 빌드 중 가져오기에 실패해 배포가 깨진 적이 있다).
+// 실제로 쓰는 굵기만 싣는다. 한글은 글자 영역(unicode-range)별 조각 파일이라 화면에 나온 글자의 조각만 내려받는다.
+import "@fontsource/noto-sans-kr/400.css";
+import "@fontsource/noto-sans-kr/500.css";
+import "@fontsource/noto-sans-kr/600.css";
+import "@fontsource/noto-sans-kr/700.css";
+import "@fontsource/noto-sans-kr/800.css";
 import "./globals.css";
-
-// 글꼴은 빌드 때 받아서 우리 서버에서 내려준다(외부 Google Fonts 접속과 렌더 차단 없음). 실제로 쓰는 굵기만 싣는다.
-const notoSansKr = Noto_Sans_KR({
-  weight: ["400", "500", "600", "700", "800"],
-  display: "swap",
-  preload: false,
-  variable: "--font-noto-sans-kr",
-});
 
 export const metadata: Metadata = {
   title: "통영아재수산 관리자 시스템",
@@ -21,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ko" className={notoSansKr.variable}>
+    <html lang="ko">
       <body>{children}</body>
     </html>
   );
