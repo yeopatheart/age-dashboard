@@ -1231,7 +1231,7 @@ export function DashboardClient({
                           수정/삭제 버튼은 마우스를 올릴 때만 이름 위에 겹쳐 나타난다. */}
                       <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
-                      {row.packingChanged && <span className="ml-1 shrink-0 rounded border border-rose-300 bg-rose-50 px-1 text-[10px] font-extrabold leading-tight text-rose-600" title="주문이 바뀌었습니다 — 박스 기록에서 박스 구성을 다시 확인하세요">박스</span>}
+                      {row.packingChanged && <span className="ml-1 shrink-0 rounded border border-rose-300 bg-rose-50 px-1 text-[10px] font-extrabold leading-tight text-rose-600" title="주문이 바뀌었습니다 — 박스 할당에서 박스 구성을 다시 확인하세요">박스</span>}
                       <div className={`absolute inset-y-0 right-0 pl-4 pr-1 flex items-center gap-1 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity bg-gradient-to-l from-white via-white to-transparent`}>
                       <button
                         onClick={() => setEditOrderModal(row)}

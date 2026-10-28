@@ -302,7 +302,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
               onChange={(e) => setNameDraft(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && nameDraft.trim() && nameDraft.trim() !== open.name && handleRename()}
             />
-            <span className="ak-meta">이름을 바꾸면 이 상품의 과거 주문 상품명도 함께 바뀝니다. 박스 기록은 당시 이름 그대로 남습니다.</span>
+            <span className="ak-meta">이름을 바꾸면 이 상품의 과거 주문 상품명도 함께 바뀝니다. 박스 할당 기록은 당시 이름 그대로 남습니다.</span>
           </div>
           <div className="ak-setting">
             <span>

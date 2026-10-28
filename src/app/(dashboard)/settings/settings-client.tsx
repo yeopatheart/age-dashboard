@@ -147,7 +147,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
 
       <section className="st-card">
         <h2 className="st-title">과거 날짜 편집</h2>
-        <p className="st-desc">켜면 오늘 이전 날짜의 주문도 오늘과 똑같이 입력·수정·취소·삭제할 수 있고, 박스 기록도 고칠 수 있습니다. 주문 입력 화면에는 날짜 선택칸이 생깁니다. 미래 날짜는 항상 막힙니다.</p>
+        <p className="st-desc">켜면 오늘 이전 날짜의 주문도 오늘과 똑같이 입력·수정·취소·삭제할 수 있고, 박스 할당도 고칠 수 있습니다. 주문 입력 화면에는 날짜 선택칸이 생깁니다. 미래 날짜는 항상 막힙니다.</p>
         <div className="st-row">
           <Toggle checked={allowPast} onChange={setAllowPast} label="과거 날짜 편집 허용" />
           <span>{allowPast ? '허용 중 — 과거 날짜도 오늘처럼 편집할 수 있습니다' : '꺼짐 — 과거 날짜는 조회만 할 수 있습니다'}</span>

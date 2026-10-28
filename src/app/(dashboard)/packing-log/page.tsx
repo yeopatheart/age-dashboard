@@ -19,7 +19,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
     .select('id, business_id, business_number, round, terminal_id')
     .eq('order_date', orderDate)
     .order('sort_order');
-  if (dailyError) throw new Error(`박스 기록 조회 실패: ${dailyError.message}`);
+  if (dailyError) throw new Error(`박스 할당 조회 실패: ${dailyError.message}`);
   const dailyRows = dailies ?? [];
   const dailyIds = dailyRows.map((d) => d.id);
 
@@ -44,7 +44,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
       supabase.from('products').select('name, needs_mulbong'),
     ]);
   const settings = await loadAppSettings(supabase);
-  if (recordError) throw new Error(`박스 기록 조회 실패: ${recordError.message}`);
+  if (recordError) throw new Error(`박스 할당 조회 실패: ${recordError.message}`);
 
   const recordIds = (records ?? []).map((r) => r.id);
   const { data: packedBoxes } = recordIds.length

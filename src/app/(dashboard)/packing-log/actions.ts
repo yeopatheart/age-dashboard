@@ -119,7 +119,7 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
     })
     .select('id')
     .single();
-  if (recordError || !record) return { error: recordError?.message ?? '박스 기록을 저장하지 못했습니다.' };
+  if (recordError || !record) return { error: recordError?.message ?? '박스 할당을 저장하지 못했습니다.' };
 
   const rollback = async (message: string) => {
     await supabase.from('packing_records').delete().eq('id', record.id);
