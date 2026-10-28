@@ -24,12 +24,15 @@ export type ScanResult =
   | { status: 'invalid'; code: string } // 우리 바코드 형식이 아님
   | { status: 'unknown'; code: string }; // 형식은 맞지만 발급된 적 없는 번호
 
+// 스캔 결과 화면에 보여줄 정보를 모은다. 업체 카드·같은 카드의 라벨은 서로 무관해서 같이 읽고, 이름은 그 다음에 한 번에 읽는다.
 async function describe(supabase: Awaited<ReturnType<typeof createClient>>, label: { id: string; daily_business_id: string; seq: number; barcode: string; loaded_at: string | null }): Promise<ScannedBox> {
-  const { data: daily } = await supabase.from('daily_businesses').select('business_id, terminal_id').eq('id', label.daily_business_id).maybeSingle();
-  const [{ data: business }, { data: terminal }, { data: siblings }] = await Promise.all([
+  const [{ data: daily }, { data: siblings }] = await Promise.all([
+    supabase.from('daily_businesses').select('business_id, terminal_id').eq('id', label.daily_business_id).maybeSingle(),
+    supabase.from('box_labels').select('loaded_at').eq('daily_business_id', label.daily_business_id),
+  ]);
+  const [{ data: business }, { data: terminal }] = await Promise.all([
     daily ? supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle() : Promise.resolve({ data: null }),
     daily?.terminal_id ? supabase.from('terminals').select('name').eq('id', daily.terminal_id).maybeSingle() : Promise.resolve({ data: null }),
-    supabase.from('box_labels').select('loaded_at').eq('daily_business_id', label.daily_business_id),
   ]);
   const all = siblings ?? [];
   return {
@@ -46,12 +49,18 @@ async function describe(supabase: Awaited<ReturnType<typeof createClient>>, labe
 
 // 바코드를 스캔해서 상차 완료로 처리한다. 같은 박스를 다시 스캔하면 상태를 바꾸지 않고 "이미 상차됨"으로 알려준다.
 export async function scanBarcode(raw: string): Promise<ScanResult> {
-  await requirePermission('scan:scan');
   const code = raw.replace(/\s+/g, '');
-  if (!isValidBoxBarcode(code)) return { status: 'invalid', code: code.slice(0, 20) || '빈 값' };
+  if (!isValidBoxBarcode(code)) {
+    await requirePermission('scan:scan');
+    return { status: 'invalid', code: code.slice(0, 20) || '빈 값' };
+  }
 
+  // 권한 확인과 라벨 조회는 서로 무관하게 같이 보낸다(읽기만 하므로). 상태를 바꾸는 갱신은 권한 확인이 끝난 뒤에만 한다.
   const supabase = await createClient();
-  const { data: label } = await supabase.from('box_labels').select('id, daily_business_id, seq, barcode, loaded_at').eq('barcode', code).maybeSingle();
+  const [, { data: label }] = await Promise.all([
+    requirePermission('scan:scan'),
+    supabase.from('box_labels').select('id, daily_business_id, seq, barcode, loaded_at').eq('barcode', code).maybeSingle(),
+  ]);
   if (!label) return { status: 'unknown', code };
 
   if (label.loaded_at) return { status: 'duplicate', box: await describe(supabase, label) };
@@ -65,9 +74,13 @@ export async function scanBarcode(raw: string): Promise<ScanResult> {
     const { data: again } = await supabase.from('box_labels').select('id, daily_business_id, seq, barcode, loaded_at').eq('id', label.id).maybeSingle();
     return { status: 'duplicate', box: await describe(supabase, again ?? label) };
   }
-  await supabase.from('box_label_events').insert({ label_id: label.id, event: 'scan', created_by: userId });
+  // 이력 기록과 결과 화면용 조회는 서로 무관해서 같이 보낸다.
+  const [, box] = await Promise.all([
+    supabase.from('box_label_events').insert({ label_id: label.id, event: 'scan', created_by: userId }),
+    describe(supabase, { ...label, loaded_at: loadedAt }),
+  ]);
   revalidatePath('/scan');
-  return { status: 'loaded', box: await describe(supabase, { ...label, loaded_at: loadedAt }) };
+  return { status: 'loaded', box };
 }
 
 // 잘못 스캔한 박스를 상차 전 상태로 되돌린다.
