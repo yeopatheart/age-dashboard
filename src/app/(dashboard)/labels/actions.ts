@@ -2,10 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { loadAppSettings } from '@/lib/settings-server';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
 import { buildTemplate, parseElements, type LabelData, type LabelKind, type LabelTemplate } from '@/lib/labels/template';
-import { loadCardLabels, loadLabelTemplates, type CardLabelInfo } from '@/lib/labels/server';
+import { loadCardLabelBase, loadCardLabels, loadLabelTemplates, type CardLabelBase, type CardLabelInfo } from '@/lib/labels/server';
 import { requirePermission } from '@/lib/permissions/access';
 
 // 라벨 디자인 저장(종류별로 한 행). 값은 서버에서 한 번 더 검증한다.
@@ -22,10 +21,19 @@ export async function saveLabelTemplate(input: LabelTemplate): Promise<{ error: 
   return { error: null, template };
 }
 
-export async function getCardLabels(dailyBusinessId: string): Promise<CardLabelInfo[]> {
+// 박스 할당 화면의 라벨 영역이 처음 열릴 때 읽는다: 박스별 출력 상태 + 미리보기에 필요한 라벨 디자인·공통 값.
+// 바코드 번호는 날짜·업체번호·박스 순번으로 정해지므로 미리보기는 발급(DB 쓰기) 없이 화면에서 계산한다.
+export interface CardLabelPreviewSource {
+  infos: CardLabelInfo[];
+  templates: Record<LabelKind, LabelTemplate>;
+  base: CardLabelBase | null;
+}
+
+export async function getCardLabels(dailyBusinessId: string): Promise<CardLabelPreviewSource> {
   await requirePermission('packing:view');
   const supabase = await createClient();
-  return loadCardLabels(supabase, dailyBusinessId);
+  const [infos, templates, base] = await Promise.all([loadCardLabels(supabase, dailyBusinessId), loadLabelTemplates(supabase), loadCardLabelBase(supabase, dailyBusinessId)]);
+  return { infos, templates, base };
 }
 
 export interface LabelPrintPayload {
@@ -48,22 +56,19 @@ export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: 
   const { data: claims } = await supabase.auth.getClaims();
   const userId = claims?.claims.sub ?? null;
 
-  const { data: daily } = await supabase.from('daily_businesses').select('id, order_date, business_id, business_number, terminal_id').eq('id', input.dailyBusinessId).maybeSingle();
-  if (!daily) return fail('업체 주문을 찾지 못했습니다.');
-  const [{ data: business }, { data: terminal }, settings, templates, { data: existing }] = await Promise.all([
-    supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle(),
-    daily.terminal_id ? supabase.from('terminals').select('name, is_separate').eq('id', daily.terminal_id).maybeSingle() : Promise.resolve({ data: null }),
-    loadAppSettings(supabase),
+  const [base, templates, { data: existing }] = await Promise.all([
+    loadCardLabelBase(supabase, input.dailyBusinessId),
     loadLabelTemplates(supabase),
-    supabase.from('box_labels').select('id, seq, barcode').eq('daily_business_id', daily.id),
+    supabase.from('box_labels').select('id, seq, barcode').eq('daily_business_id', input.dailyBusinessId),
   ]);
+  if (!base) return fail('업체 주문을 찾지 못했습니다.');
 
   const labelBySeq = new Map((existing ?? []).map((l) => [l.seq, l]));
   const missing = seqs.filter((s) => !labelBySeq.has(s));
   if (missing.length > 0) {
     let rows;
     try {
-      rows = missing.map((seq) => ({ daily_business_id: daily.id, seq, barcode: makeBoxBarcode(daily.order_date, daily.business_number, seq) }));
+      rows = missing.map((seq) => ({ daily_business_id: input.dailyBusinessId, seq, barcode: makeBoxBarcode(base.orderDate, base.businessNumber, seq) }));
     } catch (e) {
       return fail(e instanceof Error ? e.message : '바코드를 만들지 못했습니다.');
     }
@@ -76,16 +81,7 @@ export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: 
   if (ids.length !== seqs.length) return fail('바코드를 발급하지 못한 박스가 있습니다. 다시 시도해주세요.');
   await supabase.from('box_label_events').insert(ids.map((label_id) => ({ label_id, event: 'print' as const, label_kind: input.kind, created_by: userId })));
 
-  const labels: LabelData[] = seqs.map((seq) => ({
-    terminal: terminal?.name ?? '',
-    separate: terminal?.is_separate ?? false,
-    business: business?.name ?? '',
-    boxNo: seq,
-    date: daily.order_date,
-    company: settings.companyName,
-    contact: settings.contactPhone,
-    barcode: labelBySeq.get(seq)!.barcode,
-  }));
+  const labels: LabelData[] = seqs.map((seq) => ({ ...base.data, boxNo: seq, barcode: labelBySeq.get(seq)!.barcode }));
   revalidatePath('/packing-log');
-  return { error: null, template: templates[input.kind], labels, infos: await loadCardLabels(supabase, daily.id) };
+  return { error: null, template: templates[input.kind], labels, infos: await loadCardLabels(supabase, input.dailyBusinessId) };
 }

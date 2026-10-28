@@ -7,8 +7,7 @@ export const LABEL_KIND_NAMES: Record<LabelKind, string> = { top: '박스 상단
 export const LABEL_FIELDS = {
   terminal: '터미널명',
   separate: '별도주문 구분',
-  business: '고객사명',
-  boxNo: '박스번호',
+  businessBox: '고객명+박스번호',
   date: '날짜',
   company: '상호',
   contact: '연락처',
@@ -57,8 +56,7 @@ export function fieldText(field: LabelField, data: LabelData): string {
   switch (field) {
     case 'terminal': return data.terminal;
     case 'separate': return data.separate ? '별도주문' : '';
-    case 'business': return data.business;
-    case 'boxNo': return String(data.boxNo);
+    case 'businessBox': return `${data.business} #${data.boxNo}`;
     case 'date': return data.date.replaceAll('-', '.');
     case 'company': return data.company;
     case 'contact': return data.contact;
@@ -67,6 +65,7 @@ export function fieldText(field: LabelField, data: LabelData): string {
 }
 
 // 박스 번호는 전체 박스 수를 쓰지 않고 번호만 찍는다(박스가 늘어도 이미 붙인 라벨을 다시 붙이지 않게).
+// 고객명과 박스 번호는 한 항목("고객명 #번호")이다 — 이름 길이에 따라 글자 크기를 자동으로 맞춘다(label-view의 FitText).
 export const DEFAULT_TEMPLATES: Record<LabelKind, LabelTemplate> = {
   top: {
     kind: 'top',
@@ -75,8 +74,7 @@ export const DEFAULT_TEMPLATES: Record<LabelKind, LabelTemplate> = {
     elements: [
       { id: 't-terminal', type: 'field', field: 'terminal', x: 4, y: 3, w: 58, h: 14, fontSize: 30, bold: true, align: 'left' },
       { id: 't-date', type: 'field', field: 'date', x: 62, y: 4, w: 34, h: 8, fontSize: 13, bold: false, align: 'right' },
-      { id: 't-business', type: 'field', field: 'business', x: 4, y: 19, w: 68, h: 16, fontSize: 24, bold: true, align: 'left' },
-      { id: 't-boxno', type: 'field', field: 'boxNo', x: 74, y: 17, w: 22, h: 20, fontSize: 44, bold: true, align: 'center' },
+      { id: 't-business', type: 'field', field: 'businessBox', x: 4, y: 19, w: 92, h: 18, fontSize: 32, bold: true, align: 'left' },
       { id: 't-barcode', type: 'barcode', x: 4, y: 39, w: 92, h: 26, showText: true },
       { id: 't-line', type: 'line', x: 4, y: 67, w: 92, h: 0.4 },
       { id: 't-company', type: 'field', field: 'company', x: 4, y: 69, w: 46, h: 8, fontSize: 13, bold: true, align: 'left' },
@@ -88,8 +86,7 @@ export const DEFAULT_TEMPLATES: Record<LabelKind, LabelTemplate> = {
     widthMm: 100,
     heightMm: 40,
     elements: [
-      { id: 's-business', type: 'field', field: 'business', x: 3, y: 2, w: 70, h: 13, fontSize: 22, bold: true, align: 'left' },
-      { id: 's-boxno', type: 'field', field: 'boxNo', x: 74, y: 1, w: 23, h: 15, fontSize: 34, bold: true, align: 'center' },
+      { id: 's-business', type: 'field', field: 'businessBox', x: 3, y: 2, w: 94, h: 14, fontSize: 26, bold: true, align: 'left' },
       { id: 's-barcode', type: 'barcode', x: 3, y: 17, w: 94, h: 21, showText: true },
     ],
   },
@@ -113,7 +110,7 @@ export function parseElements(value: unknown): LabelElement[] {
     out.push({
       id: typeof r.id === 'string' && r.id ? r.id : `e-${index}`,
       type,
-      field: type === 'field' ? field ?? 'business' : undefined,
+      field: type === 'field' ? field ?? 'businessBox' : undefined,
       text: type === 'text' ? String(r.text ?? '') : undefined,
       x: clampNum(r.x, 0, 0, 300),
       y: clampNum(r.y, 0, 0, 300),

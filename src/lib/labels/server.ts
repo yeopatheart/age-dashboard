@@ -1,7 +1,8 @@
 // 송장 라벨의 DB 접근(서버 전용): 라벨 디자인 읽기, 업체 카드별 박스 라벨 상태 읽기.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
-import { buildTemplate, type LabelKind, type LabelTemplate } from './template';
+import { loadAppSettings } from '@/lib/settings-server';
+import { buildTemplate, type LabelData, type LabelKind, type LabelTemplate } from './template';
 
 type Client = SupabaseClient<Database>;
 
@@ -37,4 +38,33 @@ export async function loadCardLabels(supabase: Client, dailyBusinessId: string):
     if (!lastPrinted.has(e.label_id)) lastPrinted.set(e.label_id, e.created_at);
   }
   return rows.map((l) => ({ seq: l.seq, barcode: l.barcode, printCount: printCount.get(l.id) ?? 0, lastPrintedAt: lastPrinted.get(l.id) ?? null, loadedAt: l.loaded_at }));
+}
+
+// 한 업체 카드의 라벨에 공통으로 들어가는 값(박스 번호·바코드만 박스마다 다르다).
+export interface CardLabelBase {
+  orderDate: string;
+  businessNumber: number;
+  data: Omit<LabelData, 'boxNo' | 'barcode'>;
+}
+
+export async function loadCardLabelBase(supabase: Client, dailyBusinessId: string): Promise<CardLabelBase | null> {
+  const { data: daily } = await supabase.from('daily_businesses').select('id, order_date, business_id, business_number, terminal_id').eq('id', dailyBusinessId).maybeSingle();
+  if (!daily) return null;
+  const [{ data: business }, { data: terminal }, settings] = await Promise.all([
+    supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle(),
+    daily.terminal_id ? supabase.from('terminals').select('name, is_separate').eq('id', daily.terminal_id).maybeSingle() : Promise.resolve({ data: null }),
+    loadAppSettings(supabase),
+  ]);
+  return {
+    orderDate: daily.order_date,
+    businessNumber: daily.business_number,
+    data: {
+      terminal: terminal?.name ?? '',
+      separate: terminal?.is_separate ?? false,
+      business: business?.name ?? '',
+      date: daily.order_date,
+      company: settings.companyName,
+      contact: settings.contactPhone,
+    },
+  };
 }
