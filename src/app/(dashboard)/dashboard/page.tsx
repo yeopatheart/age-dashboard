@@ -30,7 +30,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       supabase.from('businesses').select('id, name, terminal_id').order('name'),
       supabase
         .from('daily_businesses')
-        .select('id, business_id, business_number, round, total_boxes, memo, terminal_id')
+        .select('id, business_id, business_number, round, memo, terminal_id')
         .eq('order_date', orderDate)
         .order('sort_order'),
       supabase.from('products').select('name, fill_color, border_color'),
@@ -51,6 +51,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const terminalNameById = new Map((allTerminals ?? []).map((t) => [t.id, t.name]));
   const businessById = new Map(businessRows.map((b) => [b.id, b]));
 
+  // "박스" 열은 박스 할당에서 제출한 박스 수다 — 대시보드에서 따로 입력하지 않으므로 제출 기록에서 바로 센다.
+  const { data: packingRecordRows } = dailyBusinessRows.length
+    ? await supabase.from('packing_records').select('id, daily_business_id').in('daily_business_id', dailyBusinessRows.map((d) => d.id))
+    : { data: [] };
+  const recordIds = (packingRecordRows ?? []).map((r) => r.id);
+  const { data: packingBoxRows } = recordIds.length
+    ? await supabase.from('packing_boxes').select('record_id').in('record_id', recordIds)
+    : { data: [] };
+  const dailyByRecordId = new Map((packingRecordRows ?? []).map((r) => [r.id, r.daily_business_id]));
+  const boxCountByDaily = new Map<string, number>();
+  for (const box of packingBoxRows ?? []) {
+    const dailyId = dailyByRecordId.get(box.record_id);
+    if (dailyId) boxCountByDaily.set(dailyId, (boxCountByDaily.get(dailyId) ?? 0) + 1);
+  }
+
   const rows: OrderRow[] = dailyBusinessRows.flatMap((daily) => {
     const business = businessById.get(daily.business_id);
     if (!business) return [];
@@ -63,7 +78,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         terminal: daily.terminal_id ? terminalNameById.get(daily.terminal_id) ?? '' : '',
         businessNumber: daily.business_number,
         round: daily.round,
-        totalBoxes: daily.total_boxes,
+        totalBoxes: boxCountByDaily.get(daily.id) ?? null,
         memo: daily.memo,
       },
     ];
@@ -116,7 +131,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         unshippedReason: row.unshipped_reason ?? undefined,
         changeStatus: row.change_status,
         boxResult: row.box_result ?? undefined,
-        totalBoxes: orderRow.totalBoxes,
       },
     ];
   });

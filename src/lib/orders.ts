@@ -27,7 +27,8 @@ export interface OrderRow {
   terminal: string;
   businessNumber: number;
   round: OrderRound;
-  totalBoxes: number;
+  // 박스 할당에서 제출한 박스 수. 아직 박스를 할당하지 않았으면 null (대시보드에서는 고칠 수 없다)
+  totalBoxes: number | null;
   // 주문 입력의 "#메모" — 포장 담당에게 전하는 자유 메모
   memo: string | null;
   // 박스 구성을 정한 뒤 주문이 바뀌어 박스를 다시 확인해야 한다 (박스 기록의 추천·제출 기준)
@@ -59,8 +60,6 @@ export interface OrderItem {
   unshippedReason?: string;
   changeStatus: ChangeStatus;
   boxResult?: string;
-  // Figma 매트릭스의 "박스" 열 — 업체(daily_business) 단위 값이라 그 업체의 모든 줄에 동일하게 실린다.
-  totalBoxes: number;
 }
 
 export interface ProductSummaryRow {
@@ -127,7 +126,7 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
 export function getTerminalBoxTotals(rows: OrderRow[]) {
   const totals = new Map<string, number>();
   for (const row of rows) {
-    totals.set(row.terminal, (totals.get(row.terminal) ?? 0) + row.totalBoxes);
+    totals.set(row.terminal, (totals.get(row.terminal) ?? 0) + (row.totalBoxes ?? 0));
   }
   return Array.from(totals.entries()).map(([terminal, boxes]) => ({ terminal, boxes }));
 }

@@ -11,7 +11,6 @@ import {
   setProductHighlight,
   clearProductHighlights,
   togglePacked,
-  updateTotalBoxes,
   reorderDailyBusinesses,
   createManualOrder,
   updateOrder,
@@ -328,20 +327,19 @@ function OrderFormModal({
   onSave,
   onClose,
 }: {
-  initial?: { businessName: string; terminalId: string | null; totalBoxes: number };
+  initial?: { businessName: string; terminalId: string | null };
   terminals: Terminal[];
   businesses: BusinessDirectoryEntry[];
   // 이 날짜 대시보드에 이미 올라와 있는 (업체, 차수, 터미널) — 새 주문 추가에서 같은 차수·터미널의 중복 등록을 막는다.
   registered?: { businessId: string; round: OrderRound; terminal: string }[];
   // 저장에 실패하면 화면에 보여줄 오류 문구를 돌려준다(성공하면 null).
-  onSave: (data: { businessName: string; terminalId: string | null; totalBoxes: number; round: OrderRound }) => Promise<string | null>;
+  onSave: (data: { businessName: string; terminalId: string | null; round: OrderRound }) => Promise<string | null>;
   onClose: () => void;
 }) {
   const isEdit = Boolean(initial);
   const modalColors: TerminalColorMap = Object.fromEntries(terminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
   const [businessName, setBusinessName] = useState(initial?.businessName ?? '');
   const [terminalId, setTerminalId] = useState(initial?.terminalId ?? terminals[0]?.id ?? '');
-  const [totalBoxes, setTotalBoxes] = useState(initial?.totalBoxes?.toString() ?? '1');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -373,7 +371,7 @@ function OrderFormModal({
     }
     const resolvedTerminalId = isEdit ? (terminalId || null) : (matchedTerminal?.id ?? null);
     setSaveError(null);
-    const error = await onSave({ businessName: (matchedBusiness?.name ?? businessName).trim(), terminalId: resolvedTerminalId, totalBoxes: parseInt(totalBoxes) || 1, round });
+    const error = await onSave({ businessName: (matchedBusiness?.name ?? businessName).trim(), terminalId: resolvedTerminalId, round });
     if (error) setSaveError(error);
   };
 
@@ -496,15 +494,6 @@ function OrderFormModal({
         {saveError && (
           <p className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{saveError}</p>
         )}
-        <div>
-          <label className="block text-xs font-bold text-slate-600 mb-1">박스 수량</label>
-          <input
-            type="number" min="1"
-            value={totalBoxes}
-            onChange={(e) => setTotalBoxes(e.target.value)}
-            className="w-28 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:border-[#003057] focus:outline-none"
-          />
-        </div>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors">취소</button>
           <button onClick={handleSave} disabled={!isEdit && !matchedBusiness} className="px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors disabled:opacity-40" style={{ backgroundColor: '#003057' }}>저장</button>
@@ -881,7 +870,7 @@ export function DashboardClient({
       idx + 1,
       row.terminal,
       `${row.businessName}${roundOf(row) ? ` (${roundLabel(roundOf(row) as OrderRound)})` : ''}`,
-      row.totalBoxes,
+      row.totalBoxes ?? '',
       row.memo ?? '',
       ...Array.from({ length: maxItems }, (_, i) => {
         const item = rowItems[idx][i];
@@ -936,25 +925,18 @@ export function DashboardClient({
     refresh();
   };
 
-  const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; totalBoxes: number; round: OrderRound }): Promise<string | null> => {
+  const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; round: OrderRound }): Promise<string | null> => {
     if (editOrderModal) {
       const { error } = await updateOrder(editOrderModal.dailyBusinessId, data.businessName, data.terminalId);
       if (error) return error;
-      await updateTotalBoxes(editOrderModal.dailyBusinessId, data.totalBoxes);
       setEditOrderModal(null);
     } else {
-      const { error } = await createManualOrder(orderDate, data.round, data.businessName, data.terminalId, data.totalBoxes);
+      const { error } = await createManualOrder(orderDate, data.round, data.businessName, data.terminalId);
       if (error) return error;
       setAddOrderModal(false);
     }
     refresh();
     return null;
-  };
-
-  const handleBoxesInput = async (row: OrderRow, value: string) => {
-    const n = parseInt(value) || 0;
-    await updateTotalBoxes(row.dailyBusinessId, n);
-    refresh();
   };
 
   const handleSaveItem = async (fields: ManualItemFields) => {
@@ -1259,13 +1241,7 @@ export function DashboardClient({
                       </div>
                     </div>
                     <div className="border-r border-slate-100 px-2 bg-slate-50/60 flex items-center justify-center">
-                      <input
-                        type="number"
-                        defaultValue={row.totalBoxes}
-                        onBlur={(e) => handleBoxesInput(row, e.target.value)}
-                        disabled={readOnly}
-                        className="w-12 text-[11px] font-bold text-center border border-slate-300 rounded-md px-1.5 py-0.5 focus:border-[#003057] focus:outline-none bg-white"
-                      />
+                      <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null ? 'text-slate-300' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{row.totalBoxes ?? '-'}</span>
                     </div>
 
                     {Array.from({ length: productSlotCount }).map((_, slotIndex) => {
@@ -1440,7 +1416,7 @@ export function DashboardClient({
                     <div className="w-72 flex-shrink-0 flex items-center gap-2">
                       <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
                       <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
-                      <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes}</span>
+                      <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes ?? '-'}</span>
                     </div>
                     <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
                       {row.memo && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">메모: {row.memo}</span>}
@@ -1511,7 +1487,6 @@ export function DashboardClient({
           initial={{
             businessName: editOrderModal.businessName,
             terminalId: allTerminals.find((t) => t.name === editOrderModal.terminal)?.id ?? null,
-            totalBoxes: editOrderModal.totalBoxes,
           }}
           terminals={allTerminals}
           businesses={businessDirectory}
