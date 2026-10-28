@@ -2,6 +2,7 @@ import Link from 'next/link';
 import '@/components/admin/admin.css';
 import { BarChart3 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import { requireMenu } from '@/lib/permissions/access';
 
 const PAGE = 1000;
 
@@ -26,6 +27,7 @@ async function fetchAll<T>(page: (from: number, to: number) => PromiseLike<{ dat
 
 // shadow test 정확도: 제출한 박스 기록을 제출 시점의 추천과 비교한다. 추천이 없던 기록(기능 도입 전)은 제외한다.
 export default async function PackingAccuracyPage() {
+  await requireMenu('packing');
   const supabase = await createClient();
   const [records, recs, boxes] = await Promise.all([
     fetchAll((from, to) =>

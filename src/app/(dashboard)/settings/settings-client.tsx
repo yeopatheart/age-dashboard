@@ -7,10 +7,12 @@ import { AdminHeader, Toggle } from '@/components/admin/admin-kit';
 import { DEFAULT_SETTINGS, type AppSettings } from '@/lib/app-settings';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { reapplySizeSpecs, saveSettings } from './actions';
+import { useCan } from '@/components/permissions-context';
 
 const toList = (text: string) => text.split(',').map((s) => s.trim()).filter(Boolean);
 
 export function SettingsClient({ initial }: { initial: AppSettings }) {
+  const canEdit = useCan()('settings:edit');
   const router = useRouter();
   const [form, setForm] = useState({
     sizeTolerancePct: String(initial.sizeTolerancePct),
@@ -177,11 +179,11 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
 
       <div className="st-actions">
         <button className="ak-btn" onClick={reset} disabled={busy}><RotateCcw size={14} /> 기본값으로</button>
-        <button className="ak-btn" onClick={reapply} disabled={busy} title="이미 저장된 주문의 요구사항 해석을 현재 저장된 설정으로 다시 계산합니다">저장된 주문에 다시 적용</button>
+        <button className="ak-btn" onClick={reapply} disabled={!canEdit || busy} title="이미 저장된 주문의 요구사항 해석을 현재 저장된 설정으로 다시 계산합니다">저장된 주문에 다시 적용</button>
         <span className="ak-spacer" />
         {error && <span className="ak-error">{error}</span>}
         {notice && <span className="ak-notice">{notice}</span>}
-        <button className="ak-btn ak-btn-primary" onClick={save} disabled={busy || !numbersValid}>저장</button>
+        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !numbersValid}>저장</button>
       </div>
 
       <style>{`

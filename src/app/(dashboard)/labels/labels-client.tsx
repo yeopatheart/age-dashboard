@@ -18,6 +18,7 @@ import {
   type LabelTemplate,
 } from '@/lib/labels/template';
 import { saveLabelTemplate } from './actions';
+import { useCan } from '@/components/permissions-context';
 
 const SCALE = 4; // 화면에서 1mm를 4px로 그린다
 const SNAP_MM = 0.5;
@@ -53,6 +54,7 @@ const newElement = (type: LabelElementType): LabelElement => {
 };
 
 export function LabelsClient({ initial, company, contact }: { initial: Record<LabelKind, LabelTemplate>; company: string; contact: string }) {
+  const canEdit = useCan()('labels:edit');
   const [templates, setTemplates] = useState(initial);
   const [kind, setKind] = useState<LabelKind>('top');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -184,7 +186,7 @@ export function LabelsClient({ initial, company, contact }: { initial: Record<La
         <button className="ak-btn" onClick={() => setPrintJob({ template, labels: [sample] })} disabled={busy} title="지금 화면의 디자인을 샘플 값으로 한 장 출력합니다. 용지 크기와 위치를 확인할 때 씁니다.">
           <Printer size={14} /> 테스트 출력
         </button>
-        <button className="ak-btn ak-btn-primary" onClick={save} disabled={busy || !dirty[kind]}>저장</button>
+        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !dirty[kind]}>저장</button>
       </div>
 
       <div className="lb-layout">

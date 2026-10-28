@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { BoxesClient } from './boxes-client';
+import { requireMenu } from '@/lib/permissions/access';
 
 export default async function BoxesPage() {
+  await requireMenu('boxes');
   const supabase = await createClient();
   const { data: boxes } = await supabase
     .from('boxes')

@@ -20,6 +20,7 @@ import { BarChart3, ChevronLeft, ChevronRight, ClipboardList, GripVertical, Pack
 import type { RecommendationView, StoredPlan } from '@/lib/packing/server';
 import { submitPacking, assignItemsToBoxes, deletePackingRecord } from './actions';
 import { LabelPanel } from './label-panel';
+import { useCan } from '@/components/permissions-context';
 
 export interface PackingItem {
   id: string;
@@ -116,7 +117,9 @@ export function PackingLogClient({
 }) {
   const router = useRouter();
   // 과거 날짜는 설정에서 "과거 날짜 편집"을 켰을 때만 제출·삭제할 수 있다(서버도 같은 규칙으로 막는다).
-  const readOnly = orderDate !== today && !allowPast;
+  // 제출 권한이 없는 계정은 조회 전용이다. 기록 삭제·라벨 출력은 각각 별도 권한이다.
+  const can = useCan();
+  const readOnly = (orderDate !== today && !allowPast) || !can('packing:submit');
   const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
   const [onlyPending, setOnlyPending] = useState(false);
   // 업체를 오가도 작성 중인 내용이 사라지지 않게 업체별로 보관한다(제출 전까지는 이 화면 메모리에만 있다).
@@ -427,7 +430,7 @@ export function PackingLogClient({
                         <button className="ak-btn ak-btn-primary" style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }} disabled={busy} onClick={handleDeleteRecord}>삭제</button>
                       </>
                     ) : (
-                      <button className="ak-btn ak-btn-danger" disabled={readOnly} onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 기록 삭제</button>
+                      can('packing:delete') && <button className="ak-btn ak-btn-danger" disabled={readOnly} onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 기록 삭제</button>
                     )
                   )}
                 </div>
@@ -523,7 +526,7 @@ export function PackingLogClient({
                   )}
                 </div>
 
-                <LabelPanel key={selected.id} dailyBusinessId={selected.id} boxCount={draft.boxes.length} />
+                {can('packing:print') && <LabelPanel key={selected.id} dailyBusinessId={selected.id} boxCount={draft.boxes.length} />}
               </section>
 
               <DragOverlay>

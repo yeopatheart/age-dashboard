@@ -4,12 +4,14 @@ import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import { getOrderHistory } from '../actions';
 import { NewOrderClient } from './new-order-client';
+import { requireMenu } from '@/lib/permissions/access';
 
 function todayKST() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 }
 
 export default async function NewOrderPage() {
+  await requireMenu('orders');
   const today = todayKST();
   const supabase = await createClient();
   const [settings, initialHistory] = await Promise.all([loadAppSettings(supabase), getOrderHistory(today)]);

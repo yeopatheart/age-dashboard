@@ -5,6 +5,7 @@ import { Plus, Tag, Trash2, Wand2 } from 'lucide-react';
 import { createProduct, renameProduct, setProductColors, setProductMulbong, autoAssignProductColors, deleteProducts } from './actions';
 import { ColorPicker } from '@/components/color-picker';
 import { resolveColors } from '@/lib/color-palette';
+import { useCan } from '@/components/permissions-context';
 import {
   AdminHeader,
   ColumnMenu,
@@ -29,6 +30,9 @@ interface Product {
 }
 
 export function ProductsClient({ products }: { products: Product[] }) {
+  const can = useCan();
+  const canEdit = can('products:edit');
+  const canDelete = can('products:delete');
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [viaFilter, setViaFilter] = useState('all');
@@ -170,7 +174,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
     {
       key: 'mulbong',
       label: '물봉 포장',
-      render: (p) => <Toggle checked={p.needs_mulbong} onChange={(v) => handleMulbong([p.id], v)} label={`${p.name} 물봉 포장`} />,
+      render: (p) => <Toggle checked={p.needs_mulbong} onChange={(v) => handleMulbong([p.id], v)} label={`${p.name} 물봉 포장`} disabled={!canEdit} />,
     },
     { key: 'via', label: '등록', render: (p) => <ViaTag via={p.created_via} date={p.created_at} /> },
   ];
@@ -198,10 +202,10 @@ export function ProductsClient({ products }: { products: Product[] }) {
         />
         <span className="ak-count">{filtered.length}개{filtered.length !== products.length ? ` / 전체 ${products.length}개` : ''}</span>
         <span className="ak-spacer" />
-        <button className="ak-btn" onClick={handleAuto} disabled={busy || uncolored === 0} title="색이 없는 상품에 겹치지 않는 색을 자동으로 배정합니다">
+        {canEdit && <button className="ak-btn" onClick={handleAuto} disabled={busy || uncolored === 0} title="색이 없는 상품에 겹치지 않는 색을 자동으로 배정합니다">
           <Wand2 size={14} /> 색상 자동 배정 ({uncolored})
-        </button>
-        <div className="ak-quick-add">
+        </button>}
+        {canEdit && <div className="ak-quick-add">
           <input
             ref={addInputRef}
             placeholder="새 상품 (예: 활전갱이)"
@@ -212,11 +216,11 @@ export function ProductsClient({ products }: { products: Product[] }) {
           <button className="ak-btn ak-btn-primary" onClick={handleAdd} disabled={busy}>
             <Plus size={14} /> 추가
           </button>
-        </div>
+        </div>}
         <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
       </div>
 
-      {selected.size > 0 && (
+      {canEdit && selected.size > 0 && (
         <div className="ak-bulk">
           <div className="ak-bulk-head">
             <strong>{selected.size}개 선택됨</strong>
@@ -225,7 +229,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
             <button className="ak-btn" onClick={() => handleMulbong([...selected], true)} disabled={busy}>물봉 포장 지정</button>
             <button className="ak-btn" onClick={() => handleMulbong([...selected], false)} disabled={busy}>물봉 해제</button>
             <span className="ak-spacer" />
-            <button
+            {canDelete && <button
               className="ak-btn ak-btn-danger"
               disabled={busy}
               onClick={() => run(async () => {
@@ -235,7 +239,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
               })}
             >
               <Trash2 size={14} /> 삭제
-            </button>
+            </button>}
           </div>
           <ColorPicker fill={bulk.fill} border={bulk.border} onChange={(f, b) => setBulk({ fill: f, border: b })} sample="일괄 적용 미리보기" />
         </div>
@@ -282,14 +286,14 @@ export function ProductsClient({ products }: { products: Product[] }) {
               </>
             ) : (
               <>
-                <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>
+                {canDelete && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
                 <span className="ak-spacer" />
                 <button className="ak-btn" onClick={() => setOpenId(null)}>닫기</button>
-                <button
+                {canEdit && <button
                   className="ak-btn ak-btn-primary"
                   disabled={busy || !nameDraft.trim() || nameDraft.trim() === open.name}
                   onClick={handleRename}
-                >이름 저장</button>
+                >이름 저장</button>}
               </>
             )
           }
@@ -309,11 +313,11 @@ export function ProductsClient({ products }: { products: Product[] }) {
               물봉 포장 필요
               <small>켜두면 이 상품은 물봉용 박스에 담아야 하는 상품으로 취급됩니다</small>
             </span>
-            <Toggle checked={open.needs_mulbong} onChange={(v) => handleMulbong([open.id], v)} label="물봉 포장 필요" />
+            <Toggle checked={open.needs_mulbong} onChange={(v) => handleMulbong([open.id], v)} label="물봉 포장 필요" disabled={!canEdit} />
           </div>
           <div className="ak-field">
             <span className="ak-field-label">색상 (누르면 바로 저장됩니다)</span>
-            <ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => handleColor(open, f, b)} sample={open.name} />
+            <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => handleColor(open, f, b)} sample={open.name} /></fieldset>
           </div>
           <p className="ak-meta">{open.created_via === 'order' ? '주문입력' : '수기입력'}으로 {open.created_at.slice(0, 10).replace(/-/g, '.')} 등록</p>
           {error && <p className="ak-error">{error}</p>}

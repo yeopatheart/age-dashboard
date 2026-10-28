@@ -42,7 +42,7 @@ Prisma를 의도적으로 뺀다: 인증(Auth)이 어차피 Supabase Auth 몫이
 
 ## 시크릿
 - `.env*`, 키 파일, 토큰은 커밋하지 않는다. 예시는 `.env.example`에 키 이름만.
-- Supabase `anon key`(클라이언트 노출 가능)와 `service_role key`(서버 전용)를 혼동하지 않는다.
+- Supabase `anon key`(클라이언트 노출 가능)와 `service_role key`(서버 전용)를 혼동하지 않는다. `SUPABASE_SERVICE_ROLE_KEY`는 `src/lib/supabase/admin.ts`(사용자 및 권한 메뉴)에서만 쓴다.
 - `NEXT_PUBLIC_` 접두사가 붙은 값은 브라우저에 그대로 노출된다.
 - git remote URL에 토큰을 넣지 않는다(SSH 키 또는 credential helper 사용). `https://ghp_xxx@github.com/...` 형태를 발견하면 즉시 알린다.
 

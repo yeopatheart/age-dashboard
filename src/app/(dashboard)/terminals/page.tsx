@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { TerminalsClient } from './terminals-client';
+import { requireMenu } from '@/lib/permissions/access';
 
 export default async function TerminalsPage() {
+  await requireMenu('terminals');
   const supabase = await createClient();
   const [{ data: terminals, error }, { data: businesses }] = await Promise.all([
     supabase.from('terminals').select('id, name, created_at, created_via, fill_color, border_color, is_separate').order('name'),

@@ -10,6 +10,12 @@ type Profile = {
   created_at: string;
 };
 
+type UserPermissions = {
+  user_id: string;
+  permissions: string[];
+  updated_at: string;
+};
+
 type AccessLog = {
   id: string;
   user_id: string | null;
@@ -276,6 +282,7 @@ export type Database = {
   public: {
     Tables: {
       profiles: TableDef<Profile, Pick<Profile, "id" | "display_name">>;
+      user_permissions: TableDef<UserPermissions, Pick<UserPermissions, "user_id"> & { permissions?: string[]; updated_at?: string }>;
       access_log: TableDef<
         AccessLog,
         Pick<AccessLog, "user_id"> & { id?: string; event?: string; created_at?: string }

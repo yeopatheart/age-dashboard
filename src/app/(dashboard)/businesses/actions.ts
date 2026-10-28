@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { requirePermission } from '@/lib/permissions/access';
 
 export interface BusinessInfo {
   businessRegistrationNo: string;
@@ -24,6 +25,7 @@ export async function createBusiness(
   notes: string | null,
   info: BusinessInfo,
 ): Promise<{ error: string | null }> {
+  await requirePermission('businesses:edit');
   const parsed = normalizeInfo(info);
   if ('error' in parsed) return { error: parsed.error };
   const supabase = await createClient();
@@ -43,6 +45,7 @@ export async function updateBusiness(
   notes: string | null,
   info: BusinessInfo,
 ): Promise<{ error: string | null }> {
+  await requirePermission('businesses:edit');
   const parsed = normalizeInfo(info);
   if ('error' in parsed) return { error: parsed.error };
   const supabase = await createClient();
@@ -59,6 +62,7 @@ export async function updateBusiness(
 // daily_businesses.business_id가 이 업체를 참조 중이면(과거 주문 이력) FK 제약으로 실패한다 —
 // 의도된 보호이므로 에러 메시지를 그대로 사용자에게 보여준다.
 export async function deleteBusiness(id: string): Promise<{ error: string | null }> {
+  await requirePermission('businesses:delete');
   const supabase = await createClient();
   const { error } = await supabase.from('businesses').delete().eq('id', id);
   if (error) return { error: '이 업체의 과거 주문 기록이 있어 삭제할 수 없습니다.' };

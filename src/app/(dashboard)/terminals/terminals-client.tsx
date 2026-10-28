@@ -5,6 +5,7 @@ import { MapPinned, Plus, Trash2 } from 'lucide-react';
 import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate } from './actions';
 import { ColorPicker } from '@/components/color-picker';
 import { terminalBadgeProps } from '@/lib/terminal-color';
+import { useCan } from '@/components/permissions-context';
 import {
   AdminHeader,
   ColumnMenu,
@@ -29,6 +30,9 @@ interface Terminal {
 }
 
 export function TerminalsClient({ terminals, businessCount }: { terminals: Terminal[]; businessCount: Record<string, number> }) {
+  const can = useCan();
+  const canEdit = can('terminals:edit');
+  const canDelete = can('terminals:delete');
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [viaFilter, setViaFilter] = useState('all');
@@ -109,7 +113,7 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
     {
       key: 'separate',
       label: '별도 주문',
-      render: (t) => <Toggle checked={t.is_separate} onChange={(v) => setSeparate(t, v)} label={`${t.name} 별도 주문`} />,
+      render: (t) => <Toggle checked={t.is_separate} onChange={(v) => setSeparate(t, v)} label={`${t.name} 별도 주문`} disabled={!canEdit} />,
     },
     { key: 'via', label: '등록', render: (t) => <ViaTag via={t.created_via} date={t.created_at} /> },
   ];
@@ -132,7 +136,7 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
         />
         <span className="ak-count">{filtered.length}개</span>
         <span className="ak-spacer" />
-        <div className="ak-quick-add">
+        {canEdit && <div className="ak-quick-add">
           <input
             ref={addInputRef}
             placeholder="새 터미널 (예: 대구, 택배)"
@@ -143,7 +147,7 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
           <button className="ak-btn ak-btn-primary" onClick={handleAdd} disabled={busy}>
             <Plus size={14} /> 추가
           </button>
-        </div>
+        </div>}
         <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
       </div>
 
@@ -180,14 +184,14 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
               </>
             ) : (
               <>
-                <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>
+                {canDelete && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
                 <span className="ak-spacer" />
                 <button className="ak-btn" onClick={() => setOpenId(null)}>닫기</button>
-                <button
+                {canEdit && <button
                   className="ak-btn ak-btn-primary"
                   disabled={busy || !nameDraft.trim() || nameDraft.trim() === open.name}
                   onClick={() => run(() => updateTerminal(open.id, nameDraft.trim()))}
-                >이름 저장</button>
+                >이름 저장</button>}
               </>
             )
           }
@@ -201,11 +205,11 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
               별도 주문
               <small>켜면 대시보드 기본 주문표에서 빼고 &apos;별도 주문&apos; 팝업에서 봅니다 (택배, 직배송 등)</small>
             </span>
-            <Toggle checked={open.is_separate} onChange={(v) => setSeparate(open, v)} label="별도 주문" />
+            <Toggle checked={open.is_separate} onChange={(v) => setSeparate(open, v)} label="별도 주문" disabled={!canEdit} />
           </div>
           <div className="ak-field">
             <span className="ak-field-label">색상</span>
-            <ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => setColor(open, f, b)} sample={open.name} />
+            <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => setColor(open, f, b)} sample={open.name} /></fieldset>
           </div>
           <p className="ak-meta">연결된 업체 {businessCount[open.id] ?? 0}곳 · {open.created_via === 'order' ? '주문입력' : '수기입력'}으로 {open.created_at.slice(0, 10).replace(/-/g, '.')} 등록</p>
           {error && <p className="ak-error">{error}</p>}

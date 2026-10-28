@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { getPeriod, type Granularity, type ReportSummary } from '@/lib/report';
 import { ReportsClient } from './reports-client';
+import { requireMenu } from '@/lib/permissions/access';
 
 function todayKST() {
   return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
@@ -9,6 +10,7 @@ function todayKST() {
 const GRANULARITIES: Granularity[] = ['day', 'week', 'month', 'year'];
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ g?: string; date?: string }> }) {
+  await requireMenu('reports');
   const { g, date } = await searchParams;
   const today = todayKST();
   const granularity = GRANULARITIES.find((x) => x === g) ?? 'month';

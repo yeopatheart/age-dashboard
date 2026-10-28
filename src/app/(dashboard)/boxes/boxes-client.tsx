@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Package, Plus, Trash2 } from 'lucide-react';
 import { createBox, updateBox, deleteBox, setBoxActive, type BoxFields } from './actions';
+import { useCan } from '@/components/permissions-context';
 import {
   AdminHeader,
   ColumnMenu,
@@ -67,6 +68,9 @@ const toForm = (b: Box): BoxForm => ({
 });
 
 export function BoxesClient({ boxes }: { boxes: Box[] }) {
+  const can = useCan();
+  const canEdit = can('boxes:edit');
+  const canDelete = can('boxes:delete');
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
@@ -144,7 +148,7 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
     {
       key: 'active',
       label: '사용',
-      render: (b) => <Toggle checked={isActive(b)} onChange={(v) => handleToggleActive(b, v)} label={`${b.name} 사용 여부`} />,
+      render: (b) => <Toggle checked={isActive(b)} onChange={(v) => handleToggleActive(b, v)} label={`${b.name} 사용 여부`} disabled={!canEdit} />,
     },
     { key: 'notes', label: '메모', render: (b) => (b.notes ? <span className="ak-ellipsis ak-muted">{b.notes}</span> : <span className="ak-muted">—</span>) },
   ];
@@ -168,7 +172,7 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
         <span className="ak-count">{filtered.length}개{filtered.length !== boxes.length ? ` / 전체 ${boxes.length}개` : ''}</span>
         <span className="ak-spacer" />
         <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
-        <button className="ak-btn ak-btn-primary" onClick={openNew}><Plus size={14} /> 박스 추가</button>
+        {canEdit && <button className="ak-btn ak-btn-primary" onClick={openNew}><Plus size={14} /> 박스 추가</button>}
       </div>
 
       {error && !panel && <p className="ak-error">{error}</p>}
@@ -204,10 +208,10 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
               </>
             ) : (
               <>
-                {panel !== 'new' && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
+                {canDelete && panel !== 'new' && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
                 <span className="ak-spacer" />
                 <button className="ak-btn" onClick={() => setPanel(null)}>취소</button>
-                <button className="ak-btn ak-btn-primary" disabled={busy || !form.name.trim()} onClick={handleSave}>저장</button>
+                {canEdit && <button className="ak-btn ak-btn-primary" disabled={busy || !form.name.trim()} onClick={handleSave}>저장</button>}
               </>
             )
           }
@@ -226,11 +230,11 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
           </div>
           <div className="ak-setting">
             <span>물봉용 박스<small>산소 포장(물봉) 전용 박스입니다</small></span>
-            <Toggle checked={form.isMulbongBox} onChange={(v) => setForm({ ...form, isMulbongBox: v })} label="물봉용" />
+            <Toggle checked={form.isMulbongBox} onChange={(v) => setForm({ ...form, isMulbongBox: v })} label="물봉용" disabled={!canEdit} />
           </div>
           <div className="ak-setting">
             <span>사용중<small>꺼두면 포장 추천에서 제외됩니다</small></span>
-            <Toggle checked={form.isActive} onChange={(v) => setForm({ ...form, isActive: v })} label="사용중" />
+            <Toggle checked={form.isActive} onChange={(v) => setForm({ ...form, isActive: v })} label="사용중" disabled={!canEdit} />
           </div>
           <div className="ak-field">
             <label>메모</label>
