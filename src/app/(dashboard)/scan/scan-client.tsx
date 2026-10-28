@@ -6,6 +6,7 @@ import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser'
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { AlertTriangle, Camera, CheckCircle2, Keyboard, ScanLine, Undo2, X, XCircle } from 'lucide-react';
 import { scanBarcode, undoScan, type ScanResult } from './actions';
+import { useCan } from '@/components/permissions-context';
 
 export interface ScanCard {
   id: string;
@@ -26,6 +27,9 @@ interface Banner {
 const DUPLICATE_IGNORE_MS = 2500; // 카메라가 같은 바코드를 연속으로 읽는 것을 무시하는 시간
 
 export function ScanClient({ orderDate, today, cards }: { orderDate: string; today: string; cards: ScanCard[] }) {
+  const can = useCan();
+  const canScan = can('scan:scan');
+  const canUndo = can('scan:undo');
   const router = useRouter();
   const [, startRefresh] = useTransition();
   const [banner, setBanner] = useState<Banner | null>(null);
@@ -180,7 +184,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
               <button className="sc-stop" onClick={stopCamera} aria-label="카메라 끄기"><X size={18} /></button>
             </>
           ) : (
-            <button className="sc-start" onClick={startCamera}>
+            <button className="sc-start" onClick={startCamera} disabled={!canScan}>
               <Camera size={34} />
               스캔 시작하기
             </button>
@@ -193,7 +197,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
             {banner.tone === 'bad' ? <XCircle size={40} /> : banner.tone === 'dup' ? <AlertTriangle size={40} /> : <CheckCircle2 size={40} />}
             <div className="sc-title">{banner.title}</div>
             <div className="sc-detail">{banner.detail}</div>
-            {banner.labelId && (
+            {banner.labelId && canUndo && (
               <button className="sc-undo" onClick={undo}><Undo2 size={16} /> {banner.tone === 'dup' ? '상차를 취소할래요' : '잘못 스캔했어요 (되돌리기)'}</button>
             )}
           </div>
@@ -209,7 +213,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         >
           <Keyboard size={16} />
           <input className="ak-input" value={manual} onChange={(e) => setManual(e.target.value)} inputMode="numeric" autoComplete="off" placeholder="바코드 번호 12자리 입력" />
-          <button className="ak-btn ak-btn-primary" type="submit" disabled={!manual.trim()}>확인</button>
+          <button className="ak-btn ak-btn-primary" type="submit" disabled={!canScan || !manual.trim()}>확인</button>
         </form>
       </section>
 
