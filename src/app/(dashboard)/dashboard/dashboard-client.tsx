@@ -1324,7 +1324,9 @@ export function DashboardClient({
                               data-start={suffix ? 1 : 0}
                               onClick={() => !readOnly && handleTogglePacked(item)}
                               className="w-full min-w-0 flex flex-wrap items-baseline justify-center gap-x-1 z-10 cursor-pointer select-none break-keep [overflow-wrap:anywhere]"
-                              style={{ lineHeight: 'var(--pl, 1.15)', maxHeight: pillInnerHeight }}
+                              // 컨테이너의 글자 크기도 칩 글자 크기에 맞춘다: 안 맞추면 수량을 감싼 상자의 보이지 않는 줄 높이(strut)가 부모의 큰 기본 글자
+                              // 크기로 잡혀서, 작은 글자 단계에서 글자가 칩 아래쪽으로 치우친다.
+                              style={{ fontSize: 'var(--pq)', lineHeight: 'var(--pl, 1.15)', maxHeight: pillInnerHeight }}
                             >
                               <span className={highlightColor ? 'font-black' : `font-bold ${text}`} style={{ fontSize: 'var(--pn)', ...(highlightColor ? { color: highlightColor } : {}) }}>{item.productName}</span>
                               {isUndecidedQuantity(item) ? (
