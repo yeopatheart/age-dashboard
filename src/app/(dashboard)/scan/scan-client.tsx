@@ -67,7 +67,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       } else if (result.status === 'duplicate') {
         const b = result.box;
         const at = b.loadedAt ? new Date(b.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
-        next = { tone: 'dup', title: `이미 상차된 박스: ${b.business} · ${b.boxNo}번`, detail: `${at ? `${at}에 ` : ''}상차 완료 처리됨 (이 업체 ${b.loadedCount}/${b.totalCount}박스)` };
+        next = { tone: 'dup', title: `이미 상차된 박스: ${b.business} · ${b.boxNo}번`, detail: `${at ? `${at}에 ` : ''}상차 완료 처리됨 (이 업체 ${b.loadedCount}/${b.totalCount}박스)`, labelId: b.labelId };
       } else {
         next = { tone: 'bad', title: result.status === 'invalid' ? '라벨 바코드가 아닙니다' : '확인되지 않는 바코드', detail: result.message };
       }
@@ -172,7 +172,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
             <div className="sc-title">{banner.title}</div>
             <div className="sc-detail">{banner.detail}</div>
             {banner.labelId && (
-              <button className="sc-undo" onClick={undo}><Undo2 size={16} /> 잘못 스캔했어요 (되돌리기)</button>
+              <button className="sc-undo" onClick={undo}><Undo2 size={16} /> {banner.tone === 'dup' ? '상차를 취소할래요' : '잘못 스캔했어요 (되돌리기)'}</button>
             )}
           </>
         )}
