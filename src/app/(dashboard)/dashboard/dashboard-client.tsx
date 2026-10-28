@@ -811,6 +811,8 @@ export function DashboardClient({
   // gridTemplateRows를 고정하지 않으면 내용이 긴 칸 하나가 행 전체를 키워서 행 높이 규칙이 깨진다.
   const rowStyle = { height: rowHeight, gridTemplateRows: `${rowHeight}px` };
   // 상품 팁은 한 줄에 다 들어가면 한 줄, 아니면 같은 행 높이 안에서 2줄로 나눠 보여준다(상품명을 말줄임하지 않는다).
+  // 한 줄 안의 글자 조각(품목명·수량·단위·사이즈 표기)은 크기가 달라도 기준선에 맞춰 정렬한다(items-baseline) — 가운데 정렬하면 큰 숫자와
+  // 작은 글자의 아랫선이 1~2px씩 어긋나 읽기 어렵다.
   // 글자가 잘리지 않게 하는 규칙: 글자를 담는 상자에는 overflow를 걸지 않는다(걸면 kg의 g처럼 기준선 아래로 내려오는 글자가
   // 줄 높이 경계에서 잘린다 — 이 글꼴은 글자 위·아래 여백이 커서 줄 높이를 글자 크기에 가깝게 줄이면 실제로 잘렸다).
   // 잘림은 팁 테두리에서만 일어나므로, 두 줄이 팁 안에 "글자 모양(descender 포함)까지" 들어가는 크기를 고른다.
@@ -1321,7 +1323,7 @@ export function DashboardClient({
                               data-sizes={pillStepsAttr}
                               data-start={suffix ? 1 : 0}
                               onClick={() => !readOnly && handleTogglePacked(item)}
-                              className="w-full min-w-0 flex flex-wrap items-center justify-center gap-x-1 z-10 cursor-pointer select-none break-keep [overflow-wrap:anywhere]"
+                              className="w-full min-w-0 flex flex-wrap items-baseline justify-center gap-x-1 z-10 cursor-pointer select-none break-keep [overflow-wrap:anywhere]"
                               style={{ lineHeight: 'var(--pl, 1.15)', maxHeight: pillInnerHeight }}
                             >
                               <span className={highlightColor ? 'font-black' : `font-bold ${text}`} style={{ fontSize: 'var(--pn)', ...(highlightColor ? { color: highlightColor } : {}) }}>{item.productName}</span>
@@ -1438,19 +1440,21 @@ export function DashboardClient({
                         if (item.sizeRequest) suffixParts.push(item.sizeRequest);
                         return (
                           <div key={item.id} className={`relative group/pill flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
-                            <span className="font-bold">{item.productName}</span>
-                            {isUndecidedQuantity(item) ? (
-                              <span className="font-black text-amber-700">수량 미정</span>
-                            ) : (
-                              <>
-                                <span className="font-black text-sm">{item.quantity}</span>
-                                <span className="font-semibold">{item.unit}</span>
-                              </>
-                            )}
-                            {suffixParts.length > 0 && <span className="font-semibold text-sky-600">({suffixParts.join(', ')})</span>}
-                            {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
-                              <span className="text-[10px] font-bold text-white bg-amber-500 rounded px-1 py-[1px]" title={item.unshippedReason ?? undefined}>미출고 {item.unshippedQuantity}</span>
-                            )}
+                            <span className="flex items-baseline gap-1 min-w-0">
+                              <span className="font-bold">{item.productName}</span>
+                              {isUndecidedQuantity(item) ? (
+                                <span className="font-black text-amber-700">수량 미정</span>
+                              ) : (
+                                <>
+                                  <span className="font-black text-sm">{item.quantity}</span>
+                                  <span className="font-semibold">{item.unit}</span>
+                                </>
+                              )}
+                              {suffixParts.length > 0 && <span className="font-semibold text-sky-600">({suffixParts.join(', ')})</span>}
+                              {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
+                                <span className="text-[10px] font-bold text-white bg-amber-500 rounded px-1 py-[1px]" title={item.unshippedReason ?? undefined}>미출고 {item.unshippedQuantity}</span>
+                              )}
+                            </span>
                             {!readOnly && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); setEditItemModal(item); }}
