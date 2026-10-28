@@ -2,7 +2,7 @@
 import '@/components/admin/admin.css';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
+import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { AlertTriangle, Camera, CheckCircle2, Keyboard, ScanLine, Undo2, X, XCircle } from 'lucide-react';
 import { scanBarcode, undoScan, type ScanResult } from './actions';
@@ -24,6 +24,9 @@ interface Banner {
   labelId?: string; // 방금 처리한 박스(되돌리기용)
 }
 
+// 초록 조준선(화면 폭·높이에 대한 비율). 카메라는 이 안쪽만 잘라서 읽는다 — 조준선 밖에 보이는 바코드는 읽지 않는다.
+const GUIDE = { left: 0.08, right: 0.08, top: 0.35, bottom: 0.35 };
+const SCAN_INTERVAL_MS = 80;
 const DUPLICATE_IGNORE_MS = 2500; // 카메라가 같은 바코드를 연속으로 읽는 것을 무시하는 시간
 
 export function ScanClient({ orderDate, today, cards }: { orderDate: string; today: string; cards: ScanCard[] }) {
@@ -39,7 +42,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [onlyPending, setOnlyPending] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const controlsRef = useRef<IScannerControls | null>(null);
+  const controlsRef = useRef<{ stop: () => void } | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
   const last = useRef<{ code: string; at: number } | null>(null);
   const busy = useRef(false);
@@ -117,10 +120,50 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       const hints = new Map();
       hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]);
       hints.set(DecodeHintType.TRY_HARDER, true);
-      const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 80 });
-      controlsRef.current = await reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } } }, videoRef.current, (result) => {
-        if (result) void submitCode(result.getText());
-      });
+      const reader = new BrowserMultiFormatReader(hints);
+      const video = videoRef.current;
+      // 영상만 받는다(마이크 없음). 해상도는 막대가 가늘어도 읽히도록 넉넉히 요청한다.
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+      video.srcObject = stream;
+      await video.play();
+
+      // 화면 전체가 아니라 조준선 안쪽만 잘라서(canvas) 읽는다. 영상은 object-fit: cover로 화면에 꽉 차게 그려지므로,
+      // 화면 좌표의 조준선 영역을 영상 원본 좌표로 되돌려 잘라낸다.
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      let stopped = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const tick = () => {
+        if (stopped) return;
+        try {
+          const { clientWidth: cw, clientHeight: ch, videoWidth: vw, videoHeight: vh } = video;
+          if (ctx && cw > 0 && ch > 0 && vw > 0 && vh > 0) {
+            const scale = Math.max(cw / vw, ch / vh);
+            const offsetX = (vw * scale - cw) / 2;
+            const offsetY = (vh * scale - ch) / 2;
+            const sx = (cw * GUIDE.left + offsetX) / scale;
+            const sy = (ch * GUIDE.top + offsetY) / scale;
+            const sw = (cw * (1 - GUIDE.left - GUIDE.right)) / scale;
+            const sh = (ch * (1 - GUIDE.top - GUIDE.bottom)) / scale;
+            canvas.width = Math.round(sw);
+            canvas.height = Math.round(sh);
+            ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+            void submitCode(reader.decodeFromCanvas(canvas).getText());
+          }
+        } catch {
+          // 조준선 안에 읽을 수 있는 바코드가 없는 프레임이다(정상).
+        }
+        timer = setTimeout(tick, SCAN_INTERVAL_MS);
+      };
+      tick();
+      controlsRef.current = {
+        stop: () => {
+          stopped = true;
+          clearTimeout(timer);
+          stream.getTracks().forEach((t) => t.stop());
+          video.srcObject = null;
+        },
+      };
       setCameraOn(true);
       // 스캔하는 동안 화면이 꺼져 카메라가 멈추지 않게 한다(지원하지 않는 브라우저에서는 그냥 넘어간다).
       wakeLockRef.current = (await navigator.wakeLock?.request('screen').catch(() => null)) ?? null;
@@ -180,7 +223,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
           <video ref={videoRef} muted playsInline disablePictureInPicture disableRemotePlayback controlsList="nodownload noplaybackrate noremoteplayback" />
           {cameraOn ? (
             <>
-              <div className="sc-guide" />
+              <div className="sc-guide" style={{ left: `${GUIDE.left * 100}%`, right: `${GUIDE.right * 100}%`, top: `${GUIDE.top * 100}%`, bottom: `${GUIDE.bottom * 100}%` }} />
               <button className="sc-stop" onClick={stopCamera} aria-label="카메라 끄기"><X size={18} /></button>
             </>
           ) : (
@@ -279,7 +322,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         .sc-start:active { background: #e2e8f0; }
         .sc-stop { position: absolute; top: 0.6rem; right: 0.6rem; width: 2.5rem; height: 2.5rem; border-radius: 999px; border: 0; background: rgba(15, 23, 42, 0.65); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .sc-video video { width: 100%; height: 100%; object-fit: cover; }
-        .sc-guide { position: absolute; left: 8%; right: 8%; top: 35%; bottom: 35%; border: 3px solid rgba(34, 197, 94, 0.9); border-radius: 10px; box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.35); pointer-events: none; }
+        .sc-guide { position: absolute; border: 3px solid rgba(34, 197, 94, 0.9); border-radius: 10px; box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.35); pointer-events: none; }
         .sc-manual { display: flex; align-items: center; gap: 0.5rem; }
         .sc-manual .ak-input { flex: 1; min-width: 0; height: 2.75rem; font-size: 1rem; }
         .sc-manual .ak-btn { height: 2.75rem; }
