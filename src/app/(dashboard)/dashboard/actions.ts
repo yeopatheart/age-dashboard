@@ -49,6 +49,25 @@ export async function reorderDailyBusinesses(orderedIds: string[]): Promise<{ er
 // 업체명은 businesses 테이블 소속이라 바꾸면 다른 날짜의 과거 기록 표시에도 영향을 준다.
 // 터미널은 그날 카드(daily_businesses)의 값이라 이 주문만 바뀌고, 업체의 기본 터미널과 다른 날짜는 그대로다.
 // 같은 날·차수·업체에 이미 그 터미널의 카드가 있으면 합칠 수 없어 오류를 돌려준다.
+// 별도 주문 팝업에서 그날 카드의 고객명만 바꾼다(display_name). 고객사 이름(businesses.name)과 다른 날짜의 카드는 그대로다.
+// 비우거나 고객사 이름과 같게 쓰면 기본 이름으로 돌아간다.
+export async function renameDailyBusiness(dailyBusinessId: string, name: string): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
+  const trimmed = name.trim();
+  if (trimmed.length > 60) return { error: '고객명은 60자까지 입력할 수 있습니다.' };
+  const supabase = await createClient();
+  const { data: daily } = await supabase.from('daily_businesses').select('business_id').eq('id', dailyBusinessId).maybeSingle();
+  if (!daily) return { error: '주문을 찾지 못했습니다.' };
+  const { data: business } = await supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle();
+  const displayName = trimmed && trimmed !== business?.name ? trimmed : null;
+  const { error } = await supabase.from('daily_businesses').update({ display_name: displayName }).eq('id', dailyBusinessId);
+  if (error) return { error: error.message };
+  revalidatePath('/dashboard');
+  revalidatePath('/packing-log');
+  revalidatePath('/scan');
+  return { error: null };
+}
+
 export async function updateOrder(dailyBusinessId: string, businessName: string, terminalId: string | null): Promise<{ error: string | null }> {
   await requirePermission('dashboard:edit');
   const supabase = await createClient();

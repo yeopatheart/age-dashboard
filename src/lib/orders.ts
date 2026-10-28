@@ -23,7 +23,8 @@ export function roundLabel(round: OrderRound): string {
 export interface OrderRow {
   dailyBusinessId: string;
   businessId: string;
-  businessName: string;
+  businessName: string; // 그날 카드에 보이는 이름(display_name이 있으면 그것, 없으면 고객사 이름)
+  defaultName: string; // 고객사 관리의 이름
   terminal: string;
   businessNumber: number;
   round: OrderRound;

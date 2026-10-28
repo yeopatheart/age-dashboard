@@ -27,7 +27,7 @@ export type ScanResult =
 // 스캔 결과 화면에 보여줄 정보를 모은다. 업체 카드·같은 카드의 라벨은 서로 무관해서 같이 읽고, 이름은 그 다음에 한 번에 읽는다.
 async function describe(supabase: Awaited<ReturnType<typeof createClient>>, label: { id: string; daily_business_id: string; seq: number; barcode: string; loaded_at: string | null }): Promise<ScannedBox> {
   const [{ data: daily }, { data: siblings }] = await Promise.all([
-    supabase.from('daily_businesses').select('business_id, terminal_id').eq('id', label.daily_business_id).maybeSingle(),
+    supabase.from('daily_businesses').select('business_id, terminal_id, display_name').eq('id', label.daily_business_id).maybeSingle(),
     supabase.from('box_labels').select('loaded_at').eq('daily_business_id', label.daily_business_id),
   ]);
   const [{ data: business }, { data: terminal }] = await Promise.all([
@@ -38,7 +38,7 @@ async function describe(supabase: Awaited<ReturnType<typeof createClient>>, labe
   return {
     labelId: label.id,
     barcode: label.barcode,
-    business: business?.name ?? '',
+    business: daily?.display_name ?? business?.name ?? '',
     terminal: terminal?.name ?? '',
     boxNo: label.seq,
     loadedCount: all.filter((l) => l.loaded_at).length,

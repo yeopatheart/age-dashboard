@@ -47,7 +47,7 @@ export interface CardLabelBase {
 }
 
 export async function loadCardLabelBase(supabase: Client, dailyBusinessId: string): Promise<CardLabelBase | null> {
-  const { data: daily } = await supabase.from('daily_businesses').select('id, order_date, business_id, business_number, terminal_id').eq('id', dailyBusinessId).maybeSingle();
+  const { data: daily } = await supabase.from('daily_businesses').select('id, order_date, business_id, business_number, terminal_id, display_name').eq('id', dailyBusinessId).maybeSingle();
   if (!daily) return null;
   const [{ data: business }, { data: terminal }, settings] = await Promise.all([
     supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle(),
@@ -60,7 +60,7 @@ export async function loadCardLabelBase(supabase: Client, dailyBusinessId: strin
     data: {
       terminal: terminal?.name ?? '',
       separate: terminal?.is_separate ?? false,
-      business: business?.name ?? '',
+      business: daily.display_name ?? business?.name ?? '',
       date: daily.order_date,
       company: settings.companyName,
       contact: settings.contactPhone,

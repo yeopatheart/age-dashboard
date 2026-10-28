@@ -17,7 +17,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
   // 1단계: 서로 의존하지 않는 조회를 한 번에 보낸다.
   const [, { data: dailies, error: dailyError }, businesses, { data: terminals }, { data: boxes }, products, settings] = await Promise.all([
     accessCheck,
-    supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id').eq('order_date', orderDate).order('sort_order'),
+    supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id, display_name').eq('order_date', orderDate).order('sort_order'),
     fetchAll((from, to) => supabase.from('businesses').select('id, name').order('id').range(from, to), '업체 조회 실패: '),
     supabase.from('terminals').select('id, name'),
     supabase.from('boxes').select('id, name, is_active, inner_width_cm, inner_depth_cm, inner_height_cm, is_mulbong_box').order('name'),
@@ -91,7 +91,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
       id: d.id,
       number: d.business_number,
       roundLabel: splitBusinessIds.has(d.business_id) ? roundLabel(d.round) : null,
-      businessName: business?.name ?? '',
+      businessName: d.display_name ?? business?.name ?? '',
       terminal: d.terminal_id ? terminalById.get(d.terminal_id) ?? '' : '',
       items: (items ?? [])
         // 미출고 수량은 박스에 담을 대상이 아니므로 뺀다(전량 미출고면 상품 자체를 제외).

@@ -84,6 +84,8 @@ type DailyBusiness = {
   total_boxes: number;
   // 주문 입력의 줄 끝 "#메모" — 포장 담당에게 전하는 자유 메모
   memo: string | null;
+  // 그날 카드에서만 쓰는 고객명(0036). null이면 고객사 이름(businesses.name)을 쓴다.
+  display_name: string | null;
   // 그날 카드의 터미널(0029). 고객사의 터미널(businesses.terminal_id)은 기본값일 뿐이고, 표시·집계는 이 값을 쓴다.
   terminal_id: string | null;
   created_at: string;
@@ -305,6 +307,7 @@ export type Database = {
           sort_order?: number;
           total_boxes?: number;
           memo?: string | null;
+          display_name?: string | null;
           terminal_id?: string | null;
           created_at?: string;
         }

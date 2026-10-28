@@ -13,7 +13,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
 
   const [, { data: dailies, error }, { data: businesses }, { data: terminals }] = await Promise.all([
     accessCheck,
-    supabase.from('daily_businesses').select('id, business_id, terminal_id, business_number, round, sort_order').eq('order_date', orderDate).order('sort_order'),
+    supabase.from('daily_businesses').select('id, business_id, terminal_id, business_number, round, sort_order, display_name').eq('order_date', orderDate).order('sort_order'),
     supabase.from('businesses').select('id, name'),
     supabase.from('terminals').select('id, name'),
   ]);
@@ -33,7 +33,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
       {
         id: d.id,
         number: d.business_number,
-        business: businessName.get(d.business_id) ?? '',
+        business: d.display_name ?? businessName.get(d.business_id) ?? '',
         terminal: d.terminal_id ? terminalName.get(d.terminal_id) ?? '' : '',
         loaded: own.filter((l) => l.loaded_at).length,
         total: own.length,
