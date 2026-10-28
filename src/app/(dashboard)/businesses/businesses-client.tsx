@@ -1,6 +1,5 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Building2, Plus, Trash2 } from 'lucide-react';
 import { createBusiness, updateBusiness, deleteBusiness } from './actions';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
@@ -42,7 +41,6 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
   const can = useCan();
   const canEdit = can('businesses:edit');
   const canDelete = can('businesses:delete');
-  const router = useRouter();
   const [search, setSearch] = useState('');
   const [terminalFilter, setTerminalFilter] = useState('all');
   const [viaFilter, setViaFilter] = useState('all');
@@ -99,7 +97,6 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
       setError(result.error);
       return false;
     }
-    router.refresh();
     return true;
   };
 

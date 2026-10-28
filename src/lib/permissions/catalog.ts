@@ -38,8 +38,3 @@ export function normalizePermissions(keys: string[]): string[] {
   for (const k of [...chosen]) chosen.add(`${k.split(':')[0]}:view`);
   return ALL_PERMISSION_KEYS.filter((k) => chosen.has(k));
 }
-
-// 주소가 어느 메뉴에 속하는지 (사이드바 강조·접근 확인용)
-export function menuOfPath(pathname: string): MenuKey | null {
-  return MENU_KEYS.find((m) => (MENU_DEFS[m].paths as readonly string[]).some((p) => pathname === p || pathname.startsWith(`${p}/`))) ?? null;
-}

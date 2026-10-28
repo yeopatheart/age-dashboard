@@ -2,10 +2,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
 import { recommend, trainModel, type Confidence, type PackingItem, type PackingModel, type TrainingRecord } from './model';
+import { fetchAll } from '@/lib/supabase/fetch-all';
 
 type Client = SupabaseClient<Database>;
 
-const PAGE = 1000; // Supabase 한 번의 조회 상한
 
 // ─── 저장·표시용 타입 ───────────────────────────────────────────────────────
 export interface StoredBox {
@@ -64,16 +64,6 @@ function parseStoredPlans(value: unknown): StoredPlan[] {
 
 function isPackingModel(value: unknown): value is PackingModel {
   return typeof value === 'object' && value !== null && 'cases' in value && Array.isArray(value.cases) && 'params' in value;
-}
-
-async function fetchAll<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
-  const all: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await page(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    all.push(...(data ?? []));
-    if ((data ?? []).length < PAGE) return all;
-  }
 }
 
 // ─── 학습 ───────────────────────────────────────────────────────────────────
@@ -145,9 +135,10 @@ export interface RecommendationState {
 
 // 미제출 업체마다 현재 주문 내용에 대한 추천이 없으면 만들어 저장한다. 이미 제출된 업체는 건드리지 않는다
 // (정답을 안 뒤에 만든 추천이 정확도 측정에 섞이지 않게).
+// 모델은 추천을 새로 만들어야 할 때만 불러온다(loadModel). 이미 저장된 추천만으로 화면이 채워지면 모델 JSON(이력에 비례해 커진다)을 받지 않는다.
 export async function ensureRecommendations(
   supabase: Client,
-  model: PackingModel,
+  loadModel: () => Promise<PackingModel | null>,
   businesses: BusinessForRecommendation[],
   boxByName: Map<string, BoxLookup>,
 ): Promise<Map<string, RecommendationState>> {
@@ -165,6 +156,9 @@ export async function ensureRecommendations(
     : [];
   const byDaily = new Map<string, typeof existing>();
   for (const r of existing) byDaily.set(r.daily_business_id, [...(byDaily.get(r.daily_business_id) ?? []), r]);
+
+  let modelPromise: Promise<PackingModel | null> | null = null;
+  const getModel = () => (modelPromise ??= loadModel());
 
   const toInsert: Database['public']['Tables']['packing_recommendations']['Insert'][] = [];
   const pending: { dailyBusinessId: string; view: RecommendationView; changed: boolean }[] = [];
@@ -187,6 +181,11 @@ export async function ensureRecommendations(
     }
     if (b.submitted || b.items.length === 0) {
       result.set(b.dailyBusinessId, { current: null, orderChanged: false });
+      continue;
+    }
+    const model = await getModel();
+    if (!model) {
+      result.set(b.dailyBusinessId, { current: null, orderChanged: rows.length >= 1 });
       continue;
     }
     const rec = recommend(model, b.items.map((i) => ({ name: i.name, unit: i.unit, quantity: i.quantity, mulbongFlag: i.mulbongFlag })));
@@ -273,19 +272,14 @@ export async function compareWithRecommendation(
 // ─── 대시보드 알림 ──────────────────────────────────────────────────────────
 // 박스 구성을 정한 뒤(제출했거나, 박스 기록 화면에서 추천을 만든 뒤) 주문이 바뀐 업체를 찾는다.
 // 기준이 되는 지문은 제출 기록이 있으면 그 지문, 없으면 가장 최근 추천의 지문이다. 박스 준비를 한 적 없으면 알리지 않는다.
-export async function findChangedAfterPacking(
-  supabase: Client,
+export function findChangedAfterPacking(
   orders: { dailyBusinessId: string; items: LiveOrderItem[] }[],
-): Promise<Set<string>> {
-  const ids = orders.map((o) => o.dailyBusinessId);
-  if (ids.length === 0) return new Set();
-  const [{ data: records }, { data: recs }] = await Promise.all([
-    supabase.from('packing_records').select('daily_business_id, order_signature').in('daily_business_id', ids),
-    supabase.from('packing_recommendations').select('daily_business_id, order_signature, created_at').in('daily_business_id', ids).order('created_at'),
-  ]);
+  records: { daily_business_id: string; order_signature: string | null }[],
+  recs: { daily_business_id: string; order_signature: string; created_at: string }[], // created_at 오름차순
+): Set<string> {
   const reference = new Map<string, string>();
-  for (const r of recs ?? []) reference.set(r.daily_business_id, r.order_signature); // 나중 것이 덮어써서 가장 최근 추천이 남는다
-  for (const r of records ?? []) if (r.order_signature) reference.set(r.daily_business_id, r.order_signature);
+  for (const r of recs) reference.set(r.daily_business_id, r.order_signature); // 나중 것이 덮어써서 가장 최근 추천이 남는다
+  for (const r of records) if (r.order_signature) reference.set(r.daily_business_id, r.order_signature);
   const changed = new Set<string>();
   for (const o of orders) {
     const ref = reference.get(o.dailyBusinessId);

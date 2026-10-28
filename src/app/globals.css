@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  /* select 화살표 — 모든 드롭다운이 같은 화살표를 쓴다(.select-field, .ak-select 등) */
+  /* select 화살표 — 모든 드롭다운이 같은 화살표를 쓴다(.ak-select 등) */
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 8l4 4 4-4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   /* Brand Colors - 통영아재수산 */
   --primary: #003057;
@@ -44,7 +44,7 @@
   --teal-bg: #f0fdfa;
 
   /* Typography */
-  --font-sans: 'Noto Sans KR', sans-serif;
+  --font-sans: var(--font-noto-sans-kr), 'Noto Sans KR', sans-serif;
 
   /* Radius */
   --radius: 0.5rem;
@@ -110,23 +110,11 @@ body {
   background: #94a3b8;
 }
 
-/* Sidebar scrollbar */
-.sidebar-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-}
 
 /* Animations */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
-}
-@keyframes slideIn {
-  from { opacity: 0; transform: translateX(-12px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-@keyframes pulse-ring {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 @keyframes shimmer {
   0% { background-position: -200% 0; }
@@ -135,9 +123,6 @@ body {
 
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out;
-}
-.animate-slide-in {
-  animation: slideIn 0.25s ease-out;
 }
 
 /* Utility classes */
@@ -198,49 +183,6 @@ body {
   color: #94a3b8;
 }
 
-/* select는 브라우저 기본 렌더링이 OS마다 달라 .input-field 위에 이걸 덧붙여 쓴다 —
-   appearance를 초기화하고 화살표를 직접 그려서 어디서든 동일하게 보이게 한다. */
-.select-field {
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: var(--select-chevron);
-  background-repeat: no-repeat;
-  background-position: right 0.65rem center;
-  background-size: 1rem;
-  padding-right: 2.25rem;
-  cursor: pointer;
-}
-
-/* Table */
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-}
-.data-table th {
-  background: #f8fafc;
-  color: var(--muted-foreground);
-  font-weight: 600;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.75rem 1rem;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-}
-.data-table td {
-  padding: 0.875rem 1rem;
-  border-bottom: 1px solid #f1f5f9;
-  color: var(--foreground);
-  vertical-align: middle;
-}
-.data-table tr:last-child td {
-  border-bottom: none;
-}
-.data-table tr:hover td {
-  background: #f8fafc;
-}
-
 /* Page header (설정류 화면 공통: 아이콘 + 제목 + 설명) */
 .page-header {
   display: flex;
@@ -283,10 +225,6 @@ body {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-.badge-success { background: var(--success-bg); color: #16a34a; }
-.badge-warning { background: var(--warning-bg); color: #d97706; }
-.badge-danger  { background: var(--danger-bg);  color: #dc2626; }
 .badge-info    { background: var(--info-bg);    color: #2563eb; }
-.badge-teal    { background: var(--teal-bg);    color: #0d9488; }
 .badge-muted   { background: var(--muted);       color: var(--muted-foreground); }
 .badge-primary { background: var(--primary-light); color: var(--primary); }

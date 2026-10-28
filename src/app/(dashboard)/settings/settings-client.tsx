@@ -1,7 +1,6 @@
 'use client';
 import '@/components/admin/admin.css';
 import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { RotateCcw, Settings as SettingsIcon } from 'lucide-react';
 import { AdminHeader, Toggle } from '@/components/admin/admin-kit';
 import { DEFAULT_SETTINGS, type AppSettings } from '@/lib/app-settings';
@@ -13,7 +12,6 @@ const toList = (text: string) => text.split(',').map((s) => s.trim()).filter(Boo
 
 export function SettingsClient({ initial }: { initial: AppSettings }) {
   const canEdit = useCan()('settings:edit');
-  const router = useRouter();
   const [form, setForm] = useState({
     sizeTolerancePct: String(initial.sizeTolerancePct),
     earlyRangeKg: String(initial.earlyRangeKg),
@@ -65,7 +63,6 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
     setBusy(false);
     if (result.error) return setError(result.error);
     setNotice('설정을 저장했습니다. 새로 입력하는 주문부터 적용됩니다.');
-    router.refresh();
   };
   const reset = () => {
     setForm({

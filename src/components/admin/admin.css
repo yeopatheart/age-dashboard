@@ -37,7 +37,6 @@ select.ak-input { padding-right: 2.25rem; }
 .ak-table tbody tr.ak-row:hover td { background: #f8fafc; }
 .ak-table tbody tr.ak-row-active td { background: var(--primary-light); }
 .ak-table .ak-check { width: 2.5rem; }
-.ak-table .ak-center { text-align: center; }
 .ak-table .ak-right { text-align: right; }
 .ak-table .ak-fit { width: 1%; white-space: nowrap; }
 .ak-empty { padding: 3rem 1rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem; }

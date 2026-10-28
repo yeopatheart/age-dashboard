@@ -1,6 +1,5 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { MapPinned, Plus, Trash2 } from 'lucide-react';
 import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate } from './actions';
 import { ColorPicker } from '@/components/color-picker';
@@ -33,7 +32,6 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
   const can = useCan();
   const canEdit = can('terminals:edit');
   const canDelete = can('terminals:delete');
-  const router = useRouter();
   const [search, setSearch] = useState('');
   const [viaFilter, setViaFilter] = useState('all');
   const [separateFilter, setSeparateFilter] = useState('all');
@@ -69,7 +67,6 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
       setError(result.error);
       return false;
     }
-    router.refresh();
     return true;
   };
 
@@ -85,12 +82,10 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
   const setSeparate = async (t: Terminal, value: boolean) => {
     setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], is_separate: value } }));
     await setTerminalSeparate(t.id, value);
-    router.refresh();
   };
   const setColor = async (t: Terminal, fill: string | null, border: string | null) => {
     setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], fill_color: fill, border_color: border } }));
     await setTerminalColor(t.id, fill, border);
-    router.refresh();
   };
   const openPanel = (t: Terminal) => {
     setOpenId(t.id);

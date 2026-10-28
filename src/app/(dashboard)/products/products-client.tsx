@@ -1,6 +1,5 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Plus, Tag, Trash2, Wand2 } from 'lucide-react';
 import { createProduct, renameProduct, setProductColors, setProductMulbong, autoAssignProductColors, deleteProducts } from './actions';
 import { ColorPicker } from '@/components/color-picker';
@@ -33,7 +32,6 @@ export function ProductsClient({ products }: { products: Product[] }) {
   const can = useCan();
   const canEdit = can('products:edit');
   const canDelete = can('products:delete');
-  const router = useRouter();
   const [search, setSearch] = useState('');
   const [viaFilter, setViaFilter] = useState('all');
   const [colorFilter, setColorFilter] = useState('all');
@@ -83,7 +81,6 @@ export function ProductsClient({ products }: { products: Product[] }) {
       return false;
     }
     if (okNotice) setNotice(okNotice);
-    router.refresh();
     return true;
   };
 
@@ -105,17 +102,14 @@ export function ProductsClient({ products }: { products: Product[] }) {
     setBusy(false);
     if (result.error) return setError(result.error);
     setNotice(`'${nameDraft.trim()}'(으)로 바꿨습니다.${result.updatedItems > 0 ? ` 과거 주문 ${result.updatedItems}건도 함께 바뀌었습니다.` : ''}`);
-    router.refresh();
   };
   const handleColor = async (p: Product, fill: string | null, border: string | null) => {
     setLocal((prev) => ({ ...prev, [p.id]: { fill, border } }));
     await setProductColors([p.id], fill, border);
-    router.refresh();
   };
   const handleMulbong = async (ids: string[], value: boolean) => {
     setLocalMulbong((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, value])) }));
     await setProductMulbong(ids, value);
-    router.refresh();
   };
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -145,7 +139,6 @@ export function ProductsClient({ products }: { products: Product[] }) {
     if (result.error) return setError(result.error);
     setLocal({});
     setNotice(`색이 없는 상품 ${result.assigned}개에 겹치지 않는 색을 배정했습니다.`);
-    router.refresh();
   };
 
   const columns: Column<Product>[] = [

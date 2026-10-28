@@ -5,8 +5,8 @@ import { LabelsClient } from './labels-client';
 import { requireMenu } from '@/lib/permissions/access';
 
 export default async function LabelsPage() {
-  await requireMenu('labels');
+  const accessCheck = requireMenu('labels'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 await로 확정)
   const supabase = await createClient();
-  const [templates, settings] = await Promise.all([loadLabelTemplates(supabase), loadAppSettings(supabase)]);
+  const [, templates, settings] = await Promise.all([accessCheck, loadLabelTemplates(supabase), loadAppSettings(supabase)]);
   return <LabelsClient initial={templates} company={settings.companyName} contact={settings.contactPhone} />;
 }

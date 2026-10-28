@@ -51,15 +51,11 @@ export interface OrderItem {
   secondaryWeightKg?: number;
   sizeRequest?: string;
   isMulbong: boolean;
-  // 아크릴 카드 OCR로 반영되는 실측값. 중량 또는 사이즈 등급을 함께 담을 수 있어 자유텍스트다.
-  measuredValue?: string;
   isPacked: boolean;
-  packedAt?: string;
   // 미출고 수량(0이면 정상) — 주문취소와 별개로, 주문은 유효하지만 현장에서 출고하지 못한 수량.
   unshippedQuantity: number;
   unshippedReason?: string;
   changeStatus: ChangeStatus;
-  boxResult?: string;
 }
 
 export interface ProductSummaryRow {

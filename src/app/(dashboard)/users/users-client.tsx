@@ -1,7 +1,6 @@
 'use client';
 import '@/components/admin/admin.css';
-import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/admin-kit';
 import { MENU_DEFS, MENU_KEYS, permissionKeysOf } from '@/lib/permissions/catalog';
@@ -19,15 +18,11 @@ export interface UserRow {
 const formatTime = (iso: string | null) => (iso ? new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '접속 기록 없음');
 
 export function UsersClient({ users, meId, setupError }: { users: UserRow[]; meId: string; setupError: string | null }) {
-  const router = useRouter();
-  const [, startRefresh] = useTransition();
   const [form, setForm] = useState({ email: '', password: '', displayName: '' });
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-
-  const refresh = () => startRefresh(() => router.refresh());
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +33,6 @@ export function UsersClient({ users, meId, setupError }: { users: UserRow[]; meI
     if (error) return setFormError(error);
     setForm({ email: '', password: '', displayName: '' });
     setMessage('사용자를 등록했습니다. 권한을 설정해야 메뉴가 보입니다.');
-    refresh();
   };
 
   return (
@@ -73,12 +67,12 @@ export function UsersClient({ users, meId, setupError }: { users: UserRow[]; meI
                 {!u.isMaster && (
                   <div className="us-actions">
                     <button className="ak-btn" onClick={() => setOpenId(openId === u.id ? null : u.id)}>{openId === u.id ? '닫기' : '권한 설정'}</button>
-                    {u.id !== meId && <DeleteButton user={u} onDone={refresh} />}
+                    {u.id !== meId && <DeleteButton user={u} />}
                   </div>
                 )}
               </div>
               {u.isMaster && <p className="ak-muted">모든 메뉴와 기능을 사용할 수 있고, 이 메뉴는 이 계정만 열 수 있습니다.</p>}
-              {openId === u.id && !u.isMaster && <PermissionEditor user={u} onSaved={() => { setMessage(`${u.displayName || u.email}의 권한을 저장했습니다.`); refresh(); }} />}
+              {openId === u.id && !u.isMaster && <PermissionEditor user={u} onSaved={() => setMessage(`${u.displayName || u.email}의 권한을 저장했습니다.`)} />}
               {!u.isMaster && openId !== u.id && <p className="ak-muted">{summary(u.permissions)}</p>}
             </li>
           ))}
@@ -114,7 +108,7 @@ function summary(keys: string[]) {
   return menus.length ? `열 수 있는 메뉴: ${menus.join(', ')}` : '열 수 있는 메뉴가 없습니다. 권한을 설정하세요.';
 }
 
-function DeleteButton({ user, onDone }: { user: UserRow; onDone: () => void }) {
+function DeleteButton({ user }: { user: UserRow }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const remove = async () => {
@@ -123,7 +117,6 @@ function DeleteButton({ user, onDone }: { user: UserRow; onDone: () => void }) {
     const result = await deleteUser(user.id);
     setBusy(false);
     if (result.error) return setError(result.error);
-    onDone();
   };
   return (
     <>
