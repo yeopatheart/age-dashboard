@@ -39,9 +39,10 @@ const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 // 품목별 수량 세로 패널(2열). 모니터 2 오른쪽과 별도 주문 팝업 오른쪽에서 같이 쓴다.
 // availHeight를 주면(모니터 2) 품목이 늘어도 스크롤이 생기지 않게 줄 높이·글자 크기를 그 높이에 맞춰 줄이고,
 // 안 주면(팝업) 고정 줄 높이로 그리고 넘치면 패널 안에서 스크롤한다.
-// 칸 하나에 이름+수량이 안 들어가는 긴 이름(말줄임이 생길 품목)은 한 줄 전체를 쓰게 하고 맨 뒤로 보낸다 —
-// 이름이 잘리면 현장에서 어떤 품목인지 알 수 없다. 칸 폭은 w-64(256) − 패널 여백(12) → 2열 사이 간격(4)을
-// 뺀 열당 약 120px, 칩 안쪽 여백(12)을 뺀 약 108px이다.
+// 칸 하나에 이름+수량이 안 들어가 말줄임(...)이 생길 품목은 한 줄 전체를 쓰게 한다 — 이름이 잘리면 현장에서 어떤 품목인지
+// 알 수 없다. 순서는 바꾸지 않는다(품목명 한글 오름차순 그대로라 비슷한 품목이 붙어 있다). 잘리는지는 글자 폭을 추정하지 않고
+// 그려진 결과(scrollWidth > clientWidth)로 직접 확인해서, 글꼴·스크롤바·여백 차이로 어긋나지 않게 한다.
+const NO_NAMES: Set<string> = new Set();
 function ProductSummaryPanel({
   columns,
   chipStyle,
@@ -51,42 +52,55 @@ function ProductSummaryPanel({
   chipStyle: (name: string) => React.CSSProperties;
   availHeight?: number;
 }) {
-  const [longNames, setLongNames] = useState<Set<string>>(new Set());
+  const gridRef = useRef<HTMLDivElement>(null);
   const signature = columns.map((c) => `${c.key}:${c.total}:${c.unshipped}`).join('|');
+  // 한 줄 전체로 올린 이름 목록. 품목·수량(signature)이 바뀌면 이전 목록은 버리고 전부 한 칸으로 다시 그려 본다.
+  const [longState, setLongState] = useState<{ signature: string; names: Set<string> }>({ signature: '', names: NO_NAMES });
+  const longNames = longState.signature === signature ? longState.names : NO_NAMES;
+  // 그려진 뒤 이름이 잘린 칩을 찾아 한 줄 전체로 올린다(그려지기 전에 끝나므로 깜빡임이 없다). 이미 한 줄 전체인 칩은 건너뛴다.
   useLayoutEffect(() => {
-    const measure = () => {
-      const ctx = document.createElement('canvas').getContext('2d');
-      if (!ctx) return;
-      const family = getComputedStyle(document.body).fontFamily;
-      const width = (text: string, weight: number) => {
-        ctx.font = `${weight} 12px ${family}`;
-        return ctx.measureText(text).width;
-      };
-      const available = 108 - 4; // 이름과 수량 사이 간격(gap-1)
-      setLongNames(new Set(columns.filter((c) => width(c.label, 700) + width(`${c.total}${c.unit}${c.unshipped > 0 ? ` (미출고 ${c.unshipped})` : ''}`, 900) > available).map((c) => c.key)));
+    const verify = () => {
+      const grid = gridRef.current;
+      if (!grid) return;
+      const truncated = [...grid.querySelectorAll<HTMLElement>('[data-label-key]')]
+        .filter((el) => el.scrollWidth > el.clientWidth + 1)
+        .map((el) => el.dataset.labelKey as string)
+        .filter((key) => !longNames.has(key));
+      if (truncated.length > 0) setLongState({ signature, names: new Set([...longNames, ...truncated]) });
     };
-    measure();
-    // 웹폰트가 늦게 로드되면 폭이 달라지므로 로드 후 한 번 더 잰다.
-    void document.fonts?.ready.then(measure);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
-  const panelColumns = [...columns.filter((c) => !longNames.has(c.key)), ...columns.filter((c) => longNames.has(c.key))];
-  const shortCount = columns.length - longNames.size;
+    verify();
+    // 웹폰트가 늦게 로드되면 폭이 달라지므로 로드 후 한 번 더 확인한다.
+    void document.fonts?.ready.then(verify);
+  }, [signature, longNames]);
+  // 한 줄 전체 칩 앞에 한 칸만 남은 줄은 비워 둔다(순서를 지키기 위해). 높이 계산에도 그만큼 센다.
+  let layoutRows = 0;
+  let pendingShort = false;
+  for (const c of columns) {
+    if (longNames.has(c.key)) {
+      if (pendingShort) layoutRows += 1;
+      pendingShort = false;
+      layoutRows += 1;
+    } else if (pendingShort) {
+      layoutRows += 1;
+      pendingShort = false;
+    } else {
+      pendingShort = true;
+    }
+  }
+  if (pendingShort) layoutRows += 1;
   const itemHeight =
-    availHeight === undefined
-      ? 26
-      : Math.min(26, Math.max(14, Math.floor((Math.max(availHeight, 300) - 8) / Math.max(1, Math.ceil(shortCount / 2) + longNames.size))));
+    availHeight === undefined ? 26 : Math.min(26, Math.max(14, Math.floor((Math.max(availHeight, 300) - 8) / Math.max(1, layoutRows))));
   return (
     <aside className="w-64 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ borderTop: '3px solid #003057' }}>
       <div className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100 flex-shrink-0">품목별 수량</div>
-      <div className={`flex-1 min-h-0 grid grid-cols-2 content-start gap-x-1 p-1.5 ${availHeight === undefined ? 'overflow-y-auto' : 'overflow-hidden'}`}>
-        {panelColumns.map((product) => (
+      <div ref={gridRef} className={`flex-1 min-h-0 grid grid-cols-2 content-start gap-x-1 p-1.5 ${availHeight === undefined ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+        {columns.map((product) => (
           <div
             key={product.key}
             className={`flex items-center justify-between gap-1 px-1.5 rounded border mb-px overflow-hidden ${longNames.has(product.key) ? 'col-span-2' : ''}`}
             style={{ ...chipStyle(product.productName), height: itemHeight - 1, fontSize: Math.min(12, itemHeight - 6) }}
           >
-            <span className="font-bold truncate leading-none">{product.label}</span>
+            <span data-label-key={product.key} className="font-bold truncate leading-none">{product.label}</span>
             <span className="font-black shrink-0 leading-none">
               {product.total}{product.unit}
               {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
@@ -136,6 +150,10 @@ function SortableRow({
 
 function productGridTemplate(slotCount: number) {
   return `40px 80px 144px 56px repeat(${slotCount}, minmax(130px, 1fr))`;
+}
+// 위 열 정의의 최소 폭 합. 표 전체 폭을 이 값 이상으로 잡아야 옆으로 스크롤해도 헤더·행 배경이 끝까지 이어진다.
+function productGridMinWidth(slotCount: number) {
+  return 40 + 80 + 144 + 56 + slotCount * 130;
 }
 
 // 전체보기 위쪽 "품목별 수량" 카드를 접은 상태. 이 브라우저(PC·TV)마다 따로 기억한다 — 서버에는 저장하지 않는다.
@@ -800,7 +818,8 @@ export function DashboardClient({
   // 에서는 기본 크기(상품명 11px / 수량 14px) 그대로이고, 가장 촘촘한 30px 단계에서만 10px / 12px까지 줄어든다.
   // 팁 안쪽 높이 = 행 높이 − 테두리 1 − 칸 여백 4 − 팁 테두리 2.
   const pillLineHeight = Math.floor((rowHeight - 7) / 2);
-  const pillNameFont = Math.min(11, pillLineHeight - 1);
+  // 글자 높이가 줄 높이보다 크면 2번째 줄(사이즈 표기 등) 아래가 잘리므로, 줄 높이보다 2px 작게 잡는다.
+  const pillNameFont = Math.min(11, pillLineHeight - 2);
   const pillQtyFont = Math.min(14, pillLineHeight + 1);
 
   // 열 개수는 "이 화면에 실제로 보이는 행" 중 상품이 가장 많은 업체 기준 + 1(추가 버튼 열)이다.
@@ -1105,7 +1124,7 @@ export function DashboardClient({
           </div>
         )}
         <div ref={scrollRef} className={`flex-1 min-h-0 overflow-x-auto ${isSplitMode ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
-          <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`}>
+          <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`} style={{ minWidth: productGridMinWidth(productSlotCount) }}>
             {/* 헤더 */}
             <div
               ref={headerRef}
@@ -1272,16 +1291,16 @@ export function DashboardClient({
                               className="w-full min-w-0 flex flex-wrap items-center justify-center gap-x-1 z-10 cursor-pointer select-none overflow-hidden break-keep [overflow-wrap:anywhere]"
                               style={{ lineHeight: `${pillLineHeight}px`, maxHeight: pillLineHeight * 2 }}
                             >
-                              <span className={highlightColor ? 'font-black' : `font-bold ${text}`} style={{ fontSize: pillNameFont, ...(highlightColor ? { color: highlightColor } : {}) }}>{item.productName}</span>
+                              <span className={highlightColor ? 'font-black' : `font-bold ${text}`} style={{ fontSize: pillNameFont, height: pillLineHeight, ...(highlightColor ? { color: highlightColor } : {}) }}>{item.productName}</span>
                               {isUndecidedQuantity(item) ? (
                                 <span className="whitespace-nowrap rounded bg-amber-100 px-1 font-black text-amber-700" style={{ fontSize: pillNameFont }} title="주문에서 수량을 못 찾았습니다. 수정에서 수량을 채워 주세요">수량 미정</span>
                               ) : (
-                                <span className="whitespace-nowrap">
+                                <span className="whitespace-nowrap" style={{ height: pillLineHeight }}>
                                   <span className={`font-black ${text}`} style={{ fontSize: pillQtyFont }}>{item.quantity}</span>
                                   <span className={`ml-0.5 font-semibold ${text}`} style={{ fontSize: pillNameFont }}>{item.unit}</span>
                                 </span>
                               )}
-                              {suffix && <span className="font-semibold text-sky-600" style={{ fontSize: pillNameFont }}>{suffix.trim()}</span>}
+                              {suffix && <span className="font-semibold text-sky-600" style={{ fontSize: pillNameFont, height: pillLineHeight }}>{suffix.trim()}</span>}
                             </div>
                             <div className={`absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity z-20`}>
                               <button
@@ -1349,7 +1368,7 @@ export function DashboardClient({
               )}
               <DndContext id="separate-dnd" sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleSeparateDragEnd}>
               <SortableContext items={separateRows.map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
-              {separateRows.map((row) => {
+              {separateRows.map((row, index) => {
                 const rowItems = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence);
                 return (
                   <SortableRow
@@ -1361,6 +1380,7 @@ export function DashboardClient({
                   >
                     {(handle) => (
                     <>
+                    <span className="w-6 flex-shrink-0 text-center text-xs font-bold text-slate-400">{index + 1}</span>
                     {handle && (
                       <div
                         ref={handle.ref}
