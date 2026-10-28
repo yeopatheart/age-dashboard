@@ -21,8 +21,8 @@ export interface ScannedBox {
 export type ScanResult =
   | { status: 'loaded'; box: ScannedBox } // 방금 상차 완료로 처리됨
   | { status: 'duplicate'; box: ScannedBox } // 이미 상차 완료된 박스를 다시 스캔함
-  | { status: 'invalid'; message: string } // 우리 바코드 형식이 아님
-  | { status: 'unknown'; message: string }; // 형식은 맞지만 발급된 적 없는 번호
+  | { status: 'invalid'; code: string } // 우리 바코드 형식이 아님
+  | { status: 'unknown'; code: string }; // 형식은 맞지만 발급된 적 없는 번호
 
 async function describe(supabase: Awaited<ReturnType<typeof createClient>>, label: { id: string; daily_business_id: string; seq: number; barcode: string; loaded_at: string | null }): Promise<ScannedBox> {
   const { data: daily } = await supabase.from('daily_businesses').select('business_id, terminal_id').eq('id', label.daily_business_id).maybeSingle();
@@ -48,11 +48,11 @@ async function describe(supabase: Awaited<ReturnType<typeof createClient>>, labe
 export async function scanBarcode(raw: string): Promise<ScanResult> {
   await requirePermission('scan:scan');
   const code = raw.replace(/\s+/g, '');
-  if (!isValidBoxBarcode(code)) return { status: 'invalid', message: `우리 라벨 바코드가 아닙니다 (${code.slice(0, 20) || '빈 값'})` };
+  if (!isValidBoxBarcode(code)) return { status: 'invalid', code: code.slice(0, 20) || '빈 값' };
 
   const supabase = await createClient();
   const { data: label } = await supabase.from('box_labels').select('id, daily_business_id, seq, barcode, loaded_at').eq('barcode', code).maybeSingle();
-  if (!label) return { status: 'unknown', message: `출력된 적 없는 바코드입니다 (${code})` };
+  if (!label) return { status: 'unknown', code };
 
   if (label.loaded_at) return { status: 'duplicate', box: await describe(supabase, label) };
 
