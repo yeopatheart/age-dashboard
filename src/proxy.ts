@@ -43,5 +43,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // 로그인 전에도 보여야 하는 정적 이미지(로그인 화면 로고 등)는 로그인 확인에서 뺀다 — 넣으면 /login으로 리다이렉트되어 이미지가 깨진다.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico)$).*)"],
 };
