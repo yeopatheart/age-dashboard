@@ -19,6 +19,7 @@ import {
 import { BarChart3, ChevronLeft, ChevronRight, ClipboardList, GripVertical, Package, Plus, Trash2, X } from 'lucide-react';
 import type { RecommendationView, StoredPlan } from '@/lib/packing/server';
 import { submitPacking, assignItemsToBoxes, deletePackingRecord } from './actions';
+import { LabelPanel } from './label-panel';
 
 export interface PackingItem {
   id: string;
@@ -307,7 +308,7 @@ export function PackingLogClient({
       delete next[selected.id]; // 제출한 내용으로 다시 불러오게 한다
       return next;
     });
-    setNotice(`${selected.businessName}${selected.roundLabel ? ` (${selected.roundLabel})` : ''} 박스 기록을 제출했습니다.`);
+    setNotice(`${selected.businessName}${selected.roundLabel ? ` (${selected.roundLabel})` : ''} 박스 할당을 제출했습니다.`);
     router.refresh();
   };
   const handleDeleteRecord = async () => {
@@ -374,7 +375,7 @@ export function PackingLogClient({
       <div className="page-header">
         <div className="page-header-icon"><ClipboardList size={20} /></div>
         <div>
-          <h1 className="page-title">박스 기록</h1>
+          <h1 className="page-title">박스 할당</h1>
           <p className="page-sub">추천된 박스와 담길 상품을 확인하세요. 맞으면 &ldquo;맞아요. 제출할게요.&rdquo;, 다르면 &ldquo;수정할게요.&rdquo;를 눌러 박스와 상품을 고친 뒤 제출하세요. 제출한 기록은 추천의 정확도 측정과 학습에 쓰입니다.</p>
         </div>
       </div>
@@ -521,6 +522,8 @@ export function PackingLogClient({
                     </button>
                   )}
                 </div>
+
+                <LabelPanel key={selected.id} dailyBusinessId={selected.id} boxCount={draft.boxes.length} />
               </section>
 
               <DragOverlay>
@@ -559,6 +562,23 @@ export function PackingLogClient({
         .pk-edited { background: #fef3c7; color: #92400e; border-radius: 999px; padding: 0.15rem 0.7rem; font-size: 0.8125rem; font-weight: 800; }
         .pk-editing { background: #dbeafe; color: #1d4ed8; border-radius: 999px; padding: 0.1rem 0.5rem; font-size: 0.6875rem; font-weight: 800; white-space: nowrap; }
         .pk-view { padding: 1rem 1.1rem; }
+        .pk-labels { border-top: 1px solid var(--border); padding: 0.9rem 1.1rem 1.1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+        .pk-labels-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.9375rem; }
+        .pk-label-boxes { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .pk-label-box { display: flex; align-items: center; gap: 0.5rem; border: 2px solid var(--border); border-radius: 12px; padding: 0.45rem 0.8rem; cursor: pointer; background: #fff; }
+        .pk-label-box input { width: 1.1rem; height: 1.1rem; }
+        .pk-label-no { font-size: 1.35rem; font-weight: 900; line-height: 1; }
+        .pk-label-st { font-size: 0.8125rem; font-weight: 800; color: var(--muted-foreground); }
+        .pk-label-new { border-color: #fcd34d; background: #fffbeb; }
+        .pk-label-new .pk-label-st { color: #92400e; }
+        .pk-label-printed .pk-label-st { color: #1d4ed8; }
+        .pk-label-done { background: #f0fdf4; border-color: #86efac; }
+        .pk-label-done .pk-label-st { color: #15803d; }
+        .pk-label-on { outline: 3px solid var(--primary); outline-offset: 1px; }
+        .pk-label-warn { font-size: 0.8125rem; font-weight: 700; color: #92400e; background: #fffbeb; border-radius: 10px; padding: 0.45rem 0.7rem; }
+        .pk-label-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+        .pk-label-actions .pk-big { display: inline-flex; align-items: center; gap: 0.5rem; }
+        .pk-label-note { font-size: 0.75rem; }
         .pk-date { height: 2.25rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 0.8rem; font-size: 0.875rem; font-weight: 700; background: #fff; }
         .pk-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 600; color: var(--muted-foreground); cursor: pointer; }
         .pk-layout { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 0.9rem; align-items: start; }

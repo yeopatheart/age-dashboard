@@ -22,18 +22,11 @@ export async function acknowledgeChange(orderItemId: string) {
 
 // ── 매트릭스 대시보드의 수동 편집 액션 ──────────────────────────────────────────
 
-export async function updateTotalBoxes(dailyBusinessId: string, totalBoxes: number) {
-  const supabase = await createClient();
-  await supabase.from('daily_businesses').update({ total_boxes: totalBoxes }).eq('id', dailyBusinessId);
-  revalidatePath('/dashboard');
-}
-
 export async function createManualOrder(
   orderDate: string,
   round: OrderRound,
   businessName: string,
   terminalId: string | null,
-  totalBoxes: number,
 ): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const businessId = await findOrCreateBusiness(supabase, businessName, terminalId);
@@ -42,7 +35,6 @@ export async function createManualOrder(
   const dailyBusinessId = await findOrCreateDailyBusiness(supabase, orderDate, businessId, round, terminalId);
   if (!dailyBusinessId) return { error: '오늘자 주문 카드를 생성하지 못했습니다.' };
 
-  await supabase.from('daily_businesses').update({ total_boxes: totalBoxes }).eq('id', dailyBusinessId);
   revalidatePath('/dashboard');
   return { error: null };
 }

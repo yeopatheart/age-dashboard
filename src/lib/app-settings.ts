@@ -12,6 +12,9 @@ export interface AppSettings {
   unshippedReasons: string[];
   // 켜면 오늘 이전 날짜의 주문 입력·수정과 박스 기록 편집을 허용한다(미래 날짜는 항상 막는다).
   allowPastOrderEdit: boolean;
+  // 송장 라벨에 찍는 상호와 연락처
+  companyName: string;
+  contactPhone: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -22,12 +25,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   optionalKeywords: ['가능하면'],
   unshippedReasons: ['재고없음', '폐사', '품질불량'],
   allowPastOrderEdit: false,
+  companyName: '통영아재수산',
+  contactPhone: '',
 };
 
 const num = (v: unknown, fallback: number, min: number, max: number) => {
   const n = typeof v === 'number' ? v : parseFloat(String(v));
   return Number.isFinite(n) && n >= min && n <= max ? n : fallback;
 };
+const text = (v: unknown, fallback: string) => (typeof v === 'string' ? v.trim().slice(0, 60) : fallback);
 const list = (v: unknown, fallback: string[]) =>
   Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : fallback;
 
@@ -43,5 +49,7 @@ export function mergeSettings(stored: Record<string, unknown> | null | undefined
     optionalKeywords: list(s.optionalKeywords, d.optionalKeywords),
     unshippedReasons: list(s.unshippedReasons, d.unshippedReasons),
     allowPastOrderEdit: typeof s.allowPastOrderEdit === 'boolean' ? s.allowPastOrderEdit : d.allowPastOrderEdit,
+    companyName: text(s.companyName, d.companyName),
+    contactPhone: text(s.contactPhone, d.contactPhone),
   };
 }

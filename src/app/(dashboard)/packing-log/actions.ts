@@ -119,7 +119,7 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
     })
     .select('id')
     .single();
-  if (recordError || !record) return { error: recordError?.message ?? '박스 기록을 저장하지 못했습니다.' };
+  if (recordError || !record) return { error: recordError?.message ?? '박스 할당을 저장하지 못했습니다.' };
 
   const rollback = async (message: string) => {
     await supabase.from('packing_records').delete().eq('id', record.id);
@@ -172,7 +172,11 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
     .map(([id, kg]) => supabase.from('order_items').update({ measured_weight_kg: kg }).eq('id', id));
   await Promise.all(weightUpdates);
 
+  // 리포트 집계(report_summary)가 daily_businesses.total_boxes를 합산하므로 제출한 박스 수를 맞춰 둔다.
+  await supabase.from('daily_businesses').update({ total_boxes: input.boxes.length }).eq('id', daily.id);
+
   revalidatePath('/packing-log');
+  revalidatePath('/dashboard');
   return { error: null };
 }
 
@@ -239,6 +243,8 @@ export async function deletePackingRecord(dailyBusinessId: string): Promise<{ er
   }
   const { error } = await supabase.from('packing_records').delete().eq('daily_business_id', dailyBusinessId);
   if (error) return { error: error.message };
+  await supabase.from('daily_businesses').update({ total_boxes: 1 }).eq('id', dailyBusinessId);
   revalidatePath('/packing-log');
+  revalidatePath('/dashboard');
   return { error: null };
 }

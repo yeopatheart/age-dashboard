@@ -158,6 +158,32 @@ type PackingRecommendation = {
   created_at: string;
 };
 
+// 송장 라벨(0030): 라벨 디자인, 박스별 바코드, 출력·스캔 이력. elements의 모양은 src/lib/labels/template.ts의 LabelElement[].
+type LabelTemplateRow = {
+  kind: "top" | "side";
+  width_mm: number;
+  height_mm: number;
+  elements: unknown;
+  updated_at: string;
+};
+type BoxLabel = {
+  id: string;
+  daily_business_id: string;
+  seq: number;
+  barcode: string;
+  loaded_at: string | null;
+  loaded_by: string | null;
+  created_at: string;
+};
+type BoxLabelEvent = {
+  id: string;
+  label_id: string;
+  event: "print" | "scan" | "undo";
+  label_kind: "top" | "side" | null;
+  created_at: string;
+  created_by: string | null;
+};
+
 type PackingBox = {
   id: string;
   record_id: string;
@@ -397,6 +423,18 @@ export type Database = {
       packing_model_versions: TableDef<
         PackingModelVersion,
         Pick<PackingModelVersion, "version" | "record_count" | "single_box_count" | "model"> & { trained_at?: string }
+      >;
+      label_templates: TableDef<
+        LabelTemplateRow,
+        Pick<LabelTemplateRow, "kind" | "width_mm" | "height_mm" | "elements"> & { updated_at?: string }
+      >;
+      box_labels: TableDef<
+        BoxLabel,
+        Pick<BoxLabel, "daily_business_id" | "seq" | "barcode"> & { id?: string; loaded_at?: string | null; loaded_by?: string | null; created_at?: string }
+      >;
+      box_label_events: TableDef<
+        BoxLabelEvent,
+        Pick<BoxLabelEvent, "label_id" | "event"> & { id?: string; label_kind?: "top" | "side" | null; created_at?: string; created_by?: string | null }
       >;
       packing_recommendations: TableDef<
         PackingRecommendation,

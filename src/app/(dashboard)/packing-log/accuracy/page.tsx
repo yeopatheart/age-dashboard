@@ -67,15 +67,15 @@ export default async function PackingAccuracyPage() {
         <div>
           <h1 className="page-title">박스 추천 정확도</h1>
           <p className="page-sub">
-            제출한 박스 기록을 제출 시점의 추천과 비교합니다. 1순위 일치 = 박스 종류·개수가 1순위 추천과 같음, 후보 3 안 = 세 후보 중 하나와 같음, 그대로 제출 = 상품 배치까지 1순위 그대로.
+            제출한 박스 할당을 제출 시점의 추천과 비교합니다. 1순위 일치 = 박스 종류·개수가 1순위 추천과 같음, 후보 3 안 = 세 후보 중 하나와 같음, 그대로 제출 = 상품 배치까지 1순위 그대로.
           </p>
         </div>
       </div>
       <div className="ak-toolbar">
-        <Link href="/packing-log" className="ak-btn">← 박스 기록</Link>
+        <Link href="/packing-log" className="ak-btn">← 박스 할당</Link>
       </div>
       {groups.size === 0 ? (
-        <p className="ak-empty">아직 추천과 비교할 제출 기록이 없습니다. 박스 기록에서 추천을 확인하고 제출하면 여기에 쌓입니다.</p>
+        <p className="ak-empty">아직 추천과 비교할 제출 기록이 없습니다. 박스 할당에서 추천을 확인하고 제출하면 여기에 쌓입니다.</p>
       ) : (
         sections.map((section) => {
           const rows = [...(groups.get(section)?.entries() ?? [])].sort((a, b) => (section === '날짜별' || section === '모델 버전별' ? b[0].localeCompare(a[0]) : 0));

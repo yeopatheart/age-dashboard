@@ -27,7 +27,8 @@ export interface OrderRow {
   terminal: string;
   businessNumber: number;
   round: OrderRound;
-  totalBoxes: number;
+  // 박스 할당에서 제출한 박스 수. 아직 박스를 할당하지 않았으면 null (대시보드에서는 고칠 수 없다)
+  totalBoxes: number | null;
   // 주문 입력의 "#메모" — 포장 담당에게 전하는 자유 메모
   memo: string | null;
   // 박스 구성을 정한 뒤 주문이 바뀌어 박스를 다시 확인해야 한다 (박스 기록의 추천·제출 기준)
@@ -59,8 +60,6 @@ export interface OrderItem {
   unshippedReason?: string;
   changeStatus: ChangeStatus;
   boxResult?: string;
-  // Figma 매트릭스의 "박스" 열 — 업체(daily_business) 단위 값이라 그 업체의 모든 줄에 동일하게 실린다.
-  totalBoxes: number;
 }
 
 export interface ProductSummaryRow {
@@ -81,6 +80,14 @@ export interface ProductSummaryRow {
 // 비슷한 품목이 멀리 떨어져서, 같은 품목을 한눈에 비교할 수 있도록 이름순으로 둔다(사이즈가 없는 줄이 먼저).
 // 주문 입력에서 수량을 못 찾아 "수량 미정"으로 올린 상품(수량 0, 단위 없음). 합계·포장에서는 빠지고 대시보드에 "수량 미정"으로 보인다.
 export const isUndecidedQuantity = (item: Pick<OrderItem, 'quantity' | 'unit'>) => item.quantity === 0 && !item.unit;
+
+// 업체 카드(행)의 모든 상품이 끝났는지: 취소되지 않은 상품이 하나 이상 있고, 전부 포장 완료이거나 전량 미출고여야 한다.
+// 수량 미정인 상품이 하나라도 있으면 아직 끝난 것이 아니다(수량을 채워야 한다).
+export function isCardComplete(items: Pick<OrderItem, 'changeStatus' | 'isPacked' | 'quantity' | 'unit' | 'unshippedQuantity'>[]): boolean {
+  const live = items.filter((i) => i.changeStatus !== 'cancelled');
+  if (live.length === 0) return false;
+  return live.every((i) => !isUndecidedQuantity(i) && (i.isPacked || i.quantity - i.unshippedQuantity <= 0));
+}
 
 export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
   const map = new Map<string, ProductSummaryRow>();
@@ -119,7 +126,7 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
 export function getTerminalBoxTotals(rows: OrderRow[]) {
   const totals = new Map<string, number>();
   for (const row of rows) {
-    totals.set(row.terminal, (totals.get(row.terminal) ?? 0) + row.totalBoxes);
+    totals.set(row.terminal, (totals.get(row.terminal) ?? 0) + (row.totalBoxes ?? 0));
   }
   return Array.from(totals.entries()).map(([terminal, boxes]) => ({ terminal, boxes }));
 }

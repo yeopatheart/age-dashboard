@@ -19,16 +19,21 @@ import {
   Tag,
   BarChart3,
   Settings,
+  Barcode,
+  ScanLine,
 } from 'lucide-react';
 
+// 하루 업무 순서대로: 주문 입력 → 박스 할당 → 대시보드, 그 아래는 관리 메뉴.
 const NAV_ITEMS = [
-  { href: '/dashboard', label: '대시보드', icon: LayoutDashboard },
   { href: '/orders/new', label: '주문 입력', icon: Sparkles },
+  { href: '/packing-log', label: '박스 할당', icon: ClipboardList },
+  { href: '/dashboard', label: '대시보드', icon: LayoutDashboard },
+  { href: '/scan', label: '상차 스캔', icon: ScanLine },
   { href: '/businesses', label: '고객사 관리', icon: Building2 },
   { href: '/terminals', label: '터미널 관리', icon: MapPinned },
   { href: '/products', label: '상품 관리', icon: Tag },
   { href: '/boxes', label: '박스 관리', icon: Package },
-  { href: '/packing-log', label: '박스 기록', icon: ClipboardList },
+  { href: '/labels', label: '라벨 설정', icon: Barcode },
   { href: '/reports', label: '리포트', icon: BarChart3 },
   { href: '/settings', label: '설정', icon: Settings },
 ];

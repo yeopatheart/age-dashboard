@@ -4,14 +4,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
-import { businessIdsInBothRounds, roundLabel, getProductSummary, getTerminalBoxTotals, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
+import { businessIdsInBothRounds, roundLabel, getProductSummary, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import {
   setProductHighlight,
   clearProductHighlights,
   togglePacked,
-  updateTotalBoxes,
   reorderDailyBusinesses,
   createManualOrder,
   updateOrder,
@@ -99,6 +98,15 @@ function RoundBadge({ round }: { round: OrderRound }) {
   );
 }
 
+// 업체의 모든 상품이 끝났을 때 업체명 앞에 붙는 표시 — 업체명 줄 안에 인라인으로 흐르므로 행 높이를 키우지 않는다.
+function DoneBadge() {
+  return (
+    <span className="inline-flex items-center gap-0.5 align-middle mr-1 px-1 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold leading-[14px]" title="이 업체의 모든 상품이 완료되었습니다">
+      <Check className="w-2.5 h-2.5" strokeWidth={4} />완료
+    </span>
+  );
+}
+
 // 드래그로 순서를 바꾸는 표 행. 행 전체가 아니라 "번호" 칸의 손잡이로만 끌 수 있다 — 행 안의 상품 칩은 클릭(수정·포장)이 주 동작이라 충돌한다.
 function SortableRow({
   id,
@@ -130,16 +138,22 @@ function SortableRow({
 // 마지막 칸은 "+" 추가 버튼 자리라 좁게 고정하고, 나머지 폭을 상품 칸이 나눠 쓴다.
 // 전체보기는 열마다 최소 폭을 두고 필요하면 옆으로 스크롤한다.
 const ADD_COLUMN_WIDTH = 36;
-function productGridTemplate(slotCount: number, flexible = false) {
-  const fixed = '40px 80px 144px 56px';
+// 고객명 열은 이 날짜 고객명 중 가장 긴 것에 맞춘다(모니터 1·2가 같은 폭을 쓰도록 표시 중인 줄이 아니라 전체 줄 기준).
+// 수정/삭제 버튼은 이름 위에 겹쳐 나타나므로 버튼 자리를 따로 잡지 않는다.
+const NAME_COLUMN_DEFAULT = 144;
+const NAME_COLUMN_MIN = 72;
+const NAME_COLUMN_MAX = 220;
+const ROUND_BADGE_WIDTH = 28; // RoundBadge("1차") 폭 + 오른쪽 간격
+function productGridTemplate(slotCount: number, flexible = false, nameColumn = NAME_COLUMN_DEFAULT) {
+  const fixed = `40px 80px ${nameColumn}px 56px`;
   if (!flexible) return `${fixed} repeat(${slotCount}, minmax(130px, 1fr))`;
   const productColumns = slotCount - 1;
   return `${fixed} ${productColumns > 0 ? `repeat(${productColumns}, minmax(0, 1fr)) ` : ''}${ADD_COLUMN_WIDTH}px`;
 }
 // 위 열 정의의 최소 폭 합. 표 전체 폭을 이 값 이상으로 잡아야 옆으로 스크롤해도 헤더·행 배경이 끝까지 이어진다.
-const PRODUCT_GRID_FIXED_WIDTH = 40 + 80 + 144 + 56;
-function productGridMinWidth(slotCount: number) {
-  return PRODUCT_GRID_FIXED_WIDTH + slotCount * 130;
+const productGridFixedWidth = (nameColumn: number) => 40 + 80 + nameColumn + 56;
+function productGridMinWidth(slotCount: number, nameColumn: number) {
+  return productGridFixedWidth(nameColumn) + slotCount * 130;
 }
 
 // 전체보기 위쪽 "품목별 수량" 카드를 접은 상태. 이 브라우저(PC·TV)마다 따로 기억한다 — 서버에는 저장하지 않는다.
@@ -319,20 +333,19 @@ function OrderFormModal({
   onSave,
   onClose,
 }: {
-  initial?: { businessName: string; terminalId: string | null; totalBoxes: number };
+  initial?: { businessName: string; terminalId: string | null };
   terminals: Terminal[];
   businesses: BusinessDirectoryEntry[];
   // 이 날짜 대시보드에 이미 올라와 있는 (업체, 차수, 터미널) — 새 주문 추가에서 같은 차수·터미널의 중복 등록을 막는다.
   registered?: { businessId: string; round: OrderRound; terminal: string }[];
   // 저장에 실패하면 화면에 보여줄 오류 문구를 돌려준다(성공하면 null).
-  onSave: (data: { businessName: string; terminalId: string | null; totalBoxes: number; round: OrderRound }) => Promise<string | null>;
+  onSave: (data: { businessName: string; terminalId: string | null; round: OrderRound }) => Promise<string | null>;
   onClose: () => void;
 }) {
   const isEdit = Boolean(initial);
   const modalColors: TerminalColorMap = Object.fromEntries(terminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
   const [businessName, setBusinessName] = useState(initial?.businessName ?? '');
   const [terminalId, setTerminalId] = useState(initial?.terminalId ?? terminals[0]?.id ?? '');
-  const [totalBoxes, setTotalBoxes] = useState(initial?.totalBoxes?.toString() ?? '1');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [duplicateError, setDuplicateError] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -364,7 +377,7 @@ function OrderFormModal({
     }
     const resolvedTerminalId = isEdit ? (terminalId || null) : (matchedTerminal?.id ?? null);
     setSaveError(null);
-    const error = await onSave({ businessName: (matchedBusiness?.name ?? businessName).trim(), terminalId: resolvedTerminalId, totalBoxes: parseInt(totalBoxes) || 1, round });
+    const error = await onSave({ businessName: (matchedBusiness?.name ?? businessName).trim(), terminalId: resolvedTerminalId, round });
     if (error) setSaveError(error);
   };
 
@@ -487,15 +500,6 @@ function OrderFormModal({
         {saveError && (
           <p className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{saveError}</p>
         )}
-        <div>
-          <label className="block text-xs font-bold text-slate-600 mb-1">박스 수량</label>
-          <input
-            type="number" min="1"
-            value={totalBoxes}
-            onChange={(e) => setTotalBoxes(e.target.value)}
-            className="w-28 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:border-[#003057] focus:outline-none"
-          />
-        </div>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors">취소</button>
           <button onClick={handleSave} disabled={!isEdit && !matchedBusiness} className="px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors disabled:opacity-40" style={{ backgroundColor: '#003057' }}>저장</button>
@@ -761,6 +765,30 @@ export function DashboardClient({
     return () => ro.disconnect();
   }, []);
 
+  // 고객명 열 폭: 가장 긴 고객명(굵은 12px)을 한 줄로 그릴 수 있는 폭. 1·2차 배지가 붙는 고객은 배지 폭만큼 더한다.
+  // 완료·박스 배지는 상태에 따라 붙었다 떨어지므로 열 폭에 넣지 않는다(폭이 흔들리지 않게). 넘치면 2줄로 접힌다.
+  const [nameColumn, setNameColumn] = useState(NAME_COLUMN_DEFAULT);
+  const nameSignature = rows.map((r) => `${r.businessName}|${splitBusinessIds.has(r.businessId) ? r.round : ''}`).join('\n');
+  useLayoutEffect(() => {
+    const measure = () => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (!ctx) return;
+      ctx.font = `700 12px ${getComputedStyle(document.body).fontFamily}`;
+      const widest = nameSignature
+        .split('\n')
+        .filter(Boolean)
+        .reduce((max, line) => {
+          const [name, round] = line.split('|');
+          return Math.max(max, ctx.measureText(name).width + (round ? ROUND_BADGE_WIDTH : 0));
+        }, 0);
+      // 칸 좌우 여백(px-2 = 16) + 오른쪽 경계선 + 반올림 여유
+      setNameColumn(Math.min(NAME_COLUMN_MAX, Math.max(NAME_COLUMN_MIN, Math.ceil(widest) + 20)));
+    };
+    measure();
+    // 웹폰트가 늦게 로드되면 글자 폭이 달라지므로 로드 후 다시 잰다.
+    void document.fonts?.ready.then(measure);
+  }, [nameSignature]);
+
   const rowHeight =
     availHeight > 0
       ? ROW_HEIGHT_TIERS.find((h) => MONITOR_COUNT * Math.floor(availHeight / h) >= rows.length) ?? MIN_ROW_HEIGHT
@@ -828,9 +856,9 @@ export function DashboardClient({
     return Math.max(max, count);
   }, 0);
   const productSlotCount = maxProductCount + 1;
-  const gridTemplate = productGridTemplate(productSlotCount, isSplitMode);
+  const gridTemplate = productGridTemplate(productSlotCount, isSplitMode, nameColumn);
   // 모니터 1/2는 열 폭이 화면 폭으로 정해진다. 상품이 많아 열이 좁아지면 글자도 그만큼 줄인다.
-  const colWidth = isSplitMode && availWidth > 0 ? (availWidth - PRODUCT_GRID_FIXED_WIDTH - ADD_COLUMN_WIDTH) / Math.max(1, productSlotCount - 1) : Infinity;
+  const colWidth = isSplitMode && availWidth > 0 ? (availWidth - productGridFixedWidth(nameColumn) - ADD_COLUMN_WIDTH) / Math.max(1, productSlotCount - 1) : Infinity;
   const widthShrink = colWidth >= 120 ? 0 : colWidth >= 100 ? 1 : colWidth >= 88 ? 2 : 3;
   const shrinkPill = (q: number, f: number) => ({ q: Math.max(8, q - widthShrink), f: Math.max(7, f - widthShrink) });
   const q2 = Math.min(14, Math.floor((pillInnerHeight - 2) / 2.5));
@@ -872,7 +900,7 @@ export function DashboardClient({
       idx + 1,
       row.terminal,
       `${row.businessName}${roundOf(row) ? ` (${roundLabel(roundOf(row) as OrderRound)})` : ''}`,
-      row.totalBoxes,
+      row.totalBoxes ?? '',
       row.memo ?? '',
       ...Array.from({ length: maxItems }, (_, i) => {
         const item = rowItems[idx][i];
@@ -927,25 +955,18 @@ export function DashboardClient({
     refresh();
   };
 
-  const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; totalBoxes: number; round: OrderRound }): Promise<string | null> => {
+  const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; round: OrderRound }): Promise<string | null> => {
     if (editOrderModal) {
       const { error } = await updateOrder(editOrderModal.dailyBusinessId, data.businessName, data.terminalId);
       if (error) return error;
-      await updateTotalBoxes(editOrderModal.dailyBusinessId, data.totalBoxes);
       setEditOrderModal(null);
     } else {
-      const { error } = await createManualOrder(orderDate, data.round, data.businessName, data.terminalId, data.totalBoxes);
+      const { error } = await createManualOrder(orderDate, data.round, data.businessName, data.terminalId);
       if (error) return error;
       setAddOrderModal(false);
     }
     refresh();
     return null;
-  };
-
-  const handleBoxesInput = async (row: OrderRow, value: string) => {
-    const n = parseInt(value) || 0;
-    await updateTotalBoxes(row.dailyBusinessId, n);
-    refresh();
   };
 
   const handleSaveItem = async (fields: ManualItemFields) => {
@@ -1156,7 +1177,7 @@ export function DashboardClient({
           </div>
         )}
         <div ref={scrollRef} className={`flex-1 min-h-0 overflow-x-auto ${isSplitMode ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
-          <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`} style={isSplitMode ? undefined : { minWidth: productGridMinWidth(productSlotCount) }}>
+          <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`} style={isSplitMode ? undefined : { minWidth: productGridMinWidth(productSlotCount, nameColumn) }}>
             {/* 헤더 */}
             <div
               ref={headerRef}
@@ -1226,12 +1247,12 @@ export function DashboardClient({
                         {row.terminal || '-'}
                       </span>
                     </div>
-                    <div className="relative border-r border-slate-100 px-2 flex items-center group overflow-hidden">
+                    <div className={`relative border-r border-slate-100 px-2 flex items-center group overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : ''}`}>
                       {/* 업체명은 현장에서 정확히 보여야 하므로 말줄임 없이 전체 폭을 쓰고(최대 2줄, 행 높이 고정),
                           수정/삭제 버튼은 마우스를 올릴 때만 이름 위에 겹쳐 나타난다. */}
-                      <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
+                      <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
-                      {row.packingChanged && <span className="ml-1 shrink-0 rounded border border-rose-300 bg-rose-50 px-1 text-[10px] font-extrabold leading-tight text-rose-600" title="주문이 바뀌었습니다 — 박스 기록에서 박스 구성을 다시 확인하세요">박스</span>}
+                      {row.packingChanged && <span className="ml-1 shrink-0 rounded border border-rose-300 bg-rose-50 px-1 text-[10px] font-extrabold leading-tight text-rose-600" title="주문이 바뀌었습니다 — 박스 할당에서 박스 구성을 다시 확인하세요">박스</span>}
                       <div className={`absolute inset-y-0 right-0 pl-4 pr-1 flex items-center gap-1 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity bg-gradient-to-l from-white via-white to-transparent`}>
                       <button
                         onClick={() => setEditOrderModal(row)}
@@ -1250,13 +1271,7 @@ export function DashboardClient({
                       </div>
                     </div>
                     <div className="border-r border-slate-100 px-2 bg-slate-50/60 flex items-center justify-center">
-                      <input
-                        type="number"
-                        defaultValue={row.totalBoxes}
-                        onBlur={(e) => handleBoxesInput(row, e.target.value)}
-                        disabled={readOnly}
-                        className="w-12 text-[11px] font-bold text-center border border-slate-300 rounded-md px-1.5 py-0.5 focus:border-[#003057] focus:outline-none bg-white"
-                      />
+                      <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null ? 'text-slate-300' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{row.totalBoxes ?? '-'}</span>
                     </div>
 
                     {Array.from({ length: productSlotCount }).map((_, slotIndex) => {
@@ -1430,8 +1445,8 @@ export function DashboardClient({
                     )}
                     <div className="w-72 flex-shrink-0 flex items-center gap-2">
                       <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
-                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
-                      <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes}</span>
+                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
+                      <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes ?? '-'}</span>
                     </div>
                     <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
                       {row.memo && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">메모: {row.memo}</span>}
@@ -1502,7 +1517,6 @@ export function DashboardClient({
           initial={{
             businessName: editOrderModal.businessName,
             terminalId: allTerminals.find((t) => t.name === editOrderModal.terminal)?.id ?? null,
-            totalBoxes: editOrderModal.totalBoxes,
           }}
           terminals={allTerminals}
           businesses={businessDirectory}
