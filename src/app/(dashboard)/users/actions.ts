@@ -14,20 +14,38 @@ async function requireMasterAccess() {
 
 const MIN_PASSWORD_LENGTH = 8;
 
-export async function createUser(input: { email: string; password: string; displayName: string }): Promise<{ error: string | null }> {
+export async function createUser(input: { email: string; password: string; displayName: string }): Promise<{ error: string | null; userId: string | null }> {
   await requireMasterAccess();
   const email = input.email.trim().toLowerCase();
   const displayName = input.displayName.trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: '이메일 형식이 올바르지 않습니다.' };
-  if (input.password.length < MIN_PASSWORD_LENGTH) return { error: `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.` };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: '이메일 형식이 올바르지 않습니다.', userId: null };
+  if (input.password.length < MIN_PASSWORD_LENGTH) return { error: `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.`, userId: null };
 
   const admin = createAdminClient();
   // 이메일 인증 없이 바로 쓸 수 있게 만든다(master가 직접 등록하는 계정이다). 이름은 profiles의 표시 이름이 된다.
   const { data, error } = await admin.auth.admin.createUser({ email, password: input.password, email_confirm: true, user_metadata: { display_name: displayName || email.split('@')[0] } });
-  if (error || !data.user) return { error: error?.message.includes('already') ? '이미 등록된 이메일입니다.' : (error?.message ?? '사용자를 만들지 못했습니다.') };
+  if (error || !data.user) return { error: error?.message.includes('already') ? '이미 등록된 이메일입니다.' : (error?.message ?? '사용자를 만들지 못했습니다.'), userId: null };
   // 새 사용자는 아무 권한도 없는 상태로 시작한다.
   const { error: permError } = await admin.from('user_permissions').upsert({ user_id: data.user.id, permissions: [] });
-  if (permError) return { error: `사용자는 만들었지만 권한 행을 만들지 못했습니다(마이그레이션 0031 적용 필요): ${permError.message}` };
+  if (permError) return { error: `사용자는 만들었지만 권한 행을 만들지 못했습니다(마이그레이션 0031 적용 필요): ${permError.message}`, userId: data.user.id };
+  revalidatePath('/users');
+  return { error: null, userId: data.user.id };
+}
+
+// 이름과 비밀번호를 고친다(이메일은 로그인 ID라 바꾸지 않는다). 비밀번호를 비워 두면 그대로 둔다.
+export async function updateUser(userId: string, input: { displayName: string; password: string }): Promise<{ error: string | null }> {
+  await requireMasterAccess();
+  const displayName = input.displayName.trim();
+  if (!displayName) return { error: '이름을 입력하세요.' };
+  if (input.password && input.password.length < MIN_PASSWORD_LENGTH) return { error: `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.` };
+
+  const admin = createAdminClient();
+  const { data: target } = await admin.auth.admin.getUserById(userId);
+  if (!target.user) return { error: '사용자를 찾지 못했습니다.' };
+  const { error } = await admin.auth.admin.updateUserById(userId, { ...(input.password ? { password: input.password } : {}), user_metadata: { ...target.user.user_metadata, display_name: displayName } });
+  if (error) return { error: error.message };
+  const { error: profileError } = await admin.from('profiles').update({ display_name: displayName }).eq('id', userId);
+  if (profileError) return { error: profileError.message };
   revalidatePath('/users');
   return { error: null };
 }
