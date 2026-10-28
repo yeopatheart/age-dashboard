@@ -23,30 +23,29 @@ export async function findOrCreateBusiness(
   return created.id;
 }
 
-// 해당 날짜·차수의 daily_businesses 행을 찾거나, 없으면 assign_business_number로 번호를 발급받아 새로 만든다.
-// 호출하는 쪽에서 같은 요청 안에 같은 업체가 여러 번 등장할 수 있다면(카카오 붙여넣기처럼
+// 그날 카드의 키 — 같은 날·차수에도 터미널이 다르면 별개 카드다(0029). 터미널이 없으면 빈 문자열.
+export const dailyKey = (businessId: string, terminalId: string | null) => `${businessId}|${terminalId ?? ''}`;
+
+// 해당 날짜·차수·터미널의 daily_businesses 행을 찾거나, 없으면 assign_business_number로 번호를 발급받아 새로 만든다.
+// 호출하는 쪽에서 같은 요청 안에 같은 카드가 여러 번 등장할 수 있다면(카카오 붙여넣기처럼
 // 한 업체가 여러 상품 줄을 가질 때), 매번 새로 조회/삽입하면 daily_businesses의
-// (order_date, business_id, round) unique 제약에 걸려 두 번째부터 조용히 실패할 수 있으므로
+// (order_date, business_id, round, terminal) unique 제약에 걸려 두 번째부터 조용히 실패할 수 있으므로
 // 호출부에서 dailyBusinessId를 캐시해뒀다가 재사용해야 한다.
 export async function findOrCreateDailyBusiness(
   supabase: SupabaseClient<Database>,
   orderDate: string,
   businessId: string,
   round: OrderRound,
+  terminalId: string | null,
 ): Promise<string | null> {
-  const { data: existing } = await supabase
-    .from('daily_businesses')
-    .select('id')
-    .eq('order_date', orderDate)
-    .eq('business_id', businessId)
-    .eq('round', round)
-    .maybeSingle();
+  const base = supabase.from('daily_businesses').select('id').eq('order_date', orderDate).eq('business_id', businessId).eq('round', round);
+  const { data: existing } = await (terminalId ? base.eq('terminal_id', terminalId) : base.is('terminal_id', null)).maybeSingle();
   if (existing) return existing.id;
 
   const { data: businessNumber } = await supabase.rpc('assign_business_number', { p_order_date: orderDate });
   const { data: created } = await supabase
     .from('daily_businesses')
-    .insert({ order_date: orderDate, business_id: businessId, business_number: businessNumber ?? 0, round })
+    .insert({ order_date: orderDate, business_id: businessId, business_number: businessNumber ?? 0, round, terminal_id: terminalId })
     .select('id')
     .single();
   return created?.id ?? null;

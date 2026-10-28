@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { dailyKey } from '@/lib/business-lookup';
 import { colorComboKey, pickUnusedColor } from '@/lib/color-palette';
 import { loadAppSettings } from '@/lib/settings-server';
 import { editableDateError } from '@/lib/order-date';
@@ -115,9 +116,9 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
   if (dateError) throw new Error(dateError);
   const [{ data: allBusinesses }, { data: registeredTerminals }, { data: dailyBusinesses }] = await Promise.all([
 
-    supabase.from('businesses').select('id, name'),
-    supabase.from('terminals').select('name'),
-    supabase.from('daily_businesses').select('id, business_id').eq('order_date', orderDate).eq('round', round),
+    supabase.from('businesses').select('id, name, terminal_id'),
+    supabase.from('terminals').select('id, name'),
+    supabase.from('daily_businesses').select('id, business_id, terminal_id').eq('order_date', orderDate).eq('round', round),
   ]);
   const businessList = allBusinesses ?? [];
   const terminalNameSet = new Set((registeredTerminals ?? []).map((t) => t.name));
@@ -144,7 +145,9 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
   }
 
   const dailyRows = dailyBusinesses ?? [];
-  const dailyIdByBusinessId = new Map(dailyRows.map((d) => [d.business_id, d.id]));
+  // 같은 업체도 터미널이 다르면 다른 카드다(0029) — "남부"로 보내는 날과 "택배"로 보내는 날, 또는 한 차수 안의 두 터미널.
+  const dailyIdByKey = new Map(dailyRows.map((d) => [dailyKey(d.business_id, d.terminal_id), d.id]));
+  const terminalIdByName = new Map((registeredTerminals ?? []).map((t) => [t.name, t.id]));
 
   const dailyBusinessIds = dailyRows.map((d) => d.id);
   const { data: existingItems } =
@@ -170,7 +173,11 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
     // 서로 다른 업체라서, 비슷하다고 자동으로 합치면 다른 업체의 주문이 섞인다.
     const matched = businessList.find((b) => b.name === line.businessName);
     const catalogBusinessId = matched?.id ?? null;
-    const dailyBusinessId = catalogBusinessId ? dailyIdByBusinessId.get(catalogBusinessId) ?? null : null;
+    // 줄에 터미널을 적었으면 그 터미널의 카드, 안 적었으면 업체 기본 터미널의 카드를 갱신 대상으로 본다.
+    // 등록되지 않은 터미널이면 아직 카드가 없다.
+    const lineTerminalId = line.terminalName ? terminalIdByName.get(line.terminalName) ?? null : matched?.terminal_id ?? null;
+    const lineTerminalUnknown = line.terminalName !== '' && !lineTerminalId;
+    const dailyBusinessId = catalogBusinessId && !lineTerminalUnknown ? dailyIdByKey.get(dailyKey(catalogBusinessId, lineTerminalId)) ?? null : null;
     const existingItems = dailyBusinessId ? existingItemsByDailyBusiness.get(dailyBusinessId) ?? [] : [];
 
     const base = {
@@ -384,32 +391,42 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
       for (const b of created ?? []) businessIdByName.set(b.name, b.id);
     }
   }
-  const resolved = lines.flatMap((d) => {
+  // 줄에 터미널이 없으면 업체 기본 터미널을 쓴다(방금 만든 업체는 위에서 줄의 터미널로 만들어졌다).
+  const resolvedBase = lines.flatMap((d) => {
     const businessId = d.matchedBusinessId ?? businessIdByName.get(d.businessNameRaw);
     return businessId ? [{ decision: d, businessId }] : [];
   });
+  const defaultTerminalIdByBusiness = new Map<string, string | null>();
+  if (resolvedBase.length > 0) {
+    const { data: defaults } = await supabase.from('businesses').select('id, terminal_id').in('id', [...new Set(resolvedBase.map((r) => r.businessId))]);
+    for (const b of defaults ?? []) defaultTerminalIdByBusiness.set(b.id, b.terminal_id);
+  }
+  const resolved = resolvedBase.map((r) => {
+    const terminalId = r.decision.terminalName ? terminalIdByName.get(r.decision.terminalName) ?? null : defaultTerminalIdByBusiness.get(r.businessId) ?? null;
+    return { ...r, terminalId, key: dailyKey(r.businessId, terminalId) };
+  });
 
-  // 3) 오늘 업체 카드 — 같은 업체가 여러 줄에 나와도 한 번만. 번호는 등장 순서대로 하나씩 발급한다.
-  const businessIds = [...new Set(resolved.map((r) => r.businessId))];
-  const dailyIdByBusinessId = new Map<string, string>();
-  if (businessIds.length > 0) {
+  // 3) 오늘 업체 카드 — 같은 업체·터미널이 여러 줄에 나와도 한 번만. 번호는 등장 순서대로 하나씩 발급한다.
+  const cardKeys = [...new Map(resolved.map((r) => [r.key, r])).values()];
+  const dailyIdByKey = new Map<string, string>();
+  if (cardKeys.length > 0) {
     const { data: existing } = await supabase
       .from('daily_businesses')
-      .select('id, business_id')
+      .select('id, business_id, terminal_id')
       .eq('order_date', orderDate)
       .eq('round', round)
-      .in('business_id', businessIds);
-    for (const d of existing ?? []) dailyIdByBusinessId.set(d.business_id, d.id);
+      .in('business_id', [...new Set(cardKeys.map((r) => r.businessId))]);
+    for (const d of existing ?? []) dailyIdByKey.set(dailyKey(d.business_id, d.terminal_id), d.id);
 
-    const rowsToCreate: { order_date: string; business_id: string; business_number: number; round: OrderRound }[] = [];
-    for (const businessId of businessIds) {
-      if (dailyIdByBusinessId.has(businessId)) continue;
+    const rowsToCreate: { order_date: string; business_id: string; business_number: number; round: OrderRound; terminal_id: string | null }[] = [];
+    for (const card of cardKeys) {
+      if (dailyIdByKey.has(card.key)) continue;
       const { data: businessNumber } = await supabase.rpc('assign_business_number', { p_order_date: orderDate });
-      rowsToCreate.push({ order_date: orderDate, business_id: businessId, business_number: businessNumber ?? 0, round });
+      rowsToCreate.push({ order_date: orderDate, business_id: card.businessId, business_number: businessNumber ?? 0, round, terminal_id: card.terminalId });
     }
     if (rowsToCreate.length > 0) {
-      const { data: created } = await supabase.from('daily_businesses').insert(rowsToCreate).select('id, business_id');
-      for (const d of created ?? []) dailyIdByBusinessId.set(d.business_id, d.id);
+      const { data: created } = await supabase.from('daily_businesses').insert(rowsToCreate).select('id, business_id, terminal_id');
+      for (const d of created ?? []) dailyIdByKey.set(dailyKey(d.business_id, d.terminal_id), d.id);
     }
   }
 
@@ -420,8 +437,8 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
   const updates: Promise<unknown>[] = [];
   const newByDaily = new Map<string, ParsedProduct[]>();
 
-  for (const { decision, businessId } of resolved) {
-    const dailyBusinessId = dailyIdByBusinessId.get(businessId);
+  for (const { decision, key } of resolved) {
+    const dailyBusinessId = dailyIdByKey.get(key);
     if (!dailyBusinessId) continue;
     // 메모는 업체 카드 단위로 한 번만 반영한다(같은 업체의 여러 상품 줄에 같은 메모가 실려 온다).
     if (decision.memo && !memoByDaily.has(dailyBusinessId)) memoByDaily.set(dailyBusinessId, decision.memo);

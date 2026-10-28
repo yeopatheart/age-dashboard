@@ -16,7 +16,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
 
   const { data: dailies, error: dailyError } = await supabase
     .from('daily_businesses')
-    .select('id, business_id, business_number, round')
+    .select('id, business_id, business_number, round, terminal_id')
     .eq('order_date', orderDate)
     .order('sort_order');
   if (dailyError) throw new Error(`박스 기록 조회 실패: ${dailyError.message}`);
@@ -25,7 +25,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
 
   const [{ data: businesses }, { data: terminals }, { data: items }, { data: boxes }, { data: records, error: recordError }, { data: products }] =
     await Promise.all([
-      supabase.from('businesses').select('id, name, terminal_id'),
+      supabase.from('businesses').select('id, name'),
       supabase.from('terminals').select('id, name'),
       dailyIds.length
         ? supabase
@@ -91,7 +91,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
       number: d.business_number,
       roundLabel: splitBusinessIds.has(d.business_id) ? roundLabel(d.round) : null,
       businessName: business?.name ?? '',
-      terminal: business?.terminal_id ? terminalById.get(business.terminal_id) ?? '' : '',
+      terminal: d.terminal_id ? terminalById.get(d.terminal_id) ?? '' : '',
       items: (items ?? [])
         // 미출고 수량은 박스에 담을 대상이 아니므로 뺀다(전량 미출고면 상품 자체를 제외).
         .filter((i) => i.daily_business_id === d.id && i.change_status !== 'cancelled' && Number(i.quantity) - Number(i.unshipped_quantity ?? 0) > 0)

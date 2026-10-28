@@ -30,7 +30,7 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
 
   const { data: daily } = await supabase
     .from('daily_businesses')
-    .select('id, order_date, business_id')
+    .select('id, order_date, business_id, terminal_id')
     .eq('id', input.dailyBusinessId)
     .maybeSingle();
   if (!daily) return { error: '업체 주문을 찾지 못했습니다.' };
@@ -38,7 +38,7 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   if (dateError) return { error: dateError };
 
   const [{ data: business }, { data: items }, { data: boxRows }] = await Promise.all([
-    supabase.from('businesses').select('name, terminal_id').eq('id', daily.business_id).maybeSingle(),
+    supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle(),
     supabase
       .from('order_items')
       .select('id, product_name_raw, unit, quantity, secondary_weight_kg, size_request, is_mulbong, change_status, unshipped_quantity')
@@ -74,7 +74,8 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   }
 
   const [{ data: terminal }, { data: products }] = await Promise.all([
-    business?.terminal_id ? supabase.from('terminals').select('name').eq('id', business.terminal_id).maybeSingle() : Promise.resolve({ data: null }),
+    // 그날 카드의 터미널(고객사 기본 터미널과 다를 수 있다)
+    daily.terminal_id ? supabase.from('terminals').select('name').eq('id', daily.terminal_id).maybeSingle() : Promise.resolve({ data: null }),
     supabase.from('products').select('name, needs_mulbong').in('name', [...new Set(liveItems.map((i) => i.product_name_raw))]),
   ]);
   const needsMulbong = new Map((products ?? []).map((p) => [p.name, p.needs_mulbong]));
