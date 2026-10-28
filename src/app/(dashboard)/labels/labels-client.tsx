@@ -1,20 +1,21 @@
 'use client';
 import '@/components/admin/admin.css';
 import { useRef, useState } from 'react';
-import { Barcode, Minus, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react';
+import { Barcode, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/admin-kit';
 import { LabelView } from '@/components/labels/label-view';
 import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
 import {
-  DEFAULT_TEMPLATES,
+  DEFAULT_TEMPLATE,
   ELEMENT_TYPE_NAMES,
+  FOLD_KEEP_OUT_MM,
   LABEL_FIELDS,
-  LABEL_KIND_NAMES,
   SAMPLE_LABEL_DATA,
+  elementProblem,
+  sideHeightMm,
   type LabelElement,
   type LabelElementType,
   type LabelField,
-  type LabelKind,
   type LabelTemplate,
 } from '@/lib/labels/template';
 import { saveLabelMargin, saveLabelTemplate } from './actions';
@@ -54,12 +55,11 @@ const newElement = (type: LabelElementType): LabelElement => {
   return { id, type: 'text', text: '문구', x: 5, y: 5, w: 40, h: 8, fontSize: 14, bold: false, align: 'left' };
 };
 
-export function LabelsClient({ initial, company, contact, initialMarginMm }: { initial: Record<LabelKind, LabelTemplate>; company: string; contact: string; initialMarginMm: number }) {
+export function LabelsClient({ initial, company, contact, initialMarginMm }: { initial: LabelTemplate; company: string; contact: string; initialMarginMm: number }) {
   const canEdit = useCan()('labels:edit');
-  const [templates, setTemplates] = useState(initial);
-  const [kind, setKind] = useState<LabelKind>('top');
+  const [template, setTemplate] = useState(initial);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dirty, setDirty] = useState<Record<LabelKind, boolean>>({ top: false, side: false });
+  const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -69,13 +69,12 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
   const [marginDirty, setMarginDirty] = useState(false);
   const drag = useRef<DragState | null>(null);
 
-  const template = templates[kind];
   const selected = template.elements.find((e) => e.id === selectedId) ?? null;
   const sample = { ...SAMPLE_LABEL_DATA, company: company || SAMPLE_LABEL_DATA.company, contact: contact || SAMPLE_LABEL_DATA.contact };
 
   const updateTemplate = (fn: (t: LabelTemplate) => LabelTemplate) => {
-    setTemplates((prev) => ({ ...prev, [kind]: fn(prev[kind]) }));
-    setDirty((d) => ({ ...d, [kind]: true }));
+    setTemplate((prev) => fn(prev));
+    setDirty(true);
     setNotice(null);
   };
   const updateElement = (id: string, patch: Partial<LabelElement>) =>
@@ -156,15 +155,15 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
     setError(null);
     // 이 라벨 디자인과 프린터 여백 중 바뀐 것만 저장한다.
     const [templateResult, marginResult] = await Promise.all([
-      dirty[kind] ? saveLabelTemplate(template) : null,
+      dirty ? saveLabelTemplate(template) : null,
       marginDirty ? saveLabelMargin(marginMm) : null,
     ]);
     setBusy(false);
     const failure = templateResult?.error ?? marginResult?.error;
     if (failure) return setError(failure);
     if (templateResult) {
-      setTemplates((prev) => ({ ...prev, [kind]: templateResult.template }));
-      setDirty((d) => ({ ...d, [kind]: false }));
+      setTemplate(templateResult.template);
+      setDirty(false);
     }
     if (marginResult) {
       setMarginMm(marginResult.marginMm);
@@ -172,11 +171,18 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
     }
     setNotice('저장했습니다.');
   };
-  // 프린터가 찍지 못하는 여백(바깥 marginMm)에 한 조각이라도 걸쳐 있는 항목
-  const outOfPrintArea = (el: LabelElement) =>
-    marginMm > 0 && (el.x < marginMm - 0.01 || el.y < marginMm - 0.01 || el.x + el.w > template.widthMm - marginMm + 0.01 || el.y + el.h > template.heightMm - marginMm + 0.01);
+  // 쓸 수 없는 곳에 걸친 항목: 프린터 출력 여백(바깥 marginMm) / 접히는 선 주변 / 측면 폭 밖
+  const problemOf = (el: LabelElement): { kind: 'margin' | 'fold' | 'side-width'; text: string } | null => {
+    if (marginMm > 0 && (el.x < marginMm - 0.01 || el.y < marginMm - 0.01 || el.x + el.w > template.widthMm - marginMm + 0.01 || el.y + el.h > template.heightMm - marginMm + 0.01)) {
+      return { kind: 'margin', text: `프린터 출력 여백(${marginMm}mm)에 걸쳐 있어 잘릴 수 있습니다. 점선 안쪽으로 옮겨주세요.` };
+    }
+    const p = elementProblem(el, template);
+    if (p === 'fold') return { kind: 'fold', text: `접히는 선 주변(위아래 ${FOLD_KEEP_OUT_MM}mm)에 걸쳐 있습니다. 접히면 글자·바코드가 깨지니 이 구역을 비워 주세요.` };
+    if (p === 'side-width') return { kind: 'side-width', text: '측면이 붙는 폭 밖에 걸쳐 있습니다. 측면 영역의 가운데 폭 안으로 옮겨주세요.' };
+    return null;
+  };
   const resetToDefault = () => {
-    updateTemplate(() => DEFAULT_TEMPLATES[kind]);
+    updateTemplate(() => DEFAULT_TEMPLATE);
     setSelectedId(null);
   };
 
@@ -189,14 +195,10 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
 
   return (
     <div className="lb-root">
-      <AdminHeader icon={<Barcode size={20} />} title="라벨 설정" sub="박스 뚜껑 상단·측면 라벨의 크기와 항목 배치를 정합니다. 항목을 끌어서 옮기고 모서리를 끌어 크기를 바꿉니다." />
+      <AdminHeader icon={<Barcode size={20} />} title="라벨 설정" sub="박스 뚜껑 모서리에 감아 붙이는 한 장짜리 라벨입니다. 위쪽은 뚜껑 위에, 아래쪽(측면)은 옆면으로 꺾어 붙입니다. 항목을 끌어서 옮기고 모서리를 끌어 크기를 바꿉니다." />
 
       <div className="ak-toolbar">
-        {(['top', 'side'] as const).map((k) => (
-          <button key={k} className={`ak-btn ${kind === k ? 'ak-btn-primary' : ''}`} onClick={() => { setKind(k); setSelectedId(null); setError(null); setNotice(null); }}>
-            {LABEL_KIND_NAMES[k]}{dirty[k] ? ' ●' : ''}
-          </button>
-        ))}
+        <strong className="lb-title">박스 라벨 (상단 면 + 측면){dirty ? ' ●' : ''}</strong>
         <span className="ak-spacer" />
         {error && <span className="ak-error">{error}</span>}
         {notice && <span className="ak-notice">{notice}</span>}
@@ -204,19 +206,20 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
         <button className="ak-btn" onClick={() => setPrintJob({ template, labels: [sample] })} disabled={busy} title="지금 화면의 디자인을 샘플 값으로 한 장 출력합니다. 용지 크기와 위치를 확인할 때 씁니다.">
           <Printer size={14} /> 테스트 출력
         </button>
-        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !(dirty[kind] || marginDirty)}>저장</button>
+        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !(dirty || marginDirty)}>저장</button>
       </div>
 
       <div className="lb-layout">
         <div className="lb-side">
           <section className="lb-card">
             <h3>라벨 크기 (mm)</h3>
-            <div className="lb-size">
-              {numberInput('가로', template.widthMm, (v) => updateTemplate((t) => ({ ...t, widthMm: clamp(v, 20, 300) })), 1)}
-              <Minus size={12} className="lb-x" />
-              {numberInput('세로', template.heightMm, (v) => updateTemplate((t) => ({ ...t, heightMm: clamp(v, 10, 300) })), 1)}
+            <div className="lb-grid">
+              {numberInput('가로', template.widthMm, (v) => updateTemplate((t) => { const widthMm = clamp(v, 20, 300); return { ...t, widthMm, sideWidthMm: Math.min(t.sideWidthMm, widthMm) }; }), 1)}
+              {numberInput('상단 면 높이', template.topHeightMm, (v) => updateTemplate((t) => ({ ...t, topHeightMm: clamp(v, 10, 300), heightMm: clamp(v, 10, 300) + sideHeightMm(t) })), 1)}
+              {numberInput('측면 높이', sideHeightMm(template), (v) => updateTemplate((t) => ({ ...t, heightMm: t.topHeightMm + clamp(v, 8, 300) })), 1)}
+              {numberInput('측면 가로(옆면 폭)', template.sideWidthMm, (v) => updateTemplate((t) => ({ ...t, sideWidthMm: clamp(v, 10, t.widthMm) })), 1)}
             </div>
-            <p className="ak-muted">프린터 용지 크기와 같아야 합니다. 크기를 줄이면 밖으로 나간 항목은 잘리니 위치를 다시 맞춰주세요.</p>
+            <p className="ak-muted">전체 {template.widthMm}×{template.heightMm}mm = 프린터 용지(롤) 크기와 같아야 합니다. 상단 면과 측면 사이의 선이 접히는 곳이고, 그 위아래 {FOLD_KEEP_OUT_MM}mm에는 글자·바코드를 두지 않습니다. 측면 가로는 옆면이 라벨보다 좁을 때만 줄입니다(가운데 폭만 씁니다).</p>
           </section>
 
           <section className="lb-card">
@@ -228,7 +231,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
           </section>
 
           <section className="lb-card">
-            <SilentPrintSetup topSize={`상단 ${templates.top.widthMm}×${templates.top.heightMm}mm`} sideSize={`측면 ${templates.side.widthMm}×${templates.side.heightMm}mm`} />
+            <SilentPrintSetup sizeText={`${template.widthMm}×${template.heightMm}mm`} />
           </section>
 
           <section className="lb-card">
@@ -246,7 +249,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
               <p className="ak-muted">라벨 위의 항목을 눌러 선택하세요. 방향키로 0.5mm씩(Shift는 2mm) 움직이고 Delete로 지웁니다.</p>
             ) : (
               <div className="lb-props">
-                {outOfPrintArea(selected) && <p className="lb-warn">출력 여백({marginMm}mm)에 걸쳐 있어 프린터에서 잘릴 수 있습니다. 점선 안쪽으로 옮겨주세요.</p>}
+                {problemOf(selected) && <p className="lb-warn">{problemOf(selected)?.text}</p>}
                 <div className="lb-row"><strong>{ELEMENT_TYPE_NAMES[selected.type]}</strong><span className="ak-spacer" /><button className="ak-btn ak-btn-danger" onClick={() => removeElement(selected.id)}><Trash2 size={13} /> 삭제</button></div>
                 {selected.type === 'field' && (
                   <label className="lb-field">
@@ -301,10 +304,24 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
                 <i style={{ left: marginMm * SCALE, top: marginMm * SCALE, right: marginMm * SCALE, bottom: marginMm * SCALE }} />
               </div>
             )}
+            <div className="lb-fold" aria-hidden>
+              {/* 접히는 선과 비워 둘 구역(양쪽 FOLD_KEEP_OUT_MM). 띠 안의 글자는 어느 쪽이 뚜껑 위이고 어느 쪽이 옆면인지 알려 준다. */}
+              <div className="lb-fold-band" style={{ top: (template.topHeightMm - FOLD_KEEP_OUT_MM) * SCALE, height: FOLD_KEEP_OUT_MM * 2 * SCALE }}>
+                <span>▲ 상단 면 (뚜껑 위)</span>
+                <span>측면 (옆면으로 꺾음) ▼</span>
+              </div>
+              <div className="lb-fold-line" style={{ top: template.topHeightMm * SCALE }} />
+              {template.sideWidthMm < template.widthMm && (
+                <>
+                  <div className="lb-side-off" style={{ left: 0, width: ((template.widthMm - template.sideWidthMm) / 2) * SCALE, top: template.topHeightMm * SCALE, bottom: 0 }} />
+                  <div className="lb-side-off" style={{ right: 0, width: ((template.widthMm - template.sideWidthMm) / 2) * SCALE, top: template.topHeightMm * SCALE, bottom: 0 }} />
+                </>
+              )}
+            </div>
             <div className="lb-overlay">
               {template.elements.map((el) => {
                 const isSel = el.id === selectedId;
-                const outside = outOfPrintArea(el);
+                const outside = !!problemOf(el);
                 const hit = Math.max(el.h * SCALE, 8);
                 return (
                   <div
@@ -337,7 +354,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
               })}
             </div>
           </div>
-          <p className="ak-muted lb-hint">미리보기는 샘플 값(스시고유 #2 등)입니다. 실제 라벨은 고객사 값으로 채워지고, 글자가 칸보다 길면 크기가 자동으로 줄어듭니다. 눈금은 5mm, 빗금은 프린터가 찍지 못하는 여백입니다.</p>
+          <p className="ak-muted lb-hint">미리보기는 샘플 값(스시고유 #2 등)입니다. 실제 라벨은 고객사 값으로 채워지고, 글자가 칸보다 길면 크기가 자동으로 줄어듭니다. 눈금은 5mm, 빨간 빗금은 프린터가 찍지 못하는 여백, 파란 띠는 접히는 선 주변(비워 둘 구역)입니다.</p>
         </div>
       </div>
 
@@ -369,6 +386,11 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
         .lb-hit:hover { outline: 1px dashed #3b82f6; }
         .lb-hit-on { outline: 1px solid #2563eb; }
         .lb-frame { position: absolute; left: 0; right: 0; pointer-events: none; }
+        .lb-title { font-size: 0.9375rem; font-weight: 800; }
+        .lb-fold { position: absolute; inset: 0; pointer-events: none; }
+        .lb-fold-band { position: absolute; left: 0; right: 0; background: rgba(37, 99, 235, 0.09); border-top: 1px solid rgba(37, 99, 235, 0.25); border-bottom: 1px solid rgba(37, 99, 235, 0.25); display: flex; align-items: center; justify-content: space-between; padding: 0 6px; font-size: 10px; font-weight: 800; color: #1d4ed8; white-space: nowrap; overflow: hidden; }
+        .lb-fold-line { position: absolute; left: 0; right: 0; border-top: 1.5px dashed #2563eb; }
+        .lb-side-off { position: absolute; background: repeating-linear-gradient(135deg, rgba(100, 116, 139, 0.28) 0 3px, rgba(100, 116, 139, 0.08) 3px 7px); }
         .lb-margin { position: absolute; inset: 0; pointer-events: none; }
         .lb-margin span { position: absolute; background: repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.22) 0 3px, rgba(239, 68, 68, 0.06) 3px 7px); }
         .lb-margin i { position: absolute; border: 1px dashed rgba(220, 38, 38, 0.8); }

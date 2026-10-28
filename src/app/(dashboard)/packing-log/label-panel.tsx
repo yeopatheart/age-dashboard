@@ -5,21 +5,21 @@ import { Barcode, Printer } from 'lucide-react';
 import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
 import { LabelView } from '@/components/labels/label-view';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
-import { LABEL_KIND_NAMES, type LabelData, type LabelKind } from '@/lib/labels/template';
+import { FOLD_KEEP_OUT_MM, type LabelData } from '@/lib/labels/template';
 import type { CardLabelInfo } from '@/lib/labels/server';
 import { getCardLabels, prepareLabelPrint, type CardLabelPreviewSource } from '../labels/actions';
 
-const KINDS: LabelKind[] = ['top', 'side'];
-const PREVIEW_UNIT = '2.4px'; // 미리보기에서 1mm를 그리는 크기
+const PREVIEW_UNIT = '3px'; // 미리보기에서 1mm를 그리는 크기
 
-// 박스 할당 화면의 "송장 라벨 출력" 영역. 박스 번호마다 상단·측면 라벨 미리보기를 나란히 보여주고, 각 라벨 아래의 버튼 하나로 출력한다.
+// 박스 할당 화면의 "송장 라벨 출력" 영역. 박스 번호마다 실제로 찍힐 라벨(상단 면 + 측면, 접히는 선 표시) 미리보기와 출력 버튼 하나를 보여준다.
+//  - 라벨 한 장을 박스 뚜껑 모서리에 감아 붙인다: 위쪽은 뚜껑 위에, 아래쪽(측면)은 옆면으로 꺾어 내린다. 점선이 접는 위치다.
 //  - 미리보기는 실제로 찍힐 값(고객명·터미널·바코드)으로 그려서, 이름이 길어 글자가 줄어드는 모습까지 출력 전에 본다.
 //  - 박스가 늘어나면 새 번호의 카드가 "미출력"으로 나타난다. 훼손·분실된 라벨은 같은 버튼으로 다시 출력한다(같은 바코드).
 //  - 박스 번호만 찍고 전체 박스 수는 찍지 않는다 — 박스가 늘어도 이미 붙인 라벨을 다시 붙이지 않게 하려는 규칙이다.
 //  - 프린터·용지 설정은 라벨 설정 화면에서 한 번만 한다. 여기서는 출력 버튼만 누르면 된다.
 export function LabelPanel({ dailyBusinessId, boxCount }: { dailyBusinessId: string; boxCount: number }) {
   const [infos, setInfos] = useState<CardLabelInfo[]>([]);
-  const [source, setSource] = useState<Pick<CardLabelPreviewSource, 'templates' | 'base'> | null>(null);
+  const [source, setSource] = useState<Pick<CardLabelPreviewSource, 'template' | 'base'> | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export function LabelPanel({ dailyBusinessId, boxCount }: { dailyBusinessId: str
       const result = await getCardLabels(dailyBusinessId);
       if (cancelled) return;
       setInfos(result.infos);
-      setSource({ templates: result.templates, base: result.base });
+      setSource({ template: result.template, base: result.base });
       setLoaded(true);
     })();
     return () => {
@@ -40,11 +40,11 @@ export function LabelPanel({ dailyBusinessId, boxCount }: { dailyBusinessId: str
     };
   }, [dailyBusinessId]);
 
-  const print = async (kind: LabelKind, targetSeqs: number[], key: string) => {
+  const print = async (targetSeqs: number[], key: string) => {
     if (targetSeqs.length === 0 || busyKey) return;
     setBusyKey(key);
     setError(null);
-    const payload = await prepareLabelPrint({ dailyBusinessId, seqs: targetSeqs, kind });
+    const payload = await prepareLabelPrint({ dailyBusinessId, seqs: targetSeqs });
     setBusyKey(null);
     if (payload.error || !payload.template) return setError(payload.error ?? '라벨을 준비하지 못했습니다.');
     setInfos(payload.infos);
@@ -70,17 +70,18 @@ export function LabelPanelView({
 }: {
   boxCount: number;
   infos: CardLabelInfo[];
-  source: Pick<CardLabelPreviewSource, 'templates' | 'base'> | null;
+  source: Pick<CardLabelPreviewSource, 'template' | 'base'> | null;
   loaded: boolean;
   busyKey: string | null;
   error: string | null;
   job: LabelPrintJob | null;
-  onPrint: (kind: LabelKind, seqs: number[], key: string) => void;
+  onPrint: (seqs: number[], key: string) => void;
   onJobDone: () => void;
 }) {
   const bySeq = useMemo(() => new Map(infos.map((i) => [i.seq, i])), [infos]);
   const seqs = Array.from({ length: Math.min(boxCount, 99) }, (_, i) => i + 1);
   const extra = infos.filter((i) => i.seq > boxCount); // 박스를 줄여서 번호가 남는 라벨
+  const template = source?.template;
 
   // 미리보기에 찍을 라벨 값. 이미 발급된 바코드가 있으면 그것을, 없으면 같은 규칙으로 계산한 번호를 쓴다(DB에 쓰지 않는다).
   const previewData = (seq: number): LabelData | null => {
@@ -98,11 +99,9 @@ export function LabelPanelView({
 
   const statusOf = (seq: number) => {
     const info = bySeq.get(seq);
-    const counts = info?.printCounts ?? { top: 0, side: 0 };
     if (info?.loadedAt) return { text: '상차 완료', tone: 'done' as const };
-    if (counts.top === 0 && counts.side === 0) return { text: '미출력', tone: 'new' as const };
-    if (counts.top === 0 || counts.side === 0) return { text: `${counts.top === 0 ? '상단' : '측면'} 미출력`, tone: 'new' as const };
-    return { text: '출력 완료', tone: 'printed' as const };
+    if (!info || info.printCount === 0) return { text: '미출력', tone: 'new' as const };
+    return { text: `출력 ${info.printCount}회`, tone: 'printed' as const };
   };
 
   return (
@@ -112,12 +111,11 @@ export function LabelPanelView({
         <h2>송장 라벨 출력</h2>
         <span className="lp-count">박스 {boxCount}개</span>
         <span className="lp-spacer" />
-        {boxCount > 1 &&
-          KINDS.map((kind) => (
-            <button key={kind} className="lp-bulk" disabled={!!busyKey} onClick={() => print(kind, seqs, `all-${kind}`)}>
-              <Printer size={14} /> {LABEL_KIND_NAMES[kind]} 전체 출력 ({boxCount}장)
-            </button>
-          ))}
+        {boxCount > 1 && (
+          <button className="lp-bulk" disabled={!!busyKey} onClick={() => print(seqs, 'all')}>
+            <Printer size={14} /> 전체 출력 ({boxCount}장)
+          </button>
+        )}
       </div>
 
       {boxCount === 0 ? (
@@ -127,34 +125,30 @@ export function LabelPanelView({
           {seqs.map((seq) => {
             const st = statusOf(seq);
             const data = previewData(seq);
-            const counts = bySeq.get(seq)?.printCounts ?? { top: 0, side: 0 };
+            const printed = bySeq.get(seq)?.printCount ?? 0;
             return (
               <article key={seq} className={`lp-box lp-${st.tone}`}>
                 <div className="lp-box-head">
                   <strong>박스 {seq}번</strong>
                   <span className="lp-chip">{loaded ? st.text : '…'}</span>
                 </div>
-                <div className="lp-kinds">
-                  {KINDS.map((kind) => {
-                    const template = source?.templates[kind];
-                    const key = `${seq}-${kind}`;
-                    const printed = counts[kind];
-                    return (
-                      <div key={kind} className="lp-kind">
-                        <div className="lp-kind-name">
-                          {LABEL_KIND_NAMES[kind]}
-                          {printed > 0 && <small>출력 {printed}회</small>}
-                        </div>
-                        <div className="lp-preview">
-                          {data && template ? <LabelView template={template} data={data} unit={PREVIEW_UNIT} /> : <span className="lp-loading">불러오는 중…</span>}
-                        </div>
-                        <button className={`lp-print ${printed > 0 ? 'lp-print-again' : ''}`} disabled={!!busyKey || !data} onClick={() => print(kind, [seq], key)}>
-                          <Printer size={16} /> {busyKey === key ? '준비 중…' : printed > 0 ? '다시 출력' : '출력'}
-                        </button>
+                <div className="lp-preview">
+                  {data && template ? (
+                    <div className="lp-label">
+                      <LabelView template={template} data={data} unit={PREVIEW_UNIT} />
+                      {/* 접히는 선: 이 위는 뚜껑 위에, 아래는 옆면으로 꺾어 붙인다 */}
+                      <div className="lp-fold" style={{ top: `calc(${template.topHeightMm} * ${PREVIEW_UNIT})` }} aria-hidden>
+                        <span>접는 선</span>
                       </div>
-                    );
-                  })}
+                      <div className="lp-keepout" style={{ top: `calc(${template.topHeightMm - FOLD_KEEP_OUT_MM} * ${PREVIEW_UNIT})`, height: `calc(${FOLD_KEEP_OUT_MM * 2} * ${PREVIEW_UNIT})` }} aria-hidden />
+                    </div>
+                  ) : (
+                    <span className="lp-loading">불러오는 중…</span>
+                  )}
                 </div>
+                <button className={`lp-print ${printed > 0 ? 'lp-print-again' : ''}`} disabled={!!busyKey || !data} onClick={() => print([seq], String(seq))}>
+                  <Printer size={18} /> {busyKey === String(seq) ? '준비 중…' : printed > 0 ? '다시 출력' : '출력'}
+                </button>
               </article>
             );
           })}
@@ -166,7 +160,7 @@ export function LabelPanelView({
       )}
       {error && <p className="lp-error">{error}</p>}
       <p className="lp-note">
-        출력 버튼을 누르면 라벨 프린터로 보냅니다. 인쇄 창이 뜬다면 <Link href="/labels">라벨 설정의 바로 출력 설정</Link>에서 받은 바로가기로 연 창에서 출력하세요(한 번만 설정).
+        라벨은 점선(접는 선)을 박스 뚜껑 모서리에 맞춰 위쪽은 뚜껑 위에, 아래쪽은 옆면으로 꺾어 붙입니다. 인쇄 창이 뜬다면 <Link href="/labels">라벨 설정의 바로 출력 설정</Link>에서 받은 바로가기로 연 창에서 출력하세요(한 번만 설정).
       </p>
 
       <LabelPrinter job={job} onDone={onJobDone} />
@@ -180,7 +174,7 @@ export function LabelPanelView({
         .lp-bulk { display: inline-flex; align-items: center; gap: 0.35rem; height: 2.25rem; padding: 0 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; cursor: pointer; }
         .lp-bulk:disabled, .lp-print:disabled { opacity: 0.55; cursor: not-allowed; }
         .lp-empty { color: var(--muted-foreground); font-size: 0.875rem; }
-        .lp-boxes { display: flex; flex-direction: column; gap: 0.8rem; }
+        .lp-boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr)); gap: 0.8rem; }
         .lp-box { border: 2px solid var(--border); border-radius: 14px; padding: 0.75rem 0.85rem 0.9rem; background: #fff; display: flex; flex-direction: column; gap: 0.65rem; min-width: 0; }
         .lp-new { border-color: #fcd34d; background: #fffdf5; }
         .lp-done { border-color: #86efac; background: #f7fef9; }
@@ -190,14 +184,13 @@ export function LabelPanelView({
         .lp-new .lp-chip { background: #fef3c7; color: #92400e; }
         .lp-printed .lp-chip { background: #dbeafe; color: #1d4ed8; }
         .lp-done .lp-chip { background: #dcfce7; color: #15803d; }
-        .lp-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.8rem; }
-        .lp-kind { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; align-items: stretch; }
-        .lp-kind-name { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.8125rem; font-weight: 800; color: #334155; }
-        .lp-kind-name small { font-size: 0.72rem; font-weight: 700; color: #1d4ed8; }
-        .lp-preview { flex: 1; display: flex; justify-content: center; align-items: center; background: #eef2f6; border-radius: 10px; padding: 0.5rem; overflow-x: auto; min-height: 6rem; }
-        .lp-preview > div { box-shadow: 0 0 0 1px #cbd5e1, 0 1px 4px rgba(15, 23, 42, 0.15); flex: none; }
+        .lp-preview { display: flex; justify-content: center; align-items: center; background: #eef2f6; border-radius: 10px; padding: 0.6rem; overflow-x: auto; min-height: 6rem; }
+        .lp-label { position: relative; flex: none; box-shadow: 0 0 0 1px #cbd5e1, 0 1px 4px rgba(15, 23, 42, 0.15); }
+        .lp-fold { position: absolute; left: 0; right: 0; border-top: 1.5px dashed #2563eb; pointer-events: none; }
+        .lp-fold span { position: absolute; right: 3px; top: 1px; font-size: 0.625rem; font-weight: 800; color: #2563eb; background: rgba(255, 255, 255, 0.85); padding: 0 3px; border-radius: 3px; }
+        .lp-keepout { position: absolute; left: 0; right: 0; background: rgba(37, 99, 235, 0.06); pointer-events: none; }
         .lp-loading { font-size: 0.8125rem; color: var(--muted-foreground); }
-        .lp-print { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; height: 3rem; border-radius: 12px; border: 0; background: var(--primary); color: #fff; font-size: 1rem; font-weight: 800; cursor: pointer; }
+        .lp-print { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; height: 3.25rem; border-radius: 12px; border: 0; background: var(--primary); color: #fff; font-size: 1.05rem; font-weight: 800; cursor: pointer; }
         .lp-print-again { background: #fff; color: var(--primary); border: 2px solid var(--primary); }
         .lp-warn { font-size: 0.8125rem; font-weight: 700; color: #92400e; background: #fffbeb; border-radius: 10px; padding: 0.45rem 0.7rem; }
         .lp-error { font-size: 0.875rem; font-weight: 700; color: var(--danger, #dc2626); }
