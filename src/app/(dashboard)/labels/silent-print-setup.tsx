@@ -21,7 +21,7 @@ const windowsScript = (url: string) =>
 
 const macCommand = (url: string) => `open -na "Google Chrome" --args --user-data-dir="$HOME/.${PROFILE_NAME}" --kiosk-printing --app=${url}`;
 
-export function SilentPrintSetup({ topSize, sideSize }: { topSize: string; sideSize: string }) {
+export function SilentPrintSetup({ sizeText }: { sizeText: string }) {
   const [copied, setCopied] = useState(false);
   const targetUrl = () => `${window.location.origin}/packing-log`;
 
@@ -51,7 +51,7 @@ export function SilentPrintSetup({ topSize, sideSize }: { topSize: string; sideS
       </p>
       <ol>
         <li>
-          <strong>프린터 준비</strong>: 라벨 프린터를 <strong>기본 프린터</strong>로 지정하고, 프린터 기본 설정에서 용지 크기를 라벨 크기({topSize}, {sideSize})로 등록하고 인쇄 여백은 없음(0)으로 둡니다.
+          <strong>프린터 준비</strong>: 라벨 프린터를 <strong>기본 프린터</strong>로 지정하고, 프린터 기본 설정에서 용지 크기를 라벨 크기({sizeText})로 등록하고 인쇄 여백은 없음(0)으로 둡니다.
         </li>
         <li>
           <strong>바로가기 만들기</strong>: 출력용 PC에서 아래 버튼으로 바로가기를 받습니다.
