@@ -378,7 +378,7 @@ export function PackingLogClient({
       <div className="page-header">
         <div className="page-header-icon"><ClipboardList size={20} /></div>
         <div>
-          <h1 className="page-title">박스 할당</h1>
+          <h1 className="page-title">박스 할당 / 라벨 출력</h1>
           <p className="page-sub">추천된 박스와 담길 상품을 확인하세요. 맞으면 &ldquo;맞아요. 제출할게요.&rdquo;, 다르면 &ldquo;수정할게요.&rdquo;를 눌러 박스와 상품을 고친 뒤 제출하세요. 제출한 기록은 추천의 정확도 측정과 학습에 쓰입니다.</p>
         </div>
       </div>

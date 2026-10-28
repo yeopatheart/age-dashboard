@@ -32,12 +32,12 @@ const NAV_ITEMS: { menu: MenuKey | 'users'; icon: typeof Sparkles }[] = [
   { menu: 'packing', icon: ClipboardList },
   { menu: 'dashboard', icon: LayoutDashboard },
   { menu: 'scan', icon: ScanLine },
+  { menu: 'reports', icon: BarChart3 },
   { menu: 'businesses', icon: Building2 },
   { menu: 'terminals', icon: MapPinned },
   { menu: 'products', icon: Tag },
   { menu: 'boxes', icon: Package },
   { menu: 'labels', icon: Barcode },
-  { menu: 'reports', icon: BarChart3 },
   { menu: 'settings', icon: Settings },
   { menu: 'users', icon: ShieldCheck },
 ];

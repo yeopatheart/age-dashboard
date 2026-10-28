@@ -92,7 +92,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
 
   return (
     <div className="ak-page">
-      <AdminHeader icon={<SettingsIcon size={20} />} title="설정" sub="시스템이 쓰는 기준값입니다. 값을 바꾸고 저장하면 새로 입력하는 주문부터 적용됩니다." />
+      <AdminHeader icon={<SettingsIcon size={20} />} title="시스템 설정" sub="시스템이 쓰는 기준값입니다. 값을 바꾸고 저장하면 새로 입력하는 주문부터 적용됩니다." />
 
       <section className="st-card">
         <h2 className="st-title">요구사항 해석 기준</h2>
