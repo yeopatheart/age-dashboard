@@ -138,16 +138,22 @@ function SortableRow({
 // 마지막 칸은 "+" 추가 버튼 자리라 좁게 고정하고, 나머지 폭을 상품 칸이 나눠 쓴다.
 // 전체보기는 열마다 최소 폭을 두고 필요하면 옆으로 스크롤한다.
 const ADD_COLUMN_WIDTH = 36;
-function productGridTemplate(slotCount: number, flexible = false) {
-  const fixed = '40px 80px 144px 56px';
+// 고객명 열은 이 날짜 고객명 중 가장 긴 것에 맞춘다(모니터 1·2가 같은 폭을 쓰도록 표시 중인 줄이 아니라 전체 줄 기준).
+// 수정/삭제 버튼은 이름 위에 겹쳐 나타나므로 버튼 자리를 따로 잡지 않는다.
+const NAME_COLUMN_DEFAULT = 144;
+const NAME_COLUMN_MIN = 72;
+const NAME_COLUMN_MAX = 220;
+const ROUND_BADGE_WIDTH = 28; // RoundBadge("1차") 폭 + 오른쪽 간격
+function productGridTemplate(slotCount: number, flexible = false, nameColumn = NAME_COLUMN_DEFAULT) {
+  const fixed = `40px 80px ${nameColumn}px 56px`;
   if (!flexible) return `${fixed} repeat(${slotCount}, minmax(130px, 1fr))`;
   const productColumns = slotCount - 1;
   return `${fixed} ${productColumns > 0 ? `repeat(${productColumns}, minmax(0, 1fr)) ` : ''}${ADD_COLUMN_WIDTH}px`;
 }
 // 위 열 정의의 최소 폭 합. 표 전체 폭을 이 값 이상으로 잡아야 옆으로 스크롤해도 헤더·행 배경이 끝까지 이어진다.
-const PRODUCT_GRID_FIXED_WIDTH = 40 + 80 + 144 + 56;
-function productGridMinWidth(slotCount: number) {
-  return PRODUCT_GRID_FIXED_WIDTH + slotCount * 130;
+const productGridFixedWidth = (nameColumn: number) => 40 + 80 + nameColumn + 56;
+function productGridMinWidth(slotCount: number, nameColumn: number) {
+  return productGridFixedWidth(nameColumn) + slotCount * 130;
 }
 
 // 전체보기 위쪽 "품목별 수량" 카드를 접은 상태. 이 브라우저(PC·TV)마다 따로 기억한다 — 서버에는 저장하지 않는다.
@@ -759,6 +765,30 @@ export function DashboardClient({
     return () => ro.disconnect();
   }, []);
 
+  // 고객명 열 폭: 가장 긴 고객명(굵은 12px)을 한 줄로 그릴 수 있는 폭. 1·2차 배지가 붙는 고객은 배지 폭만큼 더한다.
+  // 완료·박스 배지는 상태에 따라 붙었다 떨어지므로 열 폭에 넣지 않는다(폭이 흔들리지 않게). 넘치면 2줄로 접힌다.
+  const [nameColumn, setNameColumn] = useState(NAME_COLUMN_DEFAULT);
+  const nameSignature = rows.map((r) => `${r.businessName}|${splitBusinessIds.has(r.businessId) ? r.round : ''}`).join('\n');
+  useLayoutEffect(() => {
+    const measure = () => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (!ctx) return;
+      ctx.font = `700 12px ${getComputedStyle(document.body).fontFamily}`;
+      const widest = nameSignature
+        .split('\n')
+        .filter(Boolean)
+        .reduce((max, line) => {
+          const [name, round] = line.split('|');
+          return Math.max(max, ctx.measureText(name).width + (round ? ROUND_BADGE_WIDTH : 0));
+        }, 0);
+      // 칸 좌우 여백(px-2 = 16) + 오른쪽 경계선 + 반올림 여유
+      setNameColumn(Math.min(NAME_COLUMN_MAX, Math.max(NAME_COLUMN_MIN, Math.ceil(widest) + 20)));
+    };
+    measure();
+    // 웹폰트가 늦게 로드되면 글자 폭이 달라지므로 로드 후 다시 잰다.
+    void document.fonts?.ready.then(measure);
+  }, [nameSignature]);
+
   const rowHeight =
     availHeight > 0
       ? ROW_HEIGHT_TIERS.find((h) => MONITOR_COUNT * Math.floor(availHeight / h) >= rows.length) ?? MIN_ROW_HEIGHT
@@ -826,9 +856,9 @@ export function DashboardClient({
     return Math.max(max, count);
   }, 0);
   const productSlotCount = maxProductCount + 1;
-  const gridTemplate = productGridTemplate(productSlotCount, isSplitMode);
+  const gridTemplate = productGridTemplate(productSlotCount, isSplitMode, nameColumn);
   // 모니터 1/2는 열 폭이 화면 폭으로 정해진다. 상품이 많아 열이 좁아지면 글자도 그만큼 줄인다.
-  const colWidth = isSplitMode && availWidth > 0 ? (availWidth - PRODUCT_GRID_FIXED_WIDTH - ADD_COLUMN_WIDTH) / Math.max(1, productSlotCount - 1) : Infinity;
+  const colWidth = isSplitMode && availWidth > 0 ? (availWidth - productGridFixedWidth(nameColumn) - ADD_COLUMN_WIDTH) / Math.max(1, productSlotCount - 1) : Infinity;
   const widthShrink = colWidth >= 120 ? 0 : colWidth >= 100 ? 1 : colWidth >= 88 ? 2 : 3;
   const shrinkPill = (q: number, f: number) => ({ q: Math.max(8, q - widthShrink), f: Math.max(7, f - widthShrink) });
   const q2 = Math.min(14, Math.floor((pillInnerHeight - 2) / 2.5));
@@ -1147,7 +1177,7 @@ export function DashboardClient({
           </div>
         )}
         <div ref={scrollRef} className={`flex-1 min-h-0 overflow-x-auto ${isSplitMode ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
-          <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`} style={isSplitMode ? undefined : { minWidth: productGridMinWidth(productSlotCount) }}>
+          <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`} style={isSplitMode ? undefined : { minWidth: productGridMinWidth(productSlotCount, nameColumn) }}>
             {/* 헤더 */}
             <div
               ref={headerRef}
