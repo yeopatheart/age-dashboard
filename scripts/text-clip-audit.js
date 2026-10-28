@@ -113,3 +113,38 @@ async function textBaselineAudit(chipSelector) {
   }
   return { chips: chips.length, violations: violations.length, sample: violations.slice(0, 8) };
 }
+
+// 세로 중앙 점검: 칩 안의 글자 줄(글자가 차지하는 줄 상자)이 칩 안쪽 높이의 가운데에 오는지 잰다. 위·아래 여백 차이가 1px을 넘으면 위반.
+// 글자 모양 끝(획)이 아니라 줄 상자를 기준으로 하는 이유: 같은 줄의 칩들이 `kg`의 g 같은 글자 유무와 상관없이 같은 높이에 글자가 놓여야 한다.
+// 상자 안의 보이지 않는 줄 높이(부모의 글자 크기로 잡히는 strut)가 글자를 한쪽으로 밀어내는 문제를 잡는다.
+// 사용: `await textVerticalCenterAudit('div:has(> [data-pill])')` (대시보드 칩), `await textVerticalCenterAudit('.fixed.inset-0 .group\\/pill')` (팝업 칩).
+async function textVerticalCenterAudit(boxSelector) {
+  const MAX_DIFF_PX = 1;
+  const boxes = [...document.querySelectorAll(boxSelector)];
+  const violations = [];
+  for (const box of boxes) {
+    const bs = getComputedStyle(box);
+    const rect = box.getBoundingClientRect();
+    const innerTop = rect.top + parseFloat(bs.borderTopWidth);
+    const innerBottom = rect.bottom - parseFloat(bs.borderBottomWidth);
+    let textTop = Infinity, textBottom = -Infinity;
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent.trim() || !node.parentElement) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const r of range.getClientRects()) {
+        if (r.width <= 0 || r.height <= 0) continue;
+        textTop = Math.min(textTop, r.top);
+        textBottom = Math.max(textBottom, r.bottom);
+      }
+    }
+    if (!isFinite(textTop)) continue;
+    const topGap = textTop - innerTop;
+    const bottomGap = innerBottom - textBottom;
+    if (Math.abs(topGap - bottomGap) > MAX_DIFF_PX) {
+      violations.push({ chip: box.innerText.replace(/\s+/g, ' ').slice(0, 24), topGapPx: +topGap.toFixed(1), bottomGapPx: +bottomGap.toFixed(1) });
+    }
+  }
+  return { chips: boxes.length, violations: violations.length, sample: violations.slice(0, 8) };
+}
