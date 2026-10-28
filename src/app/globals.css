@@ -44,7 +44,7 @@
   --teal-bg: #f0fdfa;
 
   /* Typography */
-  --font-sans: var(--font-noto-sans-kr), 'Noto Sans KR', sans-serif;
+  --font-sans: 'Noto Sans KR', sans-serif;
 
   /* Radius */
   --radius: 0.5rem;
