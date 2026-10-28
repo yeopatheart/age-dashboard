@@ -166,7 +166,7 @@ export function LabelPanelView({
       )}
       {error && <p className="lp-error">{error}</p>}
       <p className="lp-note">
-        출력 버튼을 누르면 라벨 프린터로 보냅니다. 인쇄 창이 뜬다면 <Link href="/labels">라벨 설정의 프린터 설정 안내</Link>대로 한 번만 바꿔 두세요.
+        출력 버튼을 누르면 라벨 프린터로 보냅니다. 인쇄 창이 뜬다면 <Link href="/labels">라벨 설정의 바로 출력 설정</Link>에서 받은 바로가기로 연 창에서 출력하세요(한 번만 설정).
       </p>
 
       <LabelPrinter job={job} onDone={onJobDone} />

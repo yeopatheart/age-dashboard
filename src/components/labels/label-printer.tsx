@@ -23,6 +23,7 @@ export function LabelPrinter({ job, onDone }: { job: LabelPrintJob | null; onDon
         body > *:not(#label-print-root) { display: none !important; }
         #label-print-root { display: block !important; }
         html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+        #label-print-root, #label-print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         @page { size: ${job.template.widthMm}mm ${job.template.heightMm}mm; margin: 0; }
         .label-page { width: ${job.template.widthMm}mm; height: ${job.template.heightMm}mm; break-after: page; page-break-after: always; overflow: hidden; }
         .label-page:last-child { break-after: auto; page-break-after: auto; }

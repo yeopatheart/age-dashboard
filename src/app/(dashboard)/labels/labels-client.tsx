@@ -18,6 +18,7 @@ import {
   type LabelTemplate,
 } from '@/lib/labels/template';
 import { saveLabelMargin, saveLabelTemplate } from './actions';
+import { SilentPrintSetup } from './silent-print-setup';
 import { useCan } from '@/components/permissions-context';
 
 const SCALE = 4; // 화면에서 1mm를 4px로 그린다
@@ -227,16 +228,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
           </section>
 
           <section className="lb-card">
-            <details className="lb-guide">
-              <summary>프린터 설정 안내 (출력용 PC에서 처음 한 번)</summary>
-              <ol>
-                <li>Windows 설정에서 라벨 프린터를 <strong>기본 프린터</strong>로 지정합니다.</li>
-                <li>프린터 기본 설정에서 용지 크기를 라벨 크기(상단 {templates.top.widthMm}×{templates.top.heightMm}mm, 측면 {templates.side.widthMm}×{templates.side.heightMm}mm)로 등록하고, 인쇄 여백은 <strong>없음(0)</strong>으로 둡니다.</li>
-                <li><strong>인쇄 창 없이 바로 출력</strong>하려면 Chrome 바로가기를 우클릭 → 속성 → 대상 끝에 <code>--kiosk-printing</code>을 붙이고(앞에 공백 한 칸), 이 바로가기로 시스템을 엽니다. 그러면 박스 할당 / 라벨 출력 화면에서 출력 버튼을 누르는 즉시 기본 프린터로 나갑니다.</li>
-                <li>이 설정을 하지 않아도 출력은 되지만 매번 인쇄 창이 뜨고, 거기서 프린터와 용지 크기를 확인해야 합니다.</li>
-              </ol>
-              <p className="ak-muted">브라우저가 보안상 프로그램에서 인쇄 창을 건너뛰지 못하게 막기 때문에, 위 설정은 PC(브라우저)에서 한 번 해두는 방식입니다.</p>
-            </details>
+            <SilentPrintSetup topSize={`상단 ${templates.top.widthMm}×${templates.top.heightMm}mm`} sideSize={`측면 ${templates.side.widthMm}×${templates.side.heightMm}mm`} />
           </section>
 
           <section className="lb-card">
@@ -382,7 +374,8 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
         .lb-margin i { position: absolute; border: 1px dashed rgba(220, 38, 38, 0.8); }
         .lb-hit-out { outline: 1px dashed #dc2626; background: rgba(239, 68, 68, 0.08); }
         .lb-guide summary { font-size: 0.8125rem; font-weight: 800; cursor: pointer; }
-        .lb-guide ol { margin: 0.6rem 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8125rem; line-height: 1.45; }
+        .lb-guide ol { list-style: decimal; margin: 0.6rem 0; padding-left: 1.4rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8125rem; line-height: 1.45; }
+        .lb-shortcut { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.45rem 0; }
         .lb-guide code { background: #f1f5f9; border-radius: 6px; padding: 0.05rem 0.35rem; font-size: 0.78rem; }
         .lb-warn { font-size: 0.8125rem; font-weight: 700; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 0.45rem 0.65rem; }
         .lb-handle { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid #2563eb; border-radius: 2px; pointer-events: auto; touch-action: none; }
