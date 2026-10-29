@@ -161,10 +161,10 @@ export function DashboardMobile(props: DashboardMobileProps) {
               {segment === 'main' ? `별도 주문 ${separateRows.length}` : '← 기본 주문'}
             </button>
           )}
-          <button className={`dm-chip ${terminal === null ? 'dm-chip-on' : ''}`} onClick={() => setTerminal(null)}>전체 {segmentRows.length}곳</button>
+          <button className={`dm-chip ${terminal === null ? 'dm-chip-on' : ''}`} onClick={() => setTerminal(null)}>전체 {segmentRows.length}</button>
           {terminals.map((t) => (
             <button key={t.name} className={`dm-chip ${terminal === t.name ? 'dm-chip-on' : ''}`} onClick={() => setTerminal(terminal === t.name ? null : t.name)}>
-              {t.name || '-'} {t.customers}곳{t.boxes > 0 ? ` · 박스 ${t.boxes}` : ''}
+              {t.name || '-'} {t.customers}{t.boxes > 0 ? ` · 박스 ${t.boxes}` : ''}
             </button>
           ))}
         </div>
@@ -172,7 +172,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
 
       <div className="dm-sticky">
         <div className="dm-progress" role="status">
-          <strong>완료 {counts.done}/{counts.all}곳</strong>
+          <strong>완료 {counts.done}/{counts.all}</strong>
           <div className="dm-bar"><span style={{ width: `${pct}%` }} /></div>
           <span>상품 {totals.done}/{totals.live} · {pct}%</span>
         </div>
