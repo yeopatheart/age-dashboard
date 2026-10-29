@@ -275,7 +275,7 @@ export function ReportsClient({
           .period-nav .today-btn { width: auto; padding: 0 0.9rem; }
           .period-date-desktop { display: none; }
           .period-label { flex: 1; min-width: 0; height: var(--ctl-h); border: 1px solid var(--border); border-radius: 999px; background: #fff; display: grid; place-items: center; font-size: 0.9375rem; }
-          .period-date-overlay { display: block; position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; }
+          .period-date-overlay { display: block; position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 14px; }
           .tool-row { display: grid; grid-template-columns: 1fr auto auto; gap: 0.5rem; align-items: center; }
           .tool-row > .seg { grid-column: 1 / -1; }
           .sort-box { min-width: 0; }

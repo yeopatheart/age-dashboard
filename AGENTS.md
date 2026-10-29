@@ -51,7 +51,7 @@ Prisma를 의도적으로 뺀다: 인증(Auth)이 어차피 Supabase Auth 몫이
 - `.env`, `.env.local` — 실제 키 값. 커밋 금지
 
 ## 모바일 UI 규칙
-휴대폰(768px 이하) 화면은 `src/app/globals.css`의 "휴대폰 UI 규칙" 토큰을 쓴다: 컨트롤 높이 `--ctl-h`(36px), 칩 `--chip-h`(32px), 주 동작 `--cta-h`(48px), html 글자 14.5px, 입력창 16px(iOS 확대 방지), 메뉴 설명 숨김. 새 화면·컴포넌트는 개별 크기를 새로 정하지 말고 이 토큰을 쓴다. 날짜 선택은 `src/components/date-nav.tsx`, 휴대폰 여부는 `src/lib/use-is-mobile.ts`. 근거는 docs/decisions/2026-10-29-mobile-ui.md.
+휴대폰(768px 이하) 화면은 `src/app/globals.css`의 "휴대폰 UI 규칙" 토큰을 쓴다: 컨트롤 높이 `--ctl-h`(36px), 칩 `--chip-h`(32px), 주 동작 `--cta-h`(48px), html 글자 14.5px, 입력창 `--input-fs`(버튼·칩과 같은 0.8125rem)(iOS 자동 확대는 viewport maximum-scale=1로 막는다), 메뉴 설명 숨김. 새 화면·컴포넌트는 개별 크기를 새로 정하지 말고 이 토큰을 쓴다. 날짜 선택은 `src/components/date-nav.tsx`, 휴대폰 여부는 `src/lib/use-is-mobile.ts`. 근거는 docs/decisions/2026-10-29-mobile-ui.md.
 
 ## 알려진 이슈
 - 권한: master 이메일 하나(`src/lib/permissions/catalog.ts`)와 `user_permissions` 표로 메뉴·기능 접근을 나눈다. 모든 `page.tsx`는 `requireMenu`, 모든 server action은 `requirePermission`으로 서버에서 확인한다(새 페이지·액션을 만들면 반드시 넣는다). DB 규칙(RLS)은 여전히 로그인 사용자 전체 허용이다.
