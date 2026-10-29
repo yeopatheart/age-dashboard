@@ -15,7 +15,7 @@ export interface UserRow {
   permissions: string[];
 }
 
-const formatTime = (iso: string | null) => (iso ? new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '접속 기록 없음');
+const formatTime = (iso: string | null) => (iso ? new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '없음');
 const menuCount = (keys: string[]) => MENU_KEYS.filter((m) => keys.includes(`${m}:view`)).length;
 
 // 왼쪽: 사용자 목록과 등록·수정·삭제. 오른쪽: 고른 사용자의 메뉴·기능 권한(보고 바로 고친다).

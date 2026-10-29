@@ -6,6 +6,7 @@ import { MarkdownView } from '@/components/markdown-view';
 import { roundLabel, type OrderRound } from '@/lib/orders';
 import { editableDateError } from '@/lib/order-date';
 import { useCan } from '@/components/permissions-context';
+import { DateNav } from '@/components/date-nav';
 import {
   suggestOrderLines,
   commitOrderLines,
@@ -185,7 +186,7 @@ export function NewOrderClient({
       <div className="page-header">
         <div className="page-header-icon"><Sparkles size={20} /></div>
         <h1 className="page-title">주문 입력</h1>
-        <input type="date" value={orderDate} max={today} onChange={(e) => handleOrderDateChange(e.target.value)} className="history-date-input header-date-input" aria-label="주문 입력 날짜" />
+        <DateNav value={orderDate} today={today} onChange={handleOrderDateChange} label="주문 입력 날짜" />
         <div className="round-toggle" role="group" aria-label="주문 차수">
           {([1, 2] as const).map((r) => (
             <button key={r} type="button" className={round === r ? 'active' : ''} aria-pressed={round === r} onClick={() => handleRoundChange(r)}>

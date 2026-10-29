@@ -320,73 +320,73 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-date { display: flex; align-items: center; gap: 0.4rem; }
         .dm-icon { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; flex: none; }
         .dm-icon:disabled { opacity: 0.4; }
-        .dm-date-label { position: relative; flex: 1; height: 44px; border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; font-size: 1.0625rem; font-weight: 800; }
+        .dm-date-label { position: relative; flex: 1; height: 44px; border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; font-size: 0.9375rem; font-weight: 800; }
         .dm-date-label input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; font-size: 16px; }
         .dm-today { height: 44px; padding: 0 0.9rem; border-radius: 12px; border: 0; background: #003057; color: #fff; font-weight: 800; flex: none; }
         .dm-progress { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 0.5rem 0.8rem; display: flex; flex-direction: column; gap: 0.35rem; }
         .dm-progress-text { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
-        .dm-progress-text strong { font-size: 1.0625rem; font-weight: 900; }
-        .dm-progress-text span { font-size: 0.8125rem; color: var(--muted-foreground); font-weight: 700; }
+        .dm-progress-text strong { font-size: 0.9375rem; font-weight: 900; }
+        .dm-progress-text span { font-size: 0.75rem; color: var(--muted-foreground); font-weight: 700; }
         .dm-bar { height: 8px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
         .dm-bar span { display: block; height: 100%; background: #22c55e; border-radius: 999px; }
         .dm-bar-sm { height: 6px; flex: 1; min-width: 3rem; }
         .dm-chips { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
         .dm-chips::-webkit-scrollbar { display: none; }
-        .dm-chip { flex: none; min-height: 44px; padding: 0 0.85rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.875rem; font-weight: 700; white-space: nowrap; }
+        .dm-chip { flex: none; min-height: 44px; padding: 0 0.8rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; white-space: nowrap; }
         .dm-chip-on { background: #003057; border-color: #003057; color: #fff; }
         .dm-filters { display: flex; gap: 0.5rem; align-items: center; }
         .dm-seg { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: #e2e8f0; border-radius: 12px; padding: 3px; gap: 2px; }
         .dm-view { flex: none; min-height: 46px; padding: 0 0.8rem; border-radius: 12px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 800; display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
         .dm-view-on { background: #003057; border-color: #003057; color: #fff; }
-        .dm-seg button { min-height: 44px; border: 0; background: transparent; border-radius: 10px; font-size: 0.8125rem; font-weight: 700; color: #475569; padding: 0 0.4rem; white-space: nowrap; }
+        .dm-seg button { min-height: 44px; border: 0; background: transparent; border-radius: 10px; font-size: 0.75rem; font-weight: 700; color: #475569; padding: 0 0.4rem; white-space: nowrap; }
         .dm-seg button b { font-weight: 900; margin-left: 0.1rem; }
         .dm-seg .dm-seg-on { background: #fff; color: #0f172a; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15); }
-        .dm-cards, .dm-products { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+        .dm-cards, .dm-products { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
         .dm-empty { text-align: center; color: var(--muted-foreground); padding: 2rem 1rem; font-weight: 700; display: flex; flex-direction: column; gap: 0.75rem; align-items: center; }
         .dm-empty button { min-height: 44px; padding: 0 1.2rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-weight: 800; }
         .dm-card { background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
         .dm-card-done { background: #f0fdf4; border-color: #86efac; }
-        .dm-card-head { width: 100%; display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 0.8rem 0.4rem; background: none; border: 0; text-align: left; min-height: 48px; }
-        .dm-term { flex: none; white-space: nowrap; padding: 0.15rem 0.55rem; border-radius: 8px; border: 1px solid; font-size: 0.8125rem; font-weight: 800; }
-        .dm-name { flex: 1; min-width: 0; font-size: 1.0625rem; font-weight: 900; line-height: 1.25; word-break: keep-all; }
+        .dm-card-head { width: 100%; display: flex; align-items: center; gap: 0.45rem; padding: 0.55rem 0.7rem 0.25rem; background: none; border: 0; text-align: left; min-height: 44px; }
+        .dm-term { flex: none; white-space: nowrap; padding: 0.1rem 0.45rem; border-radius: 7px; border: 1px solid; font-size: 0.6875rem; font-weight: 800; }
+        .dm-name { flex: 1; min-width: 0; font-size: 0.9375rem; font-weight: 800; line-height: 1.25; word-break: keep-all; }
         .dm-done { display: inline-flex; align-items: center; gap: 2px; margin-right: 0.3rem; padding: 0 0.35rem; border-radius: 6px; border: 1px solid #34d399; background: #d1fae5; color: #065f46; font-size: 0.6875rem; font-weight: 800; vertical-align: 2px; }
         .dm-round { margin-right: 0.3rem; padding: 0 0.35rem; border-radius: 6px; border: 1px solid #c4b5fd; background: #f5f3ff; color: #6d28d9; font-size: 0.6875rem; font-weight: 800; vertical-align: 2px; }
-        .dm-boxes { flex: none; font-size: 0.8125rem; font-weight: 700; color: #64748b; white-space: nowrap; }
+        .dm-boxes { flex: none; font-size: 0.75rem; font-weight: 700; color: #64748b; white-space: nowrap; }
         .dm-chev { flex: none; color: #94a3b8; transition: transform 0.15s; }
         .dm-chev-open { transform: rotate(180deg); }
-        .dm-meta { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; padding: 0 0.8rem 0.3rem; }
-        .dm-prog { font-size: 0.9375rem; font-weight: 700; color: #475569; }
+        .dm-meta { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; padding: 0 0.7rem 0.25rem; }
+        .dm-prog { font-size: 0.8125rem; font-weight: 700; color: #475569; }
         .dm-prog b { font-weight: 900; color: #0f172a; }
-        .dm-tag { font-size: 0.75rem; font-weight: 800; border-radius: 6px; padding: 0.1rem 0.4rem; border: 1px solid; white-space: nowrap; }
+        .dm-tag { font-size: 0.6875rem; font-weight: 800; border-radius: 6px; padding: 0.05rem 0.35rem; border: 1px solid; white-space: nowrap; }
         .dm-tag-green { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
         .dm-tag-amber { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
         .dm-tag-red { background: #fff1f2; border-color: #fda4af; color: #be123c; }
-        .dm-memo { margin: 0; padding: 0 0.8rem 0.3rem; font-size: 0.8125rem; font-weight: 700; color: #92400e; }
-        .dm-summary { margin: 0; padding: 0 0.8rem 0.75rem; font-size: 0.9375rem; color: #334155; line-height: 1.4; }
+        .dm-memo { margin: 0; padding: 0 0.7rem 0.25rem; font-size: 0.75rem; font-weight: 700; color: #92400e; }
+        .dm-summary { margin: 0; padding: 0 0.7rem 0.6rem; font-size: 0.8125rem; color: #334155; line-height: 1.4; }
         .dm-items { border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; }
-        .dm-item { display: flex; align-items: center; gap: 0.65rem; padding: 0.55rem 0.8rem; min-height: 56px; background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left; width: 100%; }
+        .dm-item { display: flex; align-items: center; gap: 0.55rem; padding: 0.3rem 0.7rem; min-height: 42px; background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left; width: 100%; }
         .dm-item-done .dm-item-name, .dm-item-done .dm-item-detail { color: #94a3b8; }
         .dm-item-cancelled .dm-item-name { text-decoration: line-through; color: #be123c; }
-        .dm-check { flex: none; width: 28px; height: 28px; border-radius: 999px; border: 2px solid #cbd5e1; display: grid; place-items: center; color: #fff; background: #fff; }
+        .dm-check { flex: none; width: 24px; height: 24px; border-radius: 999px; border: 2px solid #cbd5e1; display: grid; place-items: center; color: #fff; background: #fff; }
         .dm-check-on { background: #22c55e; border-color: #22c55e; }
-        .dm-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
-        .dm-item-name { font-size: 1rem; font-weight: 800; line-height: 1.25; }
-        .dm-item-detail { font-size: 0.9375rem; font-weight: 700; color: #0369a1; }
+        .dm-item-main { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+        .dm-item-name { font-size: 0.875rem; font-weight: 800; line-height: 1.25; min-width: 0; }
+        .dm-item-detail { font-size: 0.8125rem; font-weight: 700; color: #0369a1; text-align: right; flex: none; max-width: 55%; }
         .dm-item-flags { display: flex; flex-direction: column; gap: 0.2rem; align-items: flex-end; flex: none; }
-        .dm-card-actions { display: flex; gap: 0.5rem; padding: 0.6rem 0.8rem 0.8rem; }
+        .dm-card-actions { display: flex; gap: 0.5rem; padding: 0.5rem 0.7rem 0.65rem; font-size: 0.8125rem; }
         .dm-card-actions button { flex: 1; min-height: 44px; border-radius: 12px; border: 1px dashed #94a3b8; background: #fff; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; }
         .dm-card-actions .dm-danger { border-style: solid; border-color: #fecdd3; color: #be123c; flex: none; padding: 0 1rem; }
-        .dm-products li { display: flex; align-items: center; gap: 0.6rem; background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 0.75rem 0.9rem; min-height: 52px; }
-        .dm-product-name { flex: 1; min-width: 0; font-weight: 800; font-size: 1rem; word-break: keep-all; }
-        .dm-product-qty { font-size: 1.125rem; font-weight: 900; }
+        .dm-products li { display: flex; align-items: center; gap: 0.5rem; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0.5rem 0.75rem; min-height: 44px; }
+        .dm-product-name { flex: 1; min-width: 0; font-weight: 700; font-size: 0.875rem; word-break: keep-all; }
+        .dm-product-qty { font-size: 0.9375rem; font-weight: 900; }
         .dm-sheet-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(15, 23, 42, 0.45); display: flex; align-items: flex-end; }
         .dm-sheet { width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 0.9rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 0.8rem; box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.25); }
         .dm-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
         .dm-sheet-head div { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
-        .dm-sheet-head strong { font-size: 1.25rem; font-weight: 900; }
-        .dm-sheet-head span { font-size: 0.9375rem; color: #475569; font-weight: 700; }
+        .dm-sheet-head strong { font-size: 1.0625rem; font-weight: 900; }
+        .dm-sheet-head span { font-size: 0.8125rem; color: #475569; font-weight: 700; }
         .dm-sheet-actions { display: flex; flex-direction: column; gap: 0.5rem; }
-        .dm-sheet-actions button { min-height: 52px; border-radius: 14px; border: 1px solid var(--border); background: #fff; font-size: 1rem; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+        .dm-sheet-actions button { min-height: 48px; border-radius: 12px; border: 1px solid var(--border); background: #fff; font-size: 0.9375rem; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
         .dm-sheet-actions .dm-primary { background: #22c55e; border-color: #22c55e; color: #fff; }
         .dm-sheet-actions .dm-danger { color: #be123c; border-color: #fecdd3; }
         .dm-sheet-note { margin: 0; color: #64748b; font-weight: 700; }

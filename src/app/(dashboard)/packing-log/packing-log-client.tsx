@@ -16,11 +16,12 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { BarChart3, ChevronLeft, ChevronRight, ClipboardList, GripVertical, Package, Plus, Trash2, X } from 'lucide-react';
+import { BarChart3, ClipboardList, GripVertical, Package, Plus, Trash2, X } from 'lucide-react';
 import type { RecommendationView, StoredPlan } from '@/lib/packing/server';
 import { submitPacking, assignItemsToBoxes, deletePackingRecord } from './actions';
 import { LabelPanel } from './label-panel';
 import { useCan } from '@/components/permissions-context';
+import { DateNav } from '@/components/date-nav';
 
 export interface PackingItem {
   id: string;
@@ -361,12 +362,6 @@ export function PackingLogClient({
   const canAutoAssign = !!draft && draft.boxes.length > 0 && !hasDeletedBox && (selected?.items.length ?? 0) > 0;
 
   const go = (date: string) => router.push(`/packing-log?date=${date}`);
-  const shift = (days: number) => {
-    const d = new Date(`${orderDate}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + days);
-    const next = d.toISOString().slice(0, 10);
-    if (next <= today) go(next);
-  };
 
   const visibleRows = onlyPending ? rows.filter((r) => !r.submitted) : rows;
   const doneCount = rows.filter((r) => r.submitted).length;
@@ -382,10 +377,7 @@ export function PackingLogClient({
       </div>
 
       <div className="ak-toolbar">
-        <button className="ak-btn" onClick={() => shift(-1)} title="전날"><ChevronLeft size={14} /></button>
-        <input type="date" className="pk-date" value={orderDate} max={today} onChange={(e) => e.target.value && go(e.target.value)} />
-        <button className="ak-btn" onClick={() => shift(1)} disabled={orderDate >= today} title="다음날"><ChevronRight size={14} /></button>
-        {orderDate !== today && <button className="ak-btn ak-btn-primary" onClick={() => go(today)}>오늘</button>}
+        <DateNav value={orderDate} today={today} onChange={go} label="박스 할당 날짜" />
         <span className="ak-count">업체 {rows.length}곳 · 제출 {doneCount}곳</span>
         <span className="ak-spacer" />
         <Link href="/packing-log/accuracy" className="ak-btn"><BarChart3 size={14} /> 추천 정확도</Link>
@@ -563,15 +555,15 @@ export function PackingLogClient({
         .pk-edited { background: #fef3c7; color: #92400e; border-radius: 999px; padding: 0.15rem 0.7rem; font-size: 0.8125rem; font-weight: 800; }
         .pk-editing { background: #dbeafe; color: #1d4ed8; border-radius: 999px; padding: 0.1rem 0.5rem; font-size: 0.6875rem; font-weight: 800; white-space: nowrap; }
         .pk-view { padding: 1rem 1.1rem; }
-        .pk-date { height: 2.25rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 0.8rem; font-size: 0.875rem; font-weight: 700; background: #fff; }
         .pk-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 600; color: var(--muted-foreground); cursor: pointer; }
         .pk-layout { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 0.9rem; align-items: start; }
         .pk-list { display: flex; flex-direction: column; gap: 0.4rem; max-height: calc(100vh - 14rem); overflow-y: auto; }
         .pk-biz { text-align: left; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0.6rem 0.8rem; cursor: pointer; display: flex; flex-direction: column; gap: 0.2rem; }
         .pk-biz:hover { background: #f8fafc; }
         .pk-biz-on { border-color: var(--primary); background: var(--primary-light); }
-        .pk-biz-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-        .pk-biz-name { font-weight: 700; font-size: 0.875rem; }
+        .pk-biz-top { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; flex-wrap: wrap; }
+        .pk-biz-name { font-weight: 700; font-size: 0.875rem; min-width: 0; overflow-wrap: anywhere; }
+        .pk-biz .ak-tag, .pk-biz .pk-changed, .pk-biz .pk-editing { white-space: nowrap; flex: none; }
         .pk-biz-sub { font-size: 0.75rem; color: var(--muted-foreground); }
         .pk-work { container-type: inline-size; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; min-width: 0; }
         .pk-work-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
@@ -619,7 +611,7 @@ export function PackingLogClient({
         .pk-submit { height: 2.5rem; padding: 0 1.4rem; font-size: 0.9rem; }
         /* 작업 영역 폭이 좁으면(태블릿/좁은 창) 상품 영역을 박스 영역 위로 쌓는다. */
         @container (max-width: 52rem) { .pk-board { grid-template-columns: 1fr; } }
-        @media (max-width: 900px) { .pk-layout { grid-template-columns: 1fr; } .pk-board { grid-template-columns: 1fr; } .pk-list { max-height: 14rem; flex-direction: row; overflow-x: auto; } .pk-biz { min-width: 11rem; } }
+        @media (max-width: 900px) { .pk-layout { grid-template-columns: 1fr; } .pk-board { grid-template-columns: 1fr; } .pk-list { max-height: none; flex-direction: row; overflow-x: auto; padding-bottom: 0.25rem; } .pk-biz { flex: none; width: 12.5rem; } .pk-biz-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 100%; } }
       `}</style>
     </div>
   );
