@@ -76,13 +76,9 @@ function statsOf(rowItems: OrderItem[]): Stats {
 }
 const hasException = (s: Stats, row: OrderRow) => s.added + s.modified + s.cancelled + s.unshipped + s.undecided > 0 || !!row.packingChanged;
 
-// 카드의 단계 칩 옆 설명. 칩·진행 막대와 겹치는 내용(박스 미정, 포장 n/m줄)은 빼고 박스 수나 라벨·상차 진행만 보여준다.
-function cardStageDetail(stage: Stage, row: OrderRow, s: Stats): string {
-  if (row.parcel) return stage === 'done' ? '택배 · 포장 완료' : '택배';
-  if (stage === 'boxing') return '';
-  if (stage === 'packing') return `박스 ${row.boxStates.length}개`;
-  return stageDetail(stage, { parcel: false, boxStates: row.boxStates, itemsDone: s.done, itemsLive: s.live });
-}
+// 진행 줄 끝의 박스 점·설명은 칩만으로는 알 수 없는 박스 단위 진행(라벨 출력 중·상차 중)에서만 보여준다.
+// 다른 단계는 칩과 진행 막대로 충분해서 줄을 붐비게 하지 않는다.
+const BOX_PROGRESS_STAGES: Stage[] = ['labeling', 'loading'];
 
 // 고객 카드 한 장. 순서는 카드 오른쪽 끝의 손잡이를 끌어서만 바꾼다(카드 전체를 끌게 하면 목록을 스크롤하다가 순서가 바뀐다).
 function SortableCard({ id, disabled, className, children }: { id: string; disabled: boolean; className: string; children: (handle: ReactNode) => ReactNode }) {
@@ -282,8 +278,9 @@ export function DashboardMobile(props: DashboardMobileProps) {
             const live = rowItems.filter(isLive);
             const summary = live.slice(0, 3).map((i) => `${i.productName} ${isUndecidedQuantity(i) ? '미정' : `${i.quantity}${i.unit}`}`).join(' · ') + (live.length > 3 ? ` 외 ${live.length - 3}건` : '');
             const badge = terminalBadgeProps(row.terminal, terminalColors);
+            const hasTags = s.added > 0 || s.modified > 0 || s.unshipped > 0 || s.cancelled > 0 || s.undecided > 0 || !!row.packingChanged;
             const stageKey = stageOf(row.totalBoxes, row.boxStates, done, row.parcel);
-            const stage = { key: stageKey, visible: live.length > 0, detail: cardStageDetail(stageKey, row, s) };
+            const stage = { key: stageKey, visible: live.length > 0, showBoxProgress: BOX_PROGRESS_STAGES.includes(stageKey), detail: stageDetail(stageKey, { parcel: row.parcel, boxStates: row.boxStates, itemsDone: s.done, itemsLive: s.live }) };
             return (
               <SortableCard key={row.dailyBusinessId} id={row.dailyBusinessId} disabled={!canReorder} className={`dm-card ${done ? 'dm-card-done' : ''}`}>
                 {(handle) => (
@@ -297,24 +294,25 @@ export function DashboardMobile(props: DashboardMobileProps) {
                         {round && <span className="dm-round">{roundLabel(round)}</span>}
                         {row.businessName}
                       </span>
+                      {stage.visible && <span className={`dm-stage dm-stage-${stage.key}`}>{STAGE_LABEL[stage.key]}</span>}
                     </span>
                     <ChevronDown size={18} className={`dm-chev ${open ? 'dm-chev-open' : ''}`} />
                   </button>
                   {handle}
                 </div>
                 <div className="dm-body">
-                  {stage.visible && (
-                    <div className="dm-stage-row">
-                      <span className={`dm-stage dm-stage-${stage.key}`}>{STAGE_LABEL[stage.key]}</span>
-                      <BoxDots states={row.boxStates} />
-                      {stage.detail && <span className="dm-stage-detail">{stage.detail}</span>}
-                    </div>
-                  )}
                   <div className="dm-prog-row">
                     <span className="dm-prog"><b>{s.done}</b>/{s.live}</span>
                     <div className="dm-bar"><span style={{ width: `${s.live ? (s.done / s.live) * 100 : 0}%` }} /></div>
+                    {stage.showBoxProgress && (
+                      <span className="dm-stage-meta">
+                        <BoxDots states={row.boxStates} />
+                        <span className="dm-stage-detail">{stage.detail}</span>
+                      </span>
+                    )}
                   </div>
-                  {(s.added > 0 || s.modified > 0 || s.unshipped > 0 || s.cancelled > 0 || s.undecided > 0 || row.packingChanged) && (
+                  {row.memo && <p className="dm-memo">메모: {row.memo}</p>}
+                  {(hasTags || !open) && (
                     <div className="dm-tags">
                       {s.added > 0 && <span className="dm-tag dm-tag-green">신규 {s.added}</span>}
                       {s.modified > 0 && <span className="dm-tag dm-tag-amber">수정 {s.modified}</span>}
@@ -322,10 +320,9 @@ export function DashboardMobile(props: DashboardMobileProps) {
                       {s.cancelled > 0 && <span className="dm-tag dm-tag-red">취소 {s.cancelled}</span>}
                       {s.undecided > 0 && <span className="dm-tag dm-tag-amber">수량 미정 {s.undecided}</span>}
                       {row.packingChanged && <span className="dm-tag dm-tag-red">박스 재확인</span>}
+                      {!open && <span className="dm-summary">{summary || '상품 없음'}</span>}
                     </div>
                   )}
-                  {row.memo && <p className="dm-memo">메모: {row.memo}</p>}
-                  {!open && <p className="dm-summary">{summary || '상품 없음'}</p>}
                 </div>
                 {open && (
                   <div className="dm-items">
@@ -452,13 +449,13 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-chev-open { transform: rotate(180deg); }
         .dm-body { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.3rem 0.875rem 0.8rem; min-width: 0; }
         .dm-prog-row { display: flex; align-items: center; gap: 0.6rem; }
-        .dm-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+        .dm-tags { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.35rem; }
         .dm-prog { flex: none; min-width: 2rem; font-size: 0.8125rem; font-weight: 700; color: #475569; font-variant-numeric: tabular-nums; }
         .dm-prog b { font-weight: 900; color: #0f172a; }
         .dm-tag { font-size: 0.6875rem; font-weight: 800; line-height: 1.4; border-radius: 6px; padding: 0.1rem 0.45rem; border: 1px solid; white-space: nowrap; }
         .dm-tag-green { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
         .dm-tag-amber { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
-        .dm-stage-row { display: flex; align-items: center; gap: 0.55rem; min-width: 0; font-size: 0.75rem; line-height: 1.5; }
+        .dm-stage-meta { flex: none; display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; line-height: 1.5; }
         .dm-stage-detail { color: var(--muted-foreground); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
         .dm-stage { flex: none; font-size: 0.75rem; font-weight: 800; line-height: 1.4; border-radius: 999px; padding: 0.15rem 0.65rem; border: 1px solid; white-space: nowrap; }
         .dm-stage-boxing { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
@@ -469,7 +466,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-stage-done { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
         .dm-tag-red { background: #fff1f2; border-color: #fda4af; color: #be123c; }
         .dm-memo { margin: 0; font-size: 0.75rem; font-weight: 700; color: #92400e; }
-        .dm-summary { margin: 0; font-size: 0.8125rem; color: #475569; line-height: 1.45; }
+        .dm-summary { font-size: 0.8125rem; color: #475569; line-height: 1.45; min-width: 0; }
         .dm-items { border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; }
         .dm-item { display: flex; align-items: center; gap: 0.55rem; padding: 0.3rem 0.875rem; min-height: 42px; background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left; width: 100%; }
         .dm-item-done .dm-item-name, .dm-item-done .dm-item-detail { color: #94a3b8; }
