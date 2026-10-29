@@ -4,9 +4,10 @@
 export const MASTER_EMAIL = 'master@ageseafood.com';
 
 export const MENU_DEFS = {
+  overview: { label: '대시보드', href: '/overview', paths: ['/overview'], actions: {} },
   orders: { label: '주문 입력', href: '/orders/new', paths: ['/orders'], actions: { edit: '주문 분석·확정' } },
   packing: { label: '박스 할당 / 라벨 출력', href: '/packing-log', paths: ['/packing-log'], actions: { submit: '박스 구성 제출·자동 배치', delete: '제출 기록 삭제', print: '송장 라벨 출력' } },
-  dashboard: { label: '대시보드', href: '/dashboard', paths: ['/dashboard'], actions: { edit: '포장 체크·주문/상품 수정·순서 변경', delete: '주문·상품 삭제/취소' } },
+  dashboard: { label: '주문 목록', href: '/dashboard', paths: ['/dashboard'], actions: { edit: '포장 체크·주문/상품 수정·순서 변경', delete: '주문·상품 삭제/취소' } },
   scan: { label: '상차 스캔', href: '/scan', paths: ['/scan'], actions: { scan: '상차 스캔', undo: '상차 되돌리기' } },
   reports: { label: '리포트', href: '/reports', paths: ['/reports'], actions: {} },
   businesses: { label: '고객사 관리', href: '/businesses', paths: ['/businesses'], actions: { edit: '등록·수정', delete: '삭제' } },

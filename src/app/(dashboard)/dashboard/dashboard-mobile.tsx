@@ -4,6 +4,8 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, GripVertical, ListChecks, PackageX, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { getProductSummary, isCardComplete, isUndecidedQuantity, roundLabel, type OrderItem, type OrderRound, type OrderRow } from '@/lib/orders';
+import { BoxDots } from '@/components/box-dots';
+import { STAGE_LABEL, stageDetail, stageOf } from '@/lib/overview';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
 
 // 휴대폰(768px 이하)용 대시보드. PC의 "고객 × 상품" 표를 가로로 밀어 보는 대신, 고객 한 곳이 카드 하나다.
@@ -272,6 +274,8 @@ export function DashboardMobile(props: DashboardMobileProps) {
             const live = rowItems.filter(isLive);
             const summary = live.slice(0, 3).map((i) => `${i.productName} ${isUndecidedQuantity(i) ? '미정' : `${i.quantity}${i.unit}`}`).join(' · ') + (live.length > 3 ? ` 외 ${live.length - 3}건` : '');
             const badge = terminalBadgeProps(row.terminal, terminalColors);
+            const stageKey = stageOf(row.totalBoxes, row.boxStates, done, row.parcel);
+            const stage = { key: stageKey, visible: live.length > 0, detail: stageDetail(stageKey, { parcel: row.parcel, boxStates: row.boxStates, itemsDone: s.done, itemsLive: s.live }) };
             return (
               <SortableCard key={row.dailyBusinessId} id={row.dailyBusinessId} disabled={!canReorder} className={`dm-card ${done ? 'dm-card-done' : ''}`}>
                 {(handle) => (
@@ -300,6 +304,13 @@ export function DashboardMobile(props: DashboardMobileProps) {
                   {s.undecided > 0 && <span className="dm-tag dm-tag-amber">수량 미정 {s.undecided}</span>}
                   {row.packingChanged && <span className="dm-tag dm-tag-red">박스 재확인</span>}
                 </div>
+                {stage.visible && (
+                  <div className="dm-stage-row">
+                    <span className={`dm-tag dm-stage dm-stage-${stage.key}`}>{STAGE_LABEL[stage.key]}</span>
+                    <BoxDots states={row.boxStates} />
+                    <span className="dm-stage-detail">{stage.detail}</span>
+                  </div>
+                )}
                 {row.memo && <p className="dm-memo">메모: {row.memo}</p>}
                 {!open && <p className="dm-summary">{summary || '상품 없음'}</p>}
                 {open && (
@@ -432,6 +443,15 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-tag { font-size: 0.6875rem; font-weight: 800; border-radius: 6px; padding: 0.05rem 0.35rem; border: 1px solid; white-space: nowrap; }
         .dm-tag-green { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
         .dm-tag-amber { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+        .dm-stage-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.4rem; min-width: 0; font-size: 0.75rem; line-height: 1.5; }
+        .dm-stage-detail { color: var(--muted-foreground); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .dm-stage { font-weight: 800; flex: none; }
+        .dm-stage-boxing { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+        .dm-stage-labeling { background: #f5f3ff; border-color: #c4b5fd; color: #6d28d9; }
+        .dm-stage-packing { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+        .dm-stage-packed { background: #f0fdfa; border-color: #5eead4; color: #0f766e; }
+        .dm-stage-loading { background: #f0f9ff; border-color: #7dd3fc; color: #0369a1; }
+        .dm-stage-done { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
         .dm-tag-red { background: #fff1f2; border-color: #fda4af; color: #be123c; }
         .dm-memo { margin: 0; padding: 0 0.7rem 0.25rem; font-size: 0.75rem; font-weight: 700; color: #92400e; }
         .dm-summary { margin: 0; padding: 0 0.7rem 0.6rem; font-size: 0.8125rem; color: #334155; line-height: 1.4; }

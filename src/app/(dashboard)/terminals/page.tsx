@@ -8,7 +8,7 @@ export default async function TerminalsPage() {
   const supabase = await createClient();
   const [, { data: terminals, error }, businesses] = await Promise.all([
     accessCheck,
-    supabase.from('terminals').select('id, name, created_at, created_via, fill_color, border_color, is_separate').order('name'),
+    supabase.from('terminals').select('id, name, created_at, created_via, fill_color, border_color, is_separate, is_parcel').order('name'),
     fetchAll((from, to) => supabase.from('businesses').select('terminal_id').order('id').range(from, to), '업체 조회 실패: '),
   ]);
 

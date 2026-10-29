@@ -8,6 +8,7 @@ import { MENU_DEFS, type MenuKey } from '@/lib/permissions/catalog';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import {
   LayoutDashboard,
+  LayoutList,
   Sparkles,
   Building2,
   MapPinned,
@@ -29,9 +30,10 @@ import {
 // 하루 업무 순서대로: 주문 입력 → 박스 할당 → 대시보드, 그 아래는 관리 메뉴.
 // 보여줄 메뉴는 사용자 권한(allowedMenus)으로 거른다. 라벨·주소는 src/lib/permissions/catalog.ts의 MENU_DEFS와 같다.
 const NAV_ITEMS: { menu: MenuKey | 'users'; icon: typeof Sparkles }[] = [
+  { menu: 'overview', icon: LayoutDashboard },
   { menu: 'orders', icon: Sparkles },
   { menu: 'packing', icon: ClipboardList },
-  { menu: 'dashboard', icon: LayoutDashboard },
+  { menu: 'dashboard', icon: LayoutList },
   { menu: 'scan', icon: ScanLine },
   { menu: 'reports', icon: BarChart3 },
   { menu: 'businesses', icon: Building2 },
@@ -43,8 +45,8 @@ const NAV_ITEMS: { menu: MenuKey | 'users'; icon: typeof Sparkles }[] = [
   { menu: 'users', icon: ShieldCheck },
 ];
 // 하단 탭에 올릴 메뉴(왼쪽부터). 라벨은 탭 폭에 맞춰 짧게 쓴다.
-const BOTTOM_TABS: MenuKey[] = ['dashboard', 'orders', 'packing', 'scan'];
-const BOTTOM_TAB_LABELS: Partial<Record<MenuKey, string>> = { dashboard: '대시보드', orders: '주문 입력', packing: '박스 할당', scan: '상차 스캔' };
+const BOTTOM_TABS: MenuKey[] = ['overview', 'dashboard', 'orders', 'scan'];
+const BOTTOM_TAB_LABELS: Partial<Record<MenuKey, string>> = { overview: '대시보드', dashboard: '주문 목록', orders: '주문 입력', scan: '상차 스캔' };
 const navEntry = (menu: MenuKey | 'users') => (menu === 'users' ? { href: '/users', label: '사용자 및 권한' } : { href: MENU_DEFS[menu].href, label: MENU_DEFS[menu].label });
 
 const COLLAPSE_STORAGE_KEY = 'age-dashboard-sidebar-collapsed';

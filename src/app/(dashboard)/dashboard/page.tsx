@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import type { OrderItem, OrderRow } from '@/lib/orders';
 import { findChangedAfterPacking } from '@/lib/packing/server';
+import { boxStatesOf, type LabelRow } from '@/lib/overview';
 import { DashboardClient } from './dashboard-client';
 import { requireMenu } from '@/lib/permissions/access';
 import { fetchAll } from '@/lib/supabase/fetch-all';
@@ -30,7 +31,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const [, { data: allTerminals, error: terminalError }, businessRows, { data: dailyBusinesses, error: dailyError }, productRows, settings, { data: highlightRows, error: highlightError }] =
     await Promise.all([
       accessCheck,
-      supabase.from('terminals').select('id, name, fill_color, border_color, is_separate').order('name'),
+      supabase.from('terminals').select('id, name, fill_color, border_color, is_separate, is_parcel').order('name'),
       fetchAll((from, to) => supabase.from('businesses').select('id, name, terminal_id').order('name').order('id').range(from, to), '업체 조회 실패: '),
       supabase
         .from('daily_businesses')
@@ -50,7 +51,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const dailyBusinessIds = dailyBusinessRows.map((d) => d.id);
 
   // 2단계: 오늘 카드 id가 정해지면 주문 줄·박스 제출 기록·추천 기록을 한 번에 읽는다.
-  const [{ data: orderItemRows }, { data: packingRecordRows }, { data: recommendationRows }] = dailyBusinessIds.length
+  const [{ data: orderItemRows }, { data: packingRecordRows }, { data: recommendationRows }, { data: labelRows }] = dailyBusinessIds.length
     ? await Promise.all([
         supabase
           .from('order_items')
@@ -58,8 +59,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           .in('daily_business_id', dailyBusinessIds),
         supabase.from('packing_records').select('id, daily_business_id, order_signature').in('daily_business_id', dailyBusinessIds),
         supabase.from('packing_recommendations').select('daily_business_id, order_signature, created_at').in('daily_business_id', dailyBusinessIds).order('created_at'),
+        supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyBusinessIds),
       ])
-    : [{ data: [] }, { data: [] }, { data: [] }];
+    : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   // 3단계: "박스" 열은 박스 할당에서 제출한 박스 수다 — 대시보드에서 따로 입력하지 않으므로 제출 기록에서 바로 센다.
   const recordIds = (packingRecordRows ?? []).map((r) => r.id);
@@ -73,13 +75,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     if (dailyId) boxCountByDaily.set(dailyId, (boxCountByDaily.get(dailyId) ?? 0) + 1);
   }
 
+  const labelsByDaily = new Map<string, LabelRow[]>();
+  for (const label of labelRows ?? []) {
+    const list = labelsByDaily.get(label.daily_business_id) ?? [];
+    list.push({ seq: label.seq, loaded: !!label.loaded_at });
+    labelsByDaily.set(label.daily_business_id, list);
+  }
+
   const terminalNameById = new Map((allTerminals ?? []).map((t) => [t.id, t.name]));
-  const separateTerminalIds = new Set((allTerminals ?? []).filter((t) => t.is_separate).map((t) => t.id));
+  const parcelTerminalIds = new Set((allTerminals ?? []).filter((t) => t.is_parcel).map((t) => t.id));
   const businessById = new Map(businessRows.map((b) => [b.id, b]));
 
   const rows: OrderRow[] = dailyBusinessRows.flatMap((daily) => {
     const business = businessById.get(daily.business_id);
     if (!business) return [];
+    const parcel = !!daily.terminal_id && parcelTerminalIds.has(daily.terminal_id);
+    const totalBoxes = boxCountByDaily.get(daily.id) ?? (parcel ? 1 : null);
     return [
       {
         dailyBusinessId: daily.id,
@@ -90,9 +101,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         terminal: daily.terminal_id ? terminalNameById.get(daily.terminal_id) ?? '' : '',
         businessNumber: daily.business_number,
         round: daily.round,
-        // 박스 할당에서 제출한 박스 수. 별도 주문(택배)은 아직 할당 전이면 1박스로 보고, 박스 할당에서 박스 수가 정해지면 그 수로 바뀐다.
-        totalBoxes: boxCountByDaily.get(daily.id) ?? (daily.terminal_id && separateTerminalIds.has(daily.terminal_id) ? 1 : null),
+        // 박스 할당에서 제출한 박스 수. 택배 터미널은 아직 할당 전이면 1박스로 보고, 박스 할당에서 박스 수가 정해지면 그 수로 바뀐다.
+        totalBoxes,
         memo: daily.memo,
+        parcel,
+        boxStates: parcel ? [] : boxStatesOf(totalBoxes, labelsByDaily.get(daily.id) ?? []),
       },
     ];
   });
