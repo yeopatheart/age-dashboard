@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, GripVertical, ListChecks, PackageX, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { getProductSummary, isCardComplete, isUndecidedQuantity, roundLabel, type OrderItem, type OrderRound, type OrderRow } from '@/lib/orders';
+import { getProductCustomers, getProductSummary, isCardComplete, isUndecidedQuantity, roundLabel, type OrderItem, type OrderRound, type OrderRow } from '@/lib/orders';
 import { BoxDots } from '@/components/box-dots';
 import { STAGE_LABEL, stageDetail, stageOf, type Stage } from '@/lib/overview';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
@@ -74,7 +74,7 @@ function statsOf(rowItems: OrderItem[]): Stats {
     undecided: live.filter(isUndecidedQuantity).length,
   };
 }
-const hasException = (s: Stats, row: OrderRow) => s.added + s.modified + s.cancelled + s.unshipped + s.undecided > 0 || !!row.packingChanged;
+const hasException = (s: Stats, row: OrderRow) => s.added + s.modified + s.cancelled + s.unshipped + s.undecided > 0 || !!row.packingChanged || row.mergeGroups.length > 0;
 
 // 진행 줄 끝의 박스 점·설명은 칩만으로는 알 수 없는 박스 단위 진행(라벨 출력 중·상차 중)에서만 보여준다.
 // 다른 단계는 칩과 진행 막대로 충분해서 줄을 붐비게 하지 않는다.
@@ -106,6 +106,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
   const [status, setStatus] = useState<StatusFilter>('pending');
   const [view, setView] = useState<ViewMode>('customers');
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [openProducts, setOpenProducts] = useState<Set<string>>(new Set());
   const [sheetItemId, setSheetItemId] = useState<string | null>(null);
 
   const segmentRows = segment === 'main' ? mainRows : separateRows;
@@ -251,13 +252,37 @@ export function DashboardMobile(props: DashboardMobileProps) {
       {view === 'products' ? (
         <ul className="dm-products">
           {productRows.length === 0 && <li className="dm-empty">상품이 없습니다.</li>}
-          {productRows.map((p) => (
-            <li key={p.key}>
-              <span className="dm-product-name">{p.label}</span>
-              <span className="dm-product-qty">{p.total}{p.unit}</span>
-              {p.unshipped > 0 && <span className="dm-tag dm-tag-amber">미출고 {p.unshipped}</span>}
-            </li>
-          ))}
+          {productRows.map((p) => {
+            const open = openProducts.has(p.key);
+            const customers = open ? getProductCustomers(items.filter((i) => terminalRowIds.has(i.dailyBusinessId)), p, new Map(byTerminal.map((r, index) => [r.dailyBusinessId, index]))) : [];
+            return (
+              <li key={p.key} className="dm-product">
+                <button className="dm-product-head" aria-expanded={open} onClick={() => setOpenProducts((prev) => { const next = new Set(prev); if (!next.delete(p.key)) next.add(p.key); return next; })}>
+                  <span className="dm-text-line">
+                    <span className="dm-product-name">{p.label}</span>
+                    {p.unshipped > 0 && <span className="dm-tag dm-tag-amber">미출고 {p.unshipped}</span>}
+                    <span className="dm-product-qty">{p.total}{p.unit}</span>
+                  </span>
+                  <ChevronDown size={18} className={`dm-chev ${open ? 'dm-chev-open' : ''}`} />
+                </button>
+                {open && (
+                  <ul className="dm-product-customers">
+                    {customers.map((c) => (
+                      <li key={c.dailyBusinessId}>
+                        <span className={`dm-check dm-check-sm ${c.allPacked && !c.undecided && c.quantity > 0 ? 'dm-check-on' : ''}`} aria-label={c.allPacked ? '포장 완료' : '포장 전'}>{c.allPacked && !c.undecided && c.quantity > 0 && <Check size={11} strokeWidth={4} />}</span>
+                        <span className="dm-text-line">
+                          <span className="dm-pc-name">{c.name}</span>
+                          {c.undecided && <span className="dm-tag dm-tag-amber">수량 미정</span>}
+                          {c.unshipped > 0 && <span className="dm-tag dm-tag-amber">미출고 {c.unshipped}</span>}
+                          {c.quantity > 0 && <span className="dm-pc-qty">{c.quantity}{p.unit}</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <DndContext id="mobile-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -319,6 +344,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
                       {s.unshipped > 0 && <span className="dm-tag dm-tag-amber">미출고 {s.unshipped}</span>}
                       {s.cancelled > 0 && <span className="dm-tag dm-tag-red">취소 {s.cancelled}</span>}
                       {s.undecided > 0 && <span className="dm-tag dm-tag-amber">수량 미정 {s.undecided}</span>}
+                      {row.mergeGroups.length > 0 && <span className="dm-tag dm-tag-merge">합포장</span>}
                       {row.packingChanged && <span className="dm-tag dm-tag-red">박스 재확인</span>}
                       {!open && <span className="dm-summary">{summary || '상품 없음'}</span>}
                     </div>
@@ -464,6 +490,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-stage-packed { background: #f0fdfa; border-color: #5eead4; color: #0f766e; }
         .dm-stage-loading { background: #f0f9ff; border-color: #7dd3fc; color: #0369a1; }
         .dm-stage-done { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
+        .dm-tag-merge { background: #f0fdf4; border-color: #86efac; color: #166534; }
         .dm-tag-red { background: #fff1f2; border-color: #fda4af; color: #be123c; }
         .dm-memo { margin: 0; font-size: 0.75rem; font-weight: 700; color: #92400e; }
         .dm-summary { font-size: 0.8125rem; color: #475569; line-height: 1.45; min-width: 0; }
@@ -480,7 +507,16 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-card-actions { display: flex; gap: 0.5rem; padding: 0.5rem 0.875rem 0.75rem; font-size: 0.8125rem; }
         .dm-card-actions button { flex: 1; min-height: 44px; border-radius: 12px; border: 1px dashed #94a3b8; background: #fff; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; }
         .dm-card-actions .dm-danger { border-style: solid; border-color: #fecdd3; color: #be123c; flex: none; padding: 0 1rem; }
-        .dm-products li { display: flex; align-items: center; gap: 0.5rem; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0.5rem 0.75rem; min-height: 44px; }
+        .dm-product { background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .dm-product-head { width: 100%; display: flex; align-items: center; gap: 0.5rem; background: none; border: 0; text-align: left; padding: 0.5rem 0.75rem 0.5rem 0.875rem; min-height: 44px; }
+        .dm-product-customers { list-style: none; margin: 0; padding: 0.15rem 0.875rem 0.5rem; border-top: 1px solid #f1f5f9; display: flex; flex-direction: column; }
+        .dm-product-customers li { display: flex; align-items: center; gap: 0.5rem; min-height: 36px; padding: 0.3rem 0; }
+        .dm-product-customers li + li { border-top: 1px solid #f8fafc; }
+        .dm-check-sm { width: 18px; height: 18px; border-width: 2px; }
+        .dm-text-line { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.5rem; }
+        .dm-text-line .dm-product-name, .dm-text-line .dm-pc-name { flex: 1; }
+        .dm-pc-name { min-width: 0; font-size: 0.875rem; font-weight: 700; word-break: keep-all; }
+        .dm-pc-qty { font-size: 0.875rem; font-weight: 800; color: #0369a1; }
         .dm-product-name { flex: 1; min-width: 0; font-weight: 700; font-size: 0.875rem; word-break: keep-all; }
         .dm-product-qty { font-size: 0.9375rem; font-weight: 900; }
         .dm-sheet-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(15, 23, 42, 0.45); display: flex; align-items: flex-end; }

@@ -68,7 +68,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       let next: Banner;
       if (result.status === 'loaded') {
         const b = result.box;
-        next = { tone: 'ok', title: `${b.business} ${b.boxNo}번`, detail: `${b.terminal || '터미널 없음'} · 이 업체 ${b.loadedCount}/${b.totalCount}박스`, labelId: b.labelId };
+        next = { tone: 'ok', title: `${b.business} ${b.boxNo}번`, detail: `${b.terminal || '터미널 없음'} · 이 업체 ${b.loadedCount}/${b.totalCount}박스${b.mergedSeqs.length ? ` · 합포장 ${b.mergedSeqs.join('·')}번 함께 상차` : ''}`, labelId: b.labelId };
       } else if (result.status === 'duplicate') {
         const b = result.box;
         const at = b.loadedAt ? new Date(b.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
+import { mergeLabelText, normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
 import { LABEL_TEMPLATE_KEY, buildTemplate, parseElements, type LabelData, type LabelTemplate } from '@/lib/labels/template';
 import { LABEL_MARGIN_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelTemplate, type CardLabelBase, type CardLabelInfo } from '@/lib/labels/server';
 import { requirePermission } from '@/lib/permissions/access';
@@ -99,7 +100,20 @@ export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: 
   if (ids.length !== seqs.length) return fail('바코드를 발급하지 못한 박스가 있습니다. 다시 시도해주세요.');
   await supabase.from('box_label_events').insert(ids.map((label_id) => ({ label_id, event: 'print' as const, label_kind: LABEL_TEMPLATE_KEY, created_by: userId })));
 
-  const labels: LabelData[] = seqs.map((seq) => ({ ...base.data, boxNo: seq, barcode: labelBySeq.get(seq)!.barcode }));
+  const labels: LabelData[] = seqs.map((seq) => ({ ...base.data, boxNo: seq, barcode: labelBySeq.get(seq)!.barcode, merge: mergeLabelText(base.mergeGroups, seq) }));
   revalidatePath('/packing-log');
   return { error: null, template, labels, infos: await loadCardLabels(supabase, input.dailyBusinessId) };
+}
+
+// 합포장 묶음 저장(박스 할당 화면의 라벨 영역). 묶음을 바꾸면 이미 출력한 라벨의 합포장 표시가 달라지므로 화면에서 다시 출력하도록 안내한다.
+export async function saveMergeGroups(dailyBusinessId: string, groups: MergeGroups): Promise<{ error: string | null; groups: MergeGroups }> {
+  await requirePermission('packing:submit');
+  const normalized = normalizeMergeGroups(groups);
+  const supabase = await createClient();
+  const { error } = await supabase.from('daily_businesses').update({ merge_groups: normalized }).eq('id', dailyBusinessId);
+  if (error) return { error: error.message, groups: normalized };
+  revalidatePath('/packing-log');
+  revalidatePath('/dashboard');
+  revalidatePath('/overview');
+  return { error: null, groups: normalized };
 }

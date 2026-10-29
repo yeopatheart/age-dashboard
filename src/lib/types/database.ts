@@ -90,6 +90,8 @@ type DailyBusiness = {
   display_name: string | null;
   // 그날 카드의 터미널(0029). 고객사의 터미널(businesses.terminal_id)은 기본값일 뿐이고, 표시·집계는 이 값을 쓴다.
   terminal_id: string | null;
+  // 합포장 묶음(0039): 박스 순번 묶음의 배열. 예) [[1,2],[4,5]] — src/lib/box-merge.ts
+  merge_groups: unknown;
   created_at: string;
 };
 
@@ -311,6 +313,7 @@ export type Database = {
           memo?: string | null;
           display_name?: string | null;
           terminal_id?: string | null;
+          merge_groups?: unknown;
           created_at?: string;
         }
       >;

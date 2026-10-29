@@ -14,6 +14,7 @@ export const LABEL_FIELDS = {
   company: '상호',
   contact: '연락처',
   barcodeNumber: '바코드 번호(숫자)',
+  merge: '합포장 표시',
 } as const;
 export type LabelField = keyof typeof LABEL_FIELDS;
 
@@ -66,6 +67,7 @@ export interface LabelData {
   company: string;
   contact: string;
   barcode: string;
+  merge: string; // 합포장이면 "합포장 1·2", 아니면 빈 글자
 }
 
 export function fieldText(field: LabelField, data: LabelData): string {
@@ -77,6 +79,7 @@ export function fieldText(field: LabelField, data: LabelData): string {
     case 'company': return data.company;
     case 'contact': return data.contact;
     case 'barcodeNumber': return data.barcode;
+    case 'merge': return data.merge;
   }
 }
 
@@ -166,4 +169,5 @@ export const SAMPLE_LABEL_DATA: LabelData = {
   company: '통영아재수산',
   contact: '055-000-0000',
   barcode: '261028012035',
+  merge: '합포장 1·2',
 };

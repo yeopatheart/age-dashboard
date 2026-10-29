@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import type { OrderItem, OrderRow } from '@/lib/orders';
 import { findChangedAfterPacking } from '@/lib/packing/server';
+import { normalizeMergeGroups } from '@/lib/box-merge';
 import { boxStatesOf, type LabelRow } from '@/lib/overview';
 import { DashboardClient } from './dashboard-client';
 import { requireMenu } from '@/lib/permissions/access';
@@ -35,7 +36,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       fetchAll((from, to) => supabase.from('businesses').select('id, name, terminal_id').order('name').order('id').range(from, to), '업체 조회 실패: '),
       supabase
         .from('daily_businesses')
-        .select('id, business_id, business_number, round, memo, terminal_id, display_name')
+        .select('id, business_id, business_number, round, memo, terminal_id, display_name, merge_groups')
         .eq('order_date', orderDate)
         .order('sort_order'),
       fetchAll((from, to) => supabase.from('products').select('name, fill_color, border_color').order('id').range(from, to), '상품 조회 실패: '),
@@ -105,6 +106,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         totalBoxes,
         memo: daily.memo,
         parcel,
+        mergeGroups: normalizeMergeGroups(daily.merge_groups, totalBoxes ?? 99),
         boxStates: parcel ? [] : boxStatesOf(totalBoxes, labelsByDaily.get(daily.id) ?? []),
       },
     ];
