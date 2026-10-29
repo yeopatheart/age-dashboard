@@ -17,10 +17,12 @@ export const metadata: Metadata = {
 };
 
 // viewport-fit=cover: iPhone 하단 홈 인디케이터 영역까지 그리고, 하단 고정 바는 env(safe-area-inset-bottom)로 피한다.
-// 확대 금지(maximum-scale)는 접근성 때문에 쓰지 않는다 — 입력 확대는 입력 글자를 16px 이상으로 해서 막는다.
+// maximum-scale=1: iOS Safari가 16px 미만 입력칸을 포커스할 때 화면을 자동 확대하는 것을 막는다(입력 글자를 버튼과 같은 14px로 맞추기 위해).
+// 대가로 안드로이드 Chrome의 두 손가락 확대가 막힌다 — 필요해지면 이 값을 빼고 globals.css의 --input-fs를 16px로 올린다.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
   viewportFit: "cover",
   themeColor: "#003057",
 };

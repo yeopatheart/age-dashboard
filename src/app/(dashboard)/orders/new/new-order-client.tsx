@@ -537,7 +537,7 @@ export function NewOrderClient({
           .new-order-root .page-header { column-gap: 0.4rem; }
           .round-toggle { flex: none; padding: 2px; }
           .round-toggle button { height: calc(var(--ctl-h) - 6px); padding: 0 0.9rem; font-size: 0.8125rem; }
-          .paste-area { font-family: var(--font-sans); line-height: 1.45; }
+          .paste-area { font-family: var(--font-sans); line-height: 1.45; font-size: 13px !important; }
           .paste-area::placeholder { font-size: 12px; line-height: 1.5; }
         }
         .guide-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
