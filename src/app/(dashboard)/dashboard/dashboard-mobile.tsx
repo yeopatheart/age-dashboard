@@ -1,6 +1,8 @@
 'use client';
-import { useState } from 'react';
-import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, ListChecks, PackageX, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, GripVertical, ListChecks, PackageX, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { getProductSummary, isCardComplete, isUndecidedQuantity, roundLabel, type OrderItem, type OrderRound, type OrderRow } from '@/lib/orders';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
 
@@ -31,6 +33,8 @@ export interface DashboardMobileProps {
   onCancelItem: (item: OrderItem) => void;
   onDeleteItem: (item: OrderItem) => void;
   onDeleteOrder: (row: OrderRow) => void;
+  // 카드를 끌어 순서를 바꿨을 때: 그 구분(기본/별도) 전체의 새 순서(id 배열)
+  onReorder: (segment: 'main' | 'separate', orderedIds: string[]) => void;
 }
 
 const isDone = (i: OrderItem) => !isUndecidedQuantity(i) && (i.isPacked || i.quantity - i.unshippedQuantity <= 0);
@@ -67,6 +71,25 @@ function statsOf(rowItems: OrderItem[]): Stats {
   };
 }
 const hasException = (s: Stats, row: OrderRow) => s.added + s.modified + s.cancelled + s.unshipped + s.undecided > 0 || !!row.packingChanged;
+
+// 고객 카드 한 장. 순서는 카드 오른쪽 끝의 손잡이를 끌어서만 바꾼다(카드 전체를 끌게 하면 목록을 스크롤하다가 순서가 바뀐다).
+function SortableCard({ id, disabled, className, children }: { id: string; disabled: boolean; className: string; children: (handle: ReactNode) => ReactNode }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
+  const handle = disabled ? null : (
+    <button ref={setActivatorNodeRef} {...attributes} {...listeners} className="dm-grip" aria-label="끌어서 순서 변경" title="끌어서 순서 변경">
+      <GripVertical size={18} />
+    </button>
+  );
+  return (
+    <li
+      ref={setNodeRef}
+      className={`${className} ${isDragging ? 'dm-dragging' : ''}`}
+      style={{ transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined, transition }}
+    >
+      {children(handle)}
+    </li>
+  );
+}
 
 export function DashboardMobile(props: DashboardMobileProps) {
   const { orderDate, today, mainRows, separateRows, items, terminalColors, roundOf, readOnly, canDelete } = props;
@@ -120,6 +143,20 @@ export function DashboardMobile(props: DashboardMobileProps) {
   const terminalRowIds = new Set(byTerminal.map((r) => r.dailyBusinessId));
   const productRows = getProductSummary(items.filter((i) => terminalRowIds.has(i.dailyBusinessId)));
 
+  // 순서 드래그: 화면에 보이는 카드(필터 적용 후)끼리만 자리를 바꾸고, 가려진 카드는 제자리에 둔다.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const canReorder = !readOnly && view === 'customers';
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const from = visible.findIndex((r) => r.dailyBusinessId === active.id);
+    const to = visible.findIndex((r) => r.dailyBusinessId === over.id);
+    if (from < 0 || to < 0) return;
+    const moved = arrayMove(visible, from, to).map((r) => r.dailyBusinessId);
+    const visibleIds = new Set(visible.map((r) => r.dailyBusinessId));
+    let cursor = 0;
+    props.onReorder(segment, segmentRows.map((r) => (visibleIds.has(r.dailyBusinessId) ? moved[cursor++] : r.dailyBusinessId)));
+  };
+
   const sheetItem = items.find((i) => i.id === sheetItemId) ?? null;
   const sheetRow = sheetItem ? [...mainRows, ...separateRows].find((r) => r.dailyBusinessId === sheetItem.dailyBusinessId) ?? null : null;
   const toggleOpen = (id: string) =>
@@ -136,8 +173,8 @@ export function DashboardMobile(props: DashboardMobileProps) {
   };
 
   const filters: { key: StatusFilter; label: string; count: number }[] = [
-    { key: 'pending', label: '미완료', count: counts.pending },
     { key: 'all', label: '전체', count: counts.all },
+    { key: 'pending', label: '미완료', count: counts.pending },
     { key: 'done', label: '완료', count: counts.done },
     { key: 'changed', label: '변경·예외', count: counts.changed },
   ];
@@ -202,6 +239,8 @@ export function DashboardMobile(props: DashboardMobileProps) {
           ))}
         </ul>
       ) : (
+        <DndContext id="mobile-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={visible.map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
         <ul className="dm-cards">
           {visible.length === 0 && (
             <li className="dm-empty">
@@ -219,7 +258,11 @@ export function DashboardMobile(props: DashboardMobileProps) {
             const summary = live.slice(0, 3).map((i) => `${i.productName} ${isUndecidedQuantity(i) ? '미정' : `${i.quantity}${i.unit}`}`).join(' · ') + (live.length > 3 ? ` 외 ${live.length - 3}건` : '');
             const badge = terminalBadgeProps(row.terminal, terminalColors);
             return (
-              <li key={row.dailyBusinessId} className={`dm-card ${done ? 'dm-card-done' : ''}`}>
+              <SortableCard key={row.dailyBusinessId} id={row.dailyBusinessId} disabled={!canReorder} className={`dm-card ${done ? 'dm-card-done' : ''}`}>
+                {(handle) => (
+                <>
+                <div className="dm-card-top">
+                <span className="dm-no">{segmentRows.indexOf(row) + 1}</span>
                 <button className="dm-card-head" onClick={() => toggleOpen(row.dailyBusinessId)} aria-expanded={open}>
                   <span className={`dm-term ${badge.className}`} style={badge.style}>{row.terminal || '-'}</span>
                   <span className="dm-name">
@@ -230,6 +273,8 @@ export function DashboardMobile(props: DashboardMobileProps) {
                   <span className="dm-boxes">박스 {row.totalBoxes ?? '-'}</span>
                   <ChevronDown size={18} className={`dm-chev ${open ? 'dm-chev-open' : ''}`} />
                 </button>
+                {handle}
+                </div>
                 <div className="dm-meta">
                   <span className="dm-prog"><b>{s.done}</b>/{s.live}</span>
                   <div className="dm-bar dm-bar-sm"><span style={{ width: `${s.live ? (s.done / s.live) * 100 : 0}%` }} /></div>
@@ -268,10 +313,14 @@ export function DashboardMobile(props: DashboardMobileProps) {
                     )}
                   </div>
                 )}
-              </li>
+                </>
+                )}
+              </SortableCard>
             );
           })}
         </ul>
+        </SortableContext>
+        </DndContext>
       )}
 
       {sheetItem && (
@@ -343,6 +392,11 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-empty button { min-height: 44px; padding: 0 1.2rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-weight: 800; }
         .dm-card { background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
         .dm-card-done { background: #f0fdf4; border-color: #86efac; }
+        .dm-card-top { display: flex; align-items: center; }
+        .dm-no { flex: none; min-width: 1.9rem; padding-left: 0.6rem; font-size: 0.75rem; font-weight: 800; color: #94a3b8; font-variant-numeric: tabular-nums; }
+        .dm-grip { flex: none; width: 40px; height: 40px; margin-right: 0.15rem; display: grid; place-items: center; background: none; border: 0; color: #94a3b8; touch-action: none; cursor: grab; border-radius: 10px; }
+        .dm-grip:active { background: #f1f5f9; color: #475569; }
+        .dm-dragging { position: relative; z-index: 30; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.28); opacity: 0.95; }
         .dm-card-head { width: 100%; display: flex; align-items: center; gap: 0.45rem; padding: 0.55rem 0.7rem 0.25rem; background: none; border: 0; text-align: left; min-height: 44px; }
         .dm-term { flex: none; white-space: nowrap; padding: 0.1rem 0.45rem; border-radius: 7px; border: 1px solid; font-size: 0.6875rem; font-weight: 800; }
         .dm-name { flex: 1; min-width: 0; font-size: 0.9375rem; font-weight: 800; line-height: 1.25; word-break: keep-all; }

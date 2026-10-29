@@ -880,6 +880,15 @@ export function DashboardClient({
       await reorderDailyBusinesses(orderedIds);
     });
   };
+  // 휴대폰 화면에서 카드를 끌어 바꾼 순서: 구분(기본/별도) 안의 새 순서를 전체 순서의 그 구분 자리에 끼워 넣는다(다른 구분 카드는 제자리).
+  const handleMobileReorder = (segment: 'main' | 'separate', segmentIds: string[]) => {
+    let cursor = 0;
+    const orderedIds = allRows.map((r) => (separateNames.has(r.terminal) === (segment === 'separate') ? segmentIds[cursor++] : r.dailyBusinessId));
+    startReorder(async () => {
+      setOptimisticOrder(orderedIds);
+      await reorderDailyBusinesses(orderedIds);
+    });
+  };
   const rowSlotCount = isSplitMode ? ownCapacity : displayedRows.length;
   // gridTemplateRows를 고정하지 않으면 내용이 긴 칸 하나가 행 전체를 키워서 행 높이 규칙이 깨진다.
   const rowStyle = { height: rowHeight, gridTemplateRows: `${rowHeight}px` };
@@ -1157,6 +1166,7 @@ export function DashboardClient({
           onCancelItem={(item) => void cancelOrderItem(item.id)}
           onDeleteItem={(item) => setConfirmDelete({ type: 'item', itemId: item.id })}
           onDeleteOrder={(row) => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
+          onReorder={handleMobileReorder}
         />
         {overlays}
       </>
