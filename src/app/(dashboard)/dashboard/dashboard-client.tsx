@@ -16,6 +16,7 @@ import {
   reorderDailyBusinesses,
   createManualOrder,
   updateOrder,
+  renameDailyBusiness,
   deleteDailyBusiness,
   addOrderItemManual,
   updateOrderItemManual,
@@ -96,6 +97,68 @@ function RoundBadge({ round }: { round: OrderRound }) {
   return (
     <span className={`inline-block align-middle mr-1 px-1 rounded border text-[10px] font-bold leading-[14px] ${round === 1 ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-violet-50 text-violet-700 border-violet-200'}`}>
       {roundLabel(round)}
+    </span>
+  );
+}
+
+// 별도 주문 팝업의 고객명. 누르면 그 자리에서 고칠 수 있다 — 바뀐 이름은 이 날짜의 카드에만 적용되고 고객사 관리의 이름은 그대로다.
+// 비우거나 고객사 이름과 같게 쓰면 기본 이름으로 돌아간다.
+function EditableCardName({ row, readOnly }: { row: OrderRow; readOnly: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(row.businessName);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const changed = row.businessName !== row.defaultName;
+
+  const save = async () => {
+    if (busy) return;
+    if (draft.trim() === row.businessName) return setEditing(false);
+    setBusy(true);
+    setError(null);
+    const result = await renameDailyBusiness(row.dailyBusinessId, draft);
+    setBusy(false);
+    if (result.error) return setError(result.error);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <span className="inline-flex flex-col gap-0.5">
+        <input
+          autoFocus
+          value={draft}
+          maxLength={60}
+          disabled={busy}
+          placeholder={row.defaultName}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void save();
+            if (e.key === 'Escape') {
+              setDraft(row.businessName);
+              setEditing(false);
+            }
+          }}
+          className="w-44 rounded-md border border-sky-400 px-1.5 py-0.5 text-sm font-bold text-slate-800 focus:outline-none"
+        />
+        {error ? <span className="text-[10px] font-bold text-rose-600">{error}</span> : <span className="text-[10px] text-slate-400">이 날짜만 바뀝니다 · 비우면 &apos;{row.defaultName}&apos;</span>}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <span>{row.businessName}</span>
+      {changed && <span className="text-[10px] font-bold text-sky-600" title={`고객사 관리의 이름: ${row.defaultName}`}>(변경)</span>}
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={() => { setDraft(row.businessName); setEditing(true); }}
+          className="ml-0.5 w-4 h-4 rounded bg-slate-100 hover:bg-slate-600 text-slate-500 hover:text-white items-center justify-center hidden group-hover:inline-flex self-center"
+          title="이 날짜의 고객명 수정"
+        >
+          <Pencil className="w-2.5 h-2.5" />
+        </button>
+      )}
     </span>
   );
 }
@@ -1421,7 +1484,7 @@ export function DashboardClient({
                     )}
                     <div className="w-72 flex-shrink-0 flex items-center gap-2">
                       <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
-                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
+                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} /></span>
                       <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes ?? '-'}</span>
                     </div>
                     <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
