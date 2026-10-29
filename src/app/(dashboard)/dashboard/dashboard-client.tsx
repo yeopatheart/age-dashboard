@@ -1524,6 +1524,17 @@ export function DashboardClient({
                         </button>
                       )}
                     </div>
+                    {!readOnly && canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
+                        className="flex-shrink-0 w-7 h-7 rounded-md bg-rose-50 hover:bg-rose-500 flex items-center justify-center self-center"
+                        title="이 날짜의 주문 삭제 (고객사 관리의 고객사는 그대로입니다)"
+                        aria-label={`${row.businessName} 주문 삭제`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-500 hover:text-white" />
+                      </button>
+                    )}
                     </>
                     )}
                   </SortableRow>
@@ -1593,7 +1604,7 @@ export function DashboardClient({
         <ConfirmModal
           message={
             confirmDelete.type === 'order'
-              ? '이 주문을 완전히 삭제하시겠습니까? 등록된 상품도 모두 함께 삭제됩니다.'
+              ? '이 날짜의 주문을 완전히 삭제하시겠습니까? 등록된 상품도 모두 함께 삭제됩니다. (고객사 관리의 고객사는 삭제되지 않습니다.)'
               : '이 상품을 주문에서 삭제하시겠습니까? 취소 상태로만 변경하려면 "×" 버튼을 이용하세요.'
           }
           onConfirm={async () => {
