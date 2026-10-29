@@ -71,6 +71,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   }
 
   const terminalNameById = new Map((allTerminals ?? []).map((t) => [t.id, t.name]));
+  const separateTerminalIds = new Set((allTerminals ?? []).filter((t) => t.is_separate).map((t) => t.id));
   const businessById = new Map(businessRows.map((b) => [b.id, b]));
 
   const rows: OrderRow[] = dailyBusinessRows.flatMap((daily) => {
@@ -86,7 +87,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         terminal: daily.terminal_id ? terminalNameById.get(daily.terminal_id) ?? '' : '',
         businessNumber: daily.business_number,
         round: daily.round,
-        totalBoxes: boxCountByDaily.get(daily.id) ?? null,
+        // 박스 할당에서 제출한 박스 수. 별도 주문(택배)은 아직 할당 전이면 1박스로 보고, 박스 할당에서 박스 수가 정해지면 그 수로 바뀐다.
+        totalBoxes: boxCountByDaily.get(daily.id) ?? (daily.terminal_id && separateTerminalIds.has(daily.terminal_id) ? 1 : null),
         memo: daily.memo,
       },
     ];
