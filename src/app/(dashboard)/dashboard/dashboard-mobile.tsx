@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from 'react';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, GripVertical, ListChecks, PackageX, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, GripVertical, ListChecks, PackageX, Pencil, Plus, Trash2, UserPlus, X } from 'lucide-react';
 import { getProductSummary, isCardComplete, isUndecidedQuantity, roundLabel, type OrderItem, type OrderRound, type OrderRow } from '@/lib/orders';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
 
@@ -33,6 +33,8 @@ export interface DashboardMobileProps {
   onCancelItem: (item: OrderItem) => void;
   onDeleteItem: (item: OrderItem) => void;
   onDeleteOrder: (row: OrderRow) => void;
+  // 오늘 날짜에 고객(주문) 카드를 새로 추가하는 창을 연다(PC의 + 버튼과 같은 창)
+  onAddOrder: () => void;
   // 카드를 끌어 순서를 바꿨을 때: 그 구분(기본/별도) 전체의 새 순서(id 배열)
   onReorder: (segment: 'main' | 'separate', orderedIds: string[]) => void;
 }
@@ -183,13 +185,20 @@ export function DashboardMobile(props: DashboardMobileProps) {
     <div className="dm-root">
       <div className="dm-head">
         <div className="dm-date">
-          <button className="dm-icon" onClick={() => shiftDate(-1)} aria-label="전날"><ChevronLeft size={20} /></button>
-          <label className="dm-date-label">
-            <input type="date" value={orderDate} max={today} onChange={(e) => e.target.value && props.onSetDate(e.target.value)} />
-            <span>{orderDate.slice(5).replace('-', '/')}{orderDate === today ? ' · 오늘' : ''}</span>
-          </label>
-          <button className="dm-icon" onClick={() => shiftDate(1)} disabled={orderDate >= today} aria-label="다음날"><ChevronRight size={20} /></button>
-          {orderDate !== today && <button className="dm-today" onClick={() => props.onSetDate(today)}>오늘</button>}
+          <div className="dm-date-nav">
+            <button className="dm-icon" onClick={() => shiftDate(-1)} aria-label="전날"><ChevronLeft size={18} /></button>
+            <label className="dm-date-label">
+              <input type="date" value={orderDate} max={today} onChange={(e) => e.target.value && props.onSetDate(e.target.value)} />
+              <span>{orderDate.slice(5).replace('-', '/')}{orderDate === today ? ' · 오늘' : ''}</span>
+            </label>
+            <button className="dm-icon" onClick={() => shiftDate(1)} disabled={orderDate >= today} aria-label="다음날"><ChevronRight size={18} /></button>
+            {orderDate !== today && <button className="dm-today" onClick={() => props.onSetDate(today)}>오늘</button>}
+          </div>
+          {!readOnly && (
+            <button className="dm-add" onClick={props.onAddOrder} aria-label="주문 추가" title="주문 추가 (고객 카드 추가)">
+              <UserPlus size={18} />
+            </button>
+          )}
         </div>
 
         <div className="dm-chips" role="tablist" aria-label="터미널">
@@ -364,10 +373,13 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-root { display: flex; flex-direction: column; gap: 0.6rem; padding-bottom: 1rem; }
         .dm-head { display: flex; flex-direction: column; gap: 0.4rem; }
         .dm-sticky { position: sticky; top: 0; z-index: 20; background: var(--background, #f8fafc); padding: 0.25rem 0.25rem 0.35rem; margin: 0 -0.25rem; display: flex; flex-direction: column; gap: 0.35rem; }
-        .dm-date { display: flex; align-items: center; gap: 0.4rem; }
+        .dm-date { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+        .dm-date-nav { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
+        .dm-add { flex: none; width: var(--ctl-h); height: var(--ctl-h); border-radius: 12px; border: 0; background: #003057; color: #fff; display: grid; place-items: center; }
+        .dm-add:active { opacity: 0.85; }
         .dm-icon { width: var(--ctl-h); height: var(--ctl-h); border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; flex: none; }
         .dm-icon:disabled { opacity: 0.4; }
-        .dm-date-label { position: relative; flex: 1; height: var(--ctl-h); border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; font-size: 0.9375rem; font-weight: 800; }
+        .dm-date-label { position: relative; flex: none; min-width: 7.2rem; padding: 0 0.6rem; height: var(--ctl-h); border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; font-size: 0.9375rem; font-weight: 800; }
         .dm-date-label input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; font-size: 16px; }
         .dm-today { height: var(--ctl-h); padding: 0 0.8rem; border-radius: 12px; border: 0; background: #003057; color: #fff; font-weight: 800; font-size: 0.8125rem; flex: none; }
         .dm-progress { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0 0.7rem; height: var(--ctl-h); display: flex; align-items: center; gap: 0.6rem; }

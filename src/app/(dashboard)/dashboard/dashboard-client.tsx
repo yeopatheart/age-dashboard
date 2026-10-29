@@ -1167,6 +1167,7 @@ export function DashboardClient({
           onDeleteItem={(item) => setConfirmDelete({ type: 'item', itemId: item.id })}
           onDeleteOrder={(row) => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
           onReorder={handleMobileReorder}
+          onAddOrder={() => setAddOrderModal(true)}
         />
         {overlays}
       </>
