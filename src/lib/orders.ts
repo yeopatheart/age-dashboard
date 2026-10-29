@@ -1,3 +1,5 @@
+import type { BoxState } from '@/lib/overview';
+
 // mockData.ts를 대체한다. 타입과 순수 집계 함수(getProductSummary/getTerminalBoxTotals)는
 // 스키마와 무관하게 그대로 재사용하고, 실데이터 조회(Supabase 조인)는 각 화면(server component)에서 한다.
 
@@ -34,6 +36,10 @@ export interface OrderRow {
   memo: string | null;
   // 박스 구성을 정한 뒤 주문이 바뀌어 박스를 다시 확인해야 한다 (박스 기록의 추천·제출 기준)
   packingChanged?: boolean;
+  // 택배 터미널(택배사 송장을 붙인다): 박스 라벨을 출력·스캔하지 않는다
+  parcel: boolean;
+  // 박스 번호별 라벨 상태(미출력·출력·상차). 박스 수를 모르면 빈 배열
+  boxStates: BoxState[];
 }
 
 export interface OrderItem {

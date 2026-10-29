@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
 import { MapPinned, Plus, Trash2 } from 'lucide-react';
-import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate } from './actions';
+import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate, setTerminalParcel } from './actions';
 import { ColorPicker } from '@/components/color-picker';
 import { terminalBadgeProps } from '@/lib/terminal-color';
 import { useCan } from '@/components/permissions-context';
@@ -26,6 +26,7 @@ interface Terminal {
   fill_color: string | null;
   border_color: string | null;
   is_separate: boolean;
+  is_parcel: boolean;
 }
 
 export function TerminalsClient({ terminals, businessCount }: { terminals: Terminal[]; businessCount: Record<string, number> }) {
@@ -80,8 +81,12 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
     if (await run(() => createTerminal(newName.trim()))) setNewName('');
   };
   const setSeparate = async (t: Terminal, value: boolean) => {
-    setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], is_separate: value } }));
+    setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], is_separate: value, ...(value ? {} : { is_parcel: false }) } }));
     await setTerminalSeparate(t.id, value);
+  };
+  const setParcel = async (t: Terminal, value: boolean) => {
+    setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], is_parcel: value, ...(value ? { is_separate: true } : {}) } }));
+    await setTerminalParcel(t.id, value);
   };
   const setColor = async (t: Terminal, fill: string | null, border: string | null) => {
     setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], fill_color: fill, border_color: border } }));
@@ -109,6 +114,11 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
       key: 'separate',
       label: '별도 주문',
       render: (t) => <Toggle checked={t.is_separate} onChange={(v) => setSeparate(t, v)} label={`${t.name} 별도 주문`} disabled={!canEdit} />,
+    },
+    {
+      key: 'parcel',
+      label: '택배',
+      render: (t) => <Toggle checked={t.is_parcel} onChange={(v) => setParcel(t, v)} label={`${t.name} 택배`} disabled={!canEdit} />,
     },
     { key: 'via', label: '등록', render: (t) => <ViaTag via={t.created_via} date={t.created_at} /> },
   ];
@@ -201,6 +211,13 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
               <small>켜면 대시보드 기본 주문표에서 빼고 &apos;별도 주문&apos; 팝업에서 봅니다 (택배, 직배송 등)</small>
             </span>
             <Toggle checked={open.is_separate} onChange={(v) => setSeparate(open, v)} label="별도 주문" disabled={!canEdit} />
+          </div>
+          <div className="ak-setting">
+            <span>
+              택배
+              <small>택배사 송장을 붙이는 터미널입니다. 켜면 박스 라벨을 출력하지 않고, 박스는 1개로 봅니다(켜면 별도 주문도 함께 켜집니다)</small>
+            </span>
+            <Toggle checked={open.is_parcel} onChange={(v) => setParcel(open, v)} label="택배" disabled={!canEdit} />
           </div>
           <div className="ak-field">
             <span className="ak-field-label">색상</span>

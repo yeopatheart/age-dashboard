@@ -34,6 +34,8 @@ type Terminal = {
   border_color: string | null;
   // true면 대시보드 기본 주문표에서 빼고 "별도 주문"으로 따로 본다(택배, 직배송 등).
   is_separate: boolean;
+  // true면 택배사 송장을 붙이는 택배 터미널(박스 라벨을 출력·스캔하지 않는다). 별도 주문 중에서만 지정한다.
+  is_parcel: boolean;
 };
 
 type Business = {
@@ -266,7 +268,7 @@ export type Database = {
       >;
       terminals: TableDef<
         Terminal,
-        Pick<Terminal, "name"> & { id?: string; created_at?: string; created_via?: CreatedVia; fill_color?: string | null; border_color?: string | null; is_separate?: boolean }
+        Pick<Terminal, "name"> & { id?: string; created_at?: string; created_via?: CreatedVia; fill_color?: string | null; border_color?: string | null; is_separate?: boolean; is_parcel?: boolean }
       >;
       businesses: TableDef<
         Business,

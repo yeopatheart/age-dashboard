@@ -52,7 +52,18 @@ export async function setTerminalColor(id: string, fill: string | null, border: 
 export async function setTerminalSeparate(id: string, isSeparate: boolean): Promise<{ error: string | null }> {
   await requirePermission('terminals:edit');
   const supabase = await createClient();
-  const { error } = await supabase.from('terminals').update({ is_separate: isSeparate }).eq('id', id);
+  const { error } = await supabase.from('terminals').update(isSeparate ? { is_separate: true } : { is_separate: false, is_parcel: false }).eq('id', id);
+  if (error) return { error: error.message };
+  revalidatePath('/terminals');
+  revalidatePath('/dashboard');
+  return { error: null };
+}
+
+// 택배 터미널은 택배사 송장을 붙이므로 박스 라벨을 출력하지 않는다. 택배는 별도 주문의 한 종류라 켜면 별도 주문도 함께 켠다.
+export async function setTerminalParcel(id: string, isParcel: boolean): Promise<{ error: string | null }> {
+  await requirePermission('terminals:edit');
+  const supabase = await createClient();
+  const { error } = await supabase.from('terminals').update(isParcel ? { is_parcel: true, is_separate: true } : { is_parcel: false }).eq('id', id);
   if (error) return { error: error.message };
   revalidatePath('/terminals');
   revalidatePath('/dashboard');
