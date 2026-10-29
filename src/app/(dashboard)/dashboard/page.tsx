@@ -5,6 +5,7 @@ import { findChangedAfterPacking } from '@/lib/packing/server';
 import { DashboardClient } from './dashboard-client';
 import { requireMenu } from '@/lib/permissions/access';
 import { fetchAll } from '@/lib/supabase/fetch-all';
+import { headers } from 'next/headers';
 import { todayKST } from '@/lib/order-date';
 
 // 조인을 얕은 여러 쿼리로 나눠서 처리한다 — database.ts가 아직 손으로 쓴 임시 타입이라
@@ -14,6 +15,8 @@ import { todayKST } from '@/lib/order-date';
 // 행(row)은 order_item이 아니라 daily_business 기준으로 만든다 — "새 주문 추가"로 방금 만든,
 // 아직 상품이 하나도 없는 업체도 매트릭스에 빈 줄로 보여야 하기 때문이다.
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
+  // 휴대폰이면 처음부터 모바일 화면을 그린다(서버는 화면 폭을 모르므로 기기 종류로 판단하고, 브라우저가 폭으로 다시 확정한다).
+  const initialMobile = /Mobile|Android|iPhone|iPod/i.test((await headers()).get('user-agent') ?? '');
   const accessCheck = requireMenu('dashboard'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 마지막에 await로 확정)
   const supabase = await createClient();
   const today = todayKST();
@@ -148,6 +151,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       unshippedReasons={settings.unshippedReasons}
       allowPast={settings.allowPastOrderEdit}
       highlights={(highlightRows ?? []).map((h) => h.product_name)}
+      initialMobile={initialMobile}
       productColors={Object.fromEntries(productRows.map((p) => [p.name, { fill: p.fill_color, border: p.border_color }]))}
       today={today}
     />

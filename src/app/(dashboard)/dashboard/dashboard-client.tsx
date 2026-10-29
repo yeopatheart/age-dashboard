@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useEffect, useLayoutEffect, useOptimistic, useTransition } from 'react';
+import { useState, useRef, useLayoutEffect, useOptimistic, useSyncExternalStore, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -9,6 +9,7 @@ import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/l
 import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
+import { DashboardMobile } from './dashboard-mobile';
 import {
   setProductHighlight,
   clearProductHighlights,
@@ -691,6 +692,7 @@ export function DashboardClient({
   unshippedReasons,
   allowPast,
   highlights,
+  initialMobile,
 }: {
   rows: OrderRow[];
   items: OrderItem[];
@@ -702,6 +704,7 @@ export function DashboardClient({
   unshippedReasons: string[];
   allowPast: boolean;
   highlights: string[];
+  initialMobile: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -775,14 +778,15 @@ export function DashboardClient({
   // 모바일(휴대폰)은 화면이 하나뿐이라 모니터 1/2로 나누는 게 의미가 없다 — 항상 전체보기로
   // 강제한다. 서버 렌더 시점엔 뷰포트를 알 수 없어 기본값(false)으로 그리고 마운트 후
   // matchMedia로 판정해 갱신한다(사이드바 접힘과 같은 패턴 — AGENTS.md 알려진 이슈 참고).
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 768px)');
-    const update = () => setIsMobile(mq.matches);
-    update();
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
+  const isMobile = useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia('(max-width: 768px)');
+      mq.addEventListener('change', cb);
+      return () => mq.removeEventListener('change', cb);
+    },
+    () => window.matchMedia('(max-width: 768px)').matches,
+    () => initialMobile, // 서버는 요청한 기기로 판단한 값을 쓴다 — 폰에서 PC 화면이 한 번 비쳤다 바뀌는 깜빡임을 막는다
+  );
 
   const effectiveMonitorMode = isMobile ? 'all' : monitorMode;
   const isSplitMode = effectiveMonitorMode !== 'all';
@@ -1057,6 +1061,107 @@ export function DashboardClient({
   );
 
   const productPanel = <ProductSummaryPanel columns={columns} chipStyle={chipStyle} availHeight={availHeight} />;
+
+  // 모달·확인창은 PC와 휴대폰 화면이 같이 쓴다.
+  const overlays = (
+    <>
+      {addOrderModal && (
+        <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={allRows.map((r) => ({ businessId: r.businessId, round: r.round, terminal: r.terminal }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
+      )}
+      {editOrderModal && (
+        <OrderFormModal
+          initial={{
+            businessName: editOrderModal.businessName,
+            terminalId: allTerminals.find((t) => t.name === editOrderModal.terminal)?.id ?? null,
+          }}
+          terminals={allTerminals}
+          businesses={businessDirectory}
+          onSave={handleSaveOrder}
+          onClose={() => setEditOrderModal(null)}
+        />
+      )}
+      {addItemModal && (
+        <ItemFormModal
+          mode="add"
+          initial={{ productName: addItemModal.prefillProductName, unit: addItemModal.prefillUnit, changeStatus: 'new' }}
+          onSave={handleSaveItem}
+          onClose={() => setAddItemModal(null)}
+        />
+      )}
+      {unshippedModal && (
+        <UnshippedModal
+          item={unshippedModal}
+          reasons={unshippedReasons}
+          onSave={async (qty, reason) => {
+            const result = await setItemUnshipped(unshippedModal.id, qty, reason);
+            if (result.error) return result.error;
+            setUnshippedModal(null);
+            return null;
+          }}
+          onClose={() => setUnshippedModal(null)}
+        />
+      )}
+      {editItemModal && (
+        <ItemFormModal
+          mode="edit"
+          initial={{
+            productName: editItemModal.productName,
+            quantity: editItemModal.quantity,
+            unit: editItemModal.unit,
+            secondaryWeightKg: editItemModal.secondaryWeightKg ?? null,
+            sizeRequest: editItemModal.sizeRequest ?? null,
+            changeStatus: editItemModal.changeStatus,
+          }}
+          onSave={handleSaveItem}
+          onClose={() => setEditItemModal(null)}
+        />
+      )}
+      {confirmDelete && (
+        <ConfirmModal
+          message={
+            confirmDelete.type === 'order'
+              ? '이 날짜의 주문을 완전히 삭제하시겠습니까? 등록된 상품도 모두 함께 삭제됩니다. (고객사 관리의 고객사는 삭제되지 않습니다.)'
+              : '이 상품을 주문에서 삭제하시겠습니까? 취소 상태로만 변경하려면 "×" 버튼을 이용하세요.'
+          }
+          onConfirm={async () => {
+            if (confirmDelete.type === 'order' && confirmDelete.dailyBusinessId) {
+              await deleteDailyBusiness(confirmDelete.dailyBusinessId);
+            } else if (confirmDelete.itemId) {
+              await deleteOrderItem(confirmDelete.itemId);
+            }
+          }}
+          onClose={() => setConfirmDelete(null)}
+        />
+      )}
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <>
+        <DashboardMobile
+          orderDate={orderDate}
+          today={today}
+          mainRows={mainRows}
+          separateRows={separateRows}
+          items={items}
+          terminalColors={terminalColors}
+          roundOf={roundOf}
+          readOnly={readOnly}
+          canDelete={canDelete}
+          onSetDate={setDate}
+          onTogglePacked={handleTogglePacked}
+          onEditItem={setEditItemModal}
+          onAddItem={(row) => setAddItemModal({ row })}
+          onUnshipped={setUnshippedModal}
+          onCancelItem={(item) => void cancelOrderItem(item.id)}
+          onDeleteItem={(item) => setConfirmDelete({ type: 'item', itemId: item.id })}
+          onDeleteOrder={(row) => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
+        />
+        {overlays}
+      </>
+    );
+  }
 
   return (
     // 대시보드 페이지의 여백 자체는 dashboard-shell.tsx의 .main-content-tight가 담당한다
@@ -1549,74 +1654,7 @@ export function DashboardClient({
         </div>
       )}
 
-      {addOrderModal && (
-        <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={allRows.map((r) => ({ businessId: r.businessId, round: r.round, terminal: r.terminal }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
-      )}
-      {editOrderModal && (
-        <OrderFormModal
-          initial={{
-            businessName: editOrderModal.businessName,
-            terminalId: allTerminals.find((t) => t.name === editOrderModal.terminal)?.id ?? null,
-          }}
-          terminals={allTerminals}
-          businesses={businessDirectory}
-          onSave={handleSaveOrder}
-          onClose={() => setEditOrderModal(null)}
-        />
-      )}
-      {addItemModal && (
-        <ItemFormModal
-          mode="add"
-          initial={{ productName: addItemModal.prefillProductName, unit: addItemModal.prefillUnit, changeStatus: 'new' }}
-          onSave={handleSaveItem}
-          onClose={() => setAddItemModal(null)}
-        />
-      )}
-      {unshippedModal && (
-        <UnshippedModal
-          item={unshippedModal}
-          reasons={unshippedReasons}
-          onSave={async (qty, reason) => {
-            const result = await setItemUnshipped(unshippedModal.id, qty, reason);
-            if (result.error) return result.error;
-            setUnshippedModal(null);
-            return null;
-          }}
-          onClose={() => setUnshippedModal(null)}
-        />
-      )}
-      {editItemModal && (
-        <ItemFormModal
-          mode="edit"
-          initial={{
-            productName: editItemModal.productName,
-            quantity: editItemModal.quantity,
-            unit: editItemModal.unit,
-            secondaryWeightKg: editItemModal.secondaryWeightKg ?? null,
-            sizeRequest: editItemModal.sizeRequest ?? null,
-            changeStatus: editItemModal.changeStatus,
-          }}
-          onSave={handleSaveItem}
-          onClose={() => setEditItemModal(null)}
-        />
-      )}
-      {confirmDelete && (
-        <ConfirmModal
-          message={
-            confirmDelete.type === 'order'
-              ? '이 날짜의 주문을 완전히 삭제하시겠습니까? 등록된 상품도 모두 함께 삭제됩니다. (고객사 관리의 고객사는 삭제되지 않습니다.)'
-              : '이 상품을 주문에서 삭제하시겠습니까? 취소 상태로만 변경하려면 "×" 버튼을 이용하세요.'
-          }
-          onConfirm={async () => {
-            if (confirmDelete.type === 'order' && confirmDelete.dailyBusinessId) {
-              await deleteDailyBusiness(confirmDelete.dailyBusinessId);
-            } else if (confirmDelete.itemId) {
-              await deleteOrderItem(confirmDelete.itemId);
-            }
-          }}
-          onClose={() => setConfirmDelete(null)}
-        />
-      )}
+      {overlays}
     </div>
   );
 }

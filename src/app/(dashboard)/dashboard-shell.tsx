@@ -42,6 +42,9 @@ const NAV_ITEMS: { menu: MenuKey | 'users'; icon: typeof Sparkles }[] = [
   { menu: 'settings', icon: Settings },
   { menu: 'users', icon: ShieldCheck },
 ];
+// 하단 탭에 올릴 메뉴(왼쪽부터). 라벨은 탭 폭에 맞춰 짧게 쓴다.
+const BOTTOM_TABS: MenuKey[] = ['dashboard', 'orders', 'packing', 'scan'];
+const BOTTOM_TAB_LABELS: Partial<Record<MenuKey, string>> = { dashboard: '대시보드', orders: '주문 입력', packing: '박스 할당', scan: '상차 스캔' };
 const navEntry = (menu: MenuKey | 'users') => (menu === 'users' ? { href: '/users', label: '사용자 및 권한' } : { href: MENU_DEFS[menu].href, label: MENU_DEFS[menu].label });
 
 const COLLAPSE_STORAGE_KEY = 'age-dashboard-sidebar-collapsed';
@@ -175,6 +178,24 @@ export function DashboardShell({
         <main className={`main-content animate-fade-in ${pathname === '/dashboard' ? 'main-content-tight' : ''}`}>
           {children}
         </main>
+
+        {/* 휴대폰 하단 탭: 자주 쓰는 메뉴를 엄지가 닿는 곳에 둔다(권한이 있는 메뉴만, 나머지는 더보기). */}
+        <nav className="bottom-nav" aria-label="하단 메뉴">
+          {BOTTOM_TABS.filter((menu) => isMaster || allowedMenus.includes(menu)).map((menu) => {
+            const { href } = navEntry(menu);
+            const active = pathname === href || pathname.startsWith(`${href}/`);
+            return (
+              <Link key={menu} href={href} className={active ? 'bottom-tab bottom-tab-on' : 'bottom-tab'} aria-current={active ? 'page' : undefined}>
+                {(() => { const Icon = NAV_ITEMS.find((n) => n.menu === menu)!.icon; return <Icon size={22} />; })()}
+                <span>{BOTTOM_TAB_LABELS[menu]}</span>
+              </Link>
+            );
+          })}
+          <button className="bottom-tab" onClick={() => setSidebarOpen(true)}>
+            <Menu size={22} />
+            <span>더보기</span>
+          </button>
+        </nav>
       </div>
 
       <style>{`
@@ -445,7 +466,39 @@ export function DashboardShell({
           padding: 12px 16px;
         }
 
+        .bottom-nav { display: none; }
         @media (max-width: 768px) {
+          .app-shell { height: 100dvh; }
+          .sidebar { height: 100dvh; }
+          .bottom-nav {
+            display: flex;
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 30;
+            background: #fff;
+            border-top: 1px solid var(--border);
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+          }
+          .bottom-tab {
+            flex: 1;
+            min-width: 0;
+            min-height: 56px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+            background: none;
+            border: 0;
+            color: #64748b;
+            font-size: 0.6875rem;
+            font-weight: 700;
+            text-decoration: none;
+          }
+          .bottom-tab-on { color: var(--primary); }
+          .bottom-tab-on span { font-weight: 900; }
           .sidebar {
             position: fixed;
             top: 0;
@@ -465,6 +518,8 @@ export function DashboardShell({
           .topbar { display: flex; }
           .main-content { padding: 1.25rem; }
           .main-content-tight { padding: 8px 10px; }
+          /* 하단 탭에 가리지 않게 (위의 padding 단축 속성 뒤에 와야 덮이지 않는다) */
+          .main-content, .main-content-tight { padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); }
         }
       `}</style>
     </div>

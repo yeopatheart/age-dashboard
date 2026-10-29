@@ -228,3 +228,12 @@ body {
 .badge-info    { background: var(--info-bg);    color: #2563eb; }
 .badge-muted   { background: var(--muted);       color: var(--muted-foreground); }
 .badge-primary { background: var(--primary-light); color: var(--primary); }
+
+/* 휴대폰: 입력 글자가 16px 미만이면 iOS Safari가 포커스 때 화면을 확대한다. 확대 금지로 막지 않고 글자를 키운다. */
+@media (max-width: 768px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
