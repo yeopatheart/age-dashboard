@@ -229,9 +229,15 @@ body {
 .badge-muted   { background: var(--muted);       color: var(--muted-foreground); }
 .badge-primary { background: var(--primary-light); color: var(--primary); }
 
-/* 휴대폰 공통 (768px 이하): 글자를 한 단계 줄이고, 메뉴 설명은 숨기고, 관리 화면의 도구줄이 줄바꿈으로 깨지지 않게 한다.
-   글자 크기는 rem 기준이라 html 글자 크기를 줄이면 전체가 같이 줄어든다(입력창은 아래에서 16px로 따로 고정). */
+/* ─── 휴대폰 UI 규칙 (768px 이하) ──────────────────────────────────────────────
+   모든 메뉴가 같은 규칙을 쓴다. 새 화면을 만들 때도 아래 값(토큰)을 쓰고 개별 크기를 새로 정하지 않는다.
+   · 글자: 본문 0.875rem, 보조 0.75rem, 제목 1.1875rem, 버튼·칩 0.8125rem(굵게). html을 14.5px로 줄여 rem 글자가 한 단계 작아진다.
+   · 높이: 일반 컨트롤(버튼·입력·선택·분할 버튼) --ctl-h 36px, 칩·태그 --chip-h 32px, 한 번에 눌러 확정하는 주 동작 --cta-h 48px.
+   · 모양: 컨트롤은 알약(999px), 카드는 14px 모서리, 간격은 0.4~0.6rem 단위.
+   · 메뉴 설명 문구는 숨긴다. */
+:root { --ctl-h: 2.25rem; --chip-h: 2rem; --cta-h: 3rem; }
 @media (max-width: 768px) {
+  :root { --ctl-h: 36px; --chip-h: 32px; --cta-h: 48px; }
   html { font-size: 14.5px; }
   .page-sub { display: none; }
   .page-header { align-items: center; gap: 0.6rem; margin-bottom: 0.25rem; flex-wrap: wrap; }

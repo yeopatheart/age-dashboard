@@ -153,9 +153,13 @@ export function ReportsClient({
         </div>
         <div className="period-nav">
           <button onClick={() => go(granularity, shiftAnchor(granularity, anchor, -1))} title="이전"><ChevronLeft size={16} /></button>
-          <span className="period-label">{period.label}</span>
+          {/* 기간 이름을 누르면 날짜를 고른다(휴대폰: 별도 날짜 입력칸 대신 이 칸에 겹쳐 둔 입력) */}
+          <label className="period-label">
+            {period.label}
+            <input type="date" className="period-date-overlay" value={anchor} max={today} onChange={(e) => e.target.value && go(granularity, e.target.value)} aria-label="기간 기준 날짜" />
+          </label>
           <button onClick={() => go(granularity, shiftAnchor(granularity, anchor, 1))} disabled={nextDisabled} title="다음"><ChevronRight size={16} /></button>
-          <input type="date" value={anchor} max={today} onChange={(e) => e.target.value && go(granularity, e.target.value)} />
+          <input type="date" className="period-date-desktop" value={anchor} max={today} onChange={(e) => e.target.value && go(granularity, e.target.value)} />
           <button className="today-btn" onClick={() => go(granularity, today)}>오늘</button>
         </div>
       </div>
@@ -173,7 +177,7 @@ export function ReportsClient({
           </select>
         </label>
         <span className="count-text">{sorted.length}개</span>
-        <button className="csv-btn" onClick={downloadCsv} disabled={sorted.length === 0}><Download size={14} /> 엑셀(CSV) 내려받기</button>
+        <button className="csv-btn" onClick={downloadCsv} disabled={sorted.length === 0}><Download size={14} /> <span className="csv-long">엑셀(CSV) 내려받기</span><span className="csv-short">CSV</span></button>
       </div>
 
       {sorted.length === 0 ? (
@@ -256,7 +260,30 @@ export function ReportsClient({
         .unit-chip strong { font-size: 0.9375rem; }
         .unit-unshipped { margin-left: 0.35rem; font-size: 0.6875rem; font-weight: 700; color: #b45309; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 0 0.3rem; }
         .unit-chip em { font-style: normal; font-size: 0.6875rem; color: var(--muted-foreground); margin-left: 0.2rem; }
+        .period-label { position: relative; }
+        .period-date-overlay { display: none; }
+        .csv-short { display: none; }
         .foot-note { font-size: 0.75rem; color: var(--muted-foreground); }
+        /* 휴대폰: 위에서 아래로 "기간 종류 → 기간 이동 → 보기 → 정렬·내려받기" 순서로, 줄마다 폭을 꽉 채워 정렬한다. */
+        @media (max-width: 768px) {
+          .reports-root { gap: 0.6rem; }
+          .period-card { flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 0.6rem; }
+          .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+          .seg button { height: calc(var(--ctl-h) - 6px); padding: 0 0.4rem; }
+          .period-nav { flex-wrap: nowrap; gap: 0.4rem; }
+          .period-nav button { width: var(--ctl-h); height: var(--ctl-h); border-radius: 999px; flex: none; }
+          .period-nav .today-btn { width: auto; padding: 0 0.9rem; }
+          .period-date-desktop { display: none; }
+          .period-label { flex: 1; min-width: 0; height: var(--ctl-h); border: 1px solid var(--border); border-radius: 999px; background: #fff; display: grid; place-items: center; font-size: 0.9375rem; }
+          .period-date-overlay { display: block; position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; }
+          .tool-row { display: grid; grid-template-columns: 1fr auto auto; gap: 0.5rem; align-items: center; }
+          .tool-row > .seg { grid-column: 1 / -1; }
+          .sort-box { min-width: 0; }
+          .sort-box select { flex: 1; min-width: 0; height: var(--ctl-h); }
+          .csv-btn { margin-left: 0; height: var(--ctl-h); padding: 0 0.8rem; }
+          .csv-long { display: none; }
+          .csv-short { display: inline; }
+        }
         .foot-note em { font-style: normal; font-weight: 700; }
       `}</style>
     </div>

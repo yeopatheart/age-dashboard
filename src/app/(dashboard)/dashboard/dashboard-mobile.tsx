@@ -172,11 +172,9 @@ export function DashboardMobile(props: DashboardMobileProps) {
 
       <div className="dm-sticky">
         <div className="dm-progress" role="status">
-          <div className="dm-progress-text">
-            <strong>완료 {counts.done}/{counts.all}곳</strong>
-            <span>상품 {totals.done}/{totals.live} · {pct}%</span>
-          </div>
+          <strong>완료 {counts.done}/{counts.all}곳</strong>
           <div className="dm-bar"><span style={{ width: `${pct}%` }} /></div>
+          <span>상품 {totals.done}/{totals.live} · {pct}%</span>
         </div>
         <div className="dm-filters">
           <div className="dm-seg" role="tablist" aria-label="상태">
@@ -315,30 +313,29 @@ export function DashboardMobile(props: DashboardMobileProps) {
 
       <style>{`
         .dm-root { display: flex; flex-direction: column; gap: 0.6rem; padding-bottom: 1rem; }
-        .dm-head { display: flex; flex-direction: column; gap: 0.55rem; }
-        .dm-sticky { position: sticky; top: 0; z-index: 20; background: var(--background, #f8fafc); padding: 0.3rem 0.25rem 0.5rem; margin: 0 -0.25rem; display: flex; flex-direction: column; gap: 0.45rem; }
+        .dm-head { display: flex; flex-direction: column; gap: 0.4rem; }
+        .dm-sticky { position: sticky; top: 0; z-index: 20; background: var(--background, #f8fafc); padding: 0.25rem 0.25rem 0.35rem; margin: 0 -0.25rem; display: flex; flex-direction: column; gap: 0.35rem; }
         .dm-date { display: flex; align-items: center; gap: 0.4rem; }
-        .dm-icon { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; flex: none; }
+        .dm-icon { width: var(--ctl-h); height: var(--ctl-h); border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; flex: none; }
         .dm-icon:disabled { opacity: 0.4; }
-        .dm-date-label { position: relative; flex: 1; height: 44px; border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; font-size: 0.9375rem; font-weight: 800; }
+        .dm-date-label { position: relative; flex: 1; height: var(--ctl-h); border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; font-size: 0.9375rem; font-weight: 800; }
         .dm-date-label input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; font-size: 16px; }
-        .dm-today { height: 44px; padding: 0 0.9rem; border-radius: 12px; border: 0; background: #003057; color: #fff; font-weight: 800; flex: none; }
-        .dm-progress { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 0.5rem 0.8rem; display: flex; flex-direction: column; gap: 0.35rem; }
-        .dm-progress-text { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
-        .dm-progress-text strong { font-size: 0.9375rem; font-weight: 900; }
-        .dm-progress-text span { font-size: 0.75rem; color: var(--muted-foreground); font-weight: 700; }
-        .dm-bar { height: 8px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+        .dm-today { height: var(--ctl-h); padding: 0 0.8rem; border-radius: 12px; border: 0; background: #003057; color: #fff; font-weight: 800; font-size: 0.8125rem; flex: none; }
+        .dm-progress { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0 0.7rem; height: var(--ctl-h); display: flex; align-items: center; gap: 0.6rem; }
+        .dm-progress strong { font-size: 0.875rem; font-weight: 900; white-space: nowrap; }
+        .dm-progress span { font-size: 0.75rem; color: var(--muted-foreground); font-weight: 700; white-space: nowrap; }
+        .dm-bar { flex: 1; min-width: 2rem; height: 7px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
         .dm-bar span { display: block; height: 100%; background: #22c55e; border-radius: 999px; }
         .dm-bar-sm { height: 6px; flex: 1; min-width: 3rem; }
         .dm-chips { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
         .dm-chips::-webkit-scrollbar { display: none; }
-        .dm-chip { flex: none; min-height: 44px; padding: 0 0.8rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; white-space: nowrap; }
+        .dm-chip { flex: none; height: var(--chip-h); padding: 0 0.75rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; white-space: nowrap; }
         .dm-chip-on { background: #003057; border-color: #003057; color: #fff; }
         .dm-filters { display: flex; gap: 0.5rem; align-items: center; }
-        .dm-seg { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: #e2e8f0; border-radius: 12px; padding: 3px; gap: 2px; }
-        .dm-view { flex: none; min-height: 46px; padding: 0 0.8rem; border-radius: 12px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 800; display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
+        .dm-seg { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: #e2e8f0; border-radius: 12px; padding: 3px; gap: 2px; height: var(--ctl-h); }
+        .dm-view { flex: none; height: var(--ctl-h); padding: 0 0.7rem; border-radius: 12px; border: 1px solid var(--border); background: #fff; font-size: 0.75rem; font-weight: 800; display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
         .dm-view-on { background: #003057; border-color: #003057; color: #fff; }
-        .dm-seg button { min-height: 44px; border: 0; background: transparent; border-radius: 10px; font-size: 0.75rem; font-weight: 700; color: #475569; padding: 0 0.4rem; white-space: nowrap; }
+        .dm-seg button { height: calc(var(--ctl-h) - 6px); border: 0; background: transparent; border-radius: 10px; font-size: 0.75rem; font-weight: 700; color: #475569; padding: 0 0.3rem; white-space: nowrap; }
         .dm-seg button b { font-weight: 900; margin-left: 0.1rem; }
         .dm-seg .dm-seg-on { background: #fff; color: #0f172a; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15); }
         .dm-cards, .dm-products { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
