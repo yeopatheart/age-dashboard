@@ -7,6 +7,7 @@ import { roundLabel, type OrderRound } from '@/lib/orders';
 import { editableDateError } from '@/lib/order-date';
 import { useCan } from '@/components/permissions-context';
 import { DateNav } from '@/components/date-nav';
+import { useIsMobile } from '@/lib/use-is-mobile';
 import {
   suggestOrderLines,
   commitOrderLines,
@@ -46,6 +47,7 @@ export function NewOrderClient({
   guideMarkdown: string;
 }) {
   const canEdit = useCan()('orders:edit');
+  const isMobile = useIsMobile(); // 휴대폰에서는 입력 가이드 버튼이 없으므로 안내 문구도 뺀다
   const router = useRouter();
   // 설정에서 과거 날짜 편집을 켜면 입력할 날짜를 바꿀 수 있다(기본은 오늘, 미래는 항상 막는다).
   const [orderDate, setOrderDate] = useState(today);
@@ -227,8 +229,7 @@ export function NewOrderClient({
                 '• 메모: 줄 끝에 #  예) ... 벤자리 2미 #소리처럼 작업',
                 '• 취소: 갯가재 취소 / 수원/ 스시태양/ 취소',
                 '• 바뀐 줄만 다시 입력하면 됩니다',
-                '',
-                '자세한 내용은 오른쪽 위 [입력 가이드]를 눌러 확인하세요.',
+                ...(isMobile ? [] : ['', '자세한 내용은 오른쪽 위 [입력 가이드]를 눌러 확인하세요.']),
               ].join('\n')}
               value={rawText}
               onChange={(e) => setRawText(e.target.value)}
@@ -529,6 +530,16 @@ export function NewOrderClient({
         .new-order-root .page-header { align-items: center; flex-wrap: wrap; row-gap: 0.5rem; }
         .guide-btn { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
         .guide-btn:hover { background: var(--primary-light); }
+        /* 휴대폰: 날짜 이동과 1·2차 선택이 한 줄에 놓이고(제목 다음 줄), 입력 가이드 버튼은 숨기며, 입력칸 글자를 줄인다. */
+        @media (max-width: 768px) {
+          .guide-btn { display: none; }
+          .new-order-root .page-title { flex: 1 1 calc(100% - 3rem); white-space: nowrap; }
+          .new-order-root .page-header { column-gap: 0.4rem; }
+          .round-toggle { flex: none; padding: 2px; }
+          .round-toggle button { height: calc(var(--ctl-h) - 6px); padding: 0 0.9rem; font-size: 0.8125rem; }
+          .paste-area { font-family: var(--font-sans); line-height: 1.45; }
+          .paste-area::placeholder { font-size: 12px; line-height: 1.5; }
+        }
         .guide-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
         .guide-modal { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); width: min(860px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
         .guide-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 0.85rem 1.25rem; border-bottom: 1px solid var(--border); font-weight: 800; color: var(--primary); }

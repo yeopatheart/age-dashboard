@@ -18,13 +18,13 @@ export function DateNav({ value, today, onChange, label = '날짜' }: { value: s
       {value !== today && <button type="button" className="dn-today" onClick={() => onChange(today)}>오늘</button>}
       <style>{`
         .dn-root { display: inline-flex; align-items: center; gap: 0.4rem; }
-        .dn-btn, .dn-today { display: inline-flex; align-items: center; justify-content: center; height: 2.25rem; min-width: 2.25rem; padding: 0 0.7rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; color: var(--foreground); cursor: pointer; }
+        .dn-btn, .dn-today { display: inline-flex; align-items: center; justify-content: center; height: var(--ctl-h); min-width: var(--ctl-h); padding: 0 0.7rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; color: var(--foreground); cursor: pointer; }
         .dn-btn:hover, .dn-today:hover { background: var(--muted); }
         .dn-btn:disabled { opacity: 0.45; cursor: default; }
         .dn-today { background: var(--primary); border-color: var(--primary); color: #fff; }
-        .dn-date { height: 2.25rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 0.8rem; font-size: 0.875rem; font-weight: 700; background: #fff; color: var(--foreground); font-family: var(--font-sans); }
+        .dn-date { height: var(--ctl-h); border: 1px solid var(--border); border-radius: 999px; padding: 0 0.8rem; font-size: 0.875rem; font-weight: 700; background: #fff; color: var(--foreground); font-family: var(--font-sans); }
         .dn-date:focus { outline: none; border-color: var(--primary); }
-        @media (max-width: 768px) { .dn-btn, .dn-today, .dn-date { height: 2.5rem; } .dn-btn { min-width: 2.5rem; } }
+        @media (max-width: 768px) { .dn-date { padding: 0 0.6rem; } }
       `}</style>
     </div>
   );
