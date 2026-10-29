@@ -19,7 +19,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
     accessCheck,
     supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id, display_name').eq('order_date', orderDate).order('sort_order'),
     fetchAll((from, to) => supabase.from('businesses').select('id, name').order('id').range(from, to), '업체 조회 실패: '),
-    supabase.from('terminals').select('id, name'),
+    supabase.from('terminals').select('id, name, is_parcel'),
     supabase.from('boxes').select('id, name, is_active, inner_width_cm, inner_depth_cm, inner_height_cm, is_mulbong_box').order('name'),
     fetchAll((from, to) => supabase.from('products').select('name, needs_mulbong').order('id').range(from, to), '상품 조회 실패: '),
     loadAppSettings(supabase),
@@ -43,6 +43,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
 
   const businessById = new Map(businesses.map((b) => [b.id, b]));
   const terminalById = new Map((terminals ?? []).map((t) => [t.id, t.name]));
+  const parcelTerminalIds = new Set((terminals ?? []).filter((t) => t.is_parcel).map((t) => t.id));
   const needsMulbong = new Map(products.map((p) => [p.name, p.needs_mulbong]));
   const recordByDaily = new Map((records ?? []).map((r) => [r.daily_business_id, r]));
 
@@ -93,6 +94,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
       roundLabel: splitBusinessIds.has(d.business_id) ? roundLabel(d.round) : null,
       businessName: d.display_name ?? business?.name ?? '',
       terminal: d.terminal_id ? terminalById.get(d.terminal_id) ?? '' : '',
+      parcel: !!d.terminal_id && parcelTerminalIds.has(d.terminal_id),
       items: (items ?? [])
         // 미출고 수량은 박스에 담을 대상이 아니므로 뺀다(전량 미출고면 상품 자체를 제외).
         .filter((i) => i.daily_business_id === d.id && i.change_status !== 'cancelled' && Number(i.quantity) - Number(i.unshipped_quantity ?? 0) > 0)

@@ -40,6 +40,8 @@ export interface PackingBusiness {
   // 같은 고객사가 1차·2차 모두 있을 때만 값이 있다
   roundLabel: string | null;
   terminal: string;
+  // 택배 터미널: 택배사 송장을 붙이므로 박스 라벨을 출력하지 않는다
+  parcel: boolean;
   items: PackingItem[];
   // 박스 추천(shadow test). 미제출 업체는 1순위 추천이 박스에 미리 채워진다.
   recommendation: RecommendationView | null;
@@ -516,7 +518,7 @@ export function PackingLogClient({
                   )}
                 </div>
 
-                {can('packing:print') && <LabelPanel key={selected.id} dailyBusinessId={selected.id} boxCount={draft.boxes.length} />}
+                {can('packing:print') && !selected.parcel && <LabelPanel key={selected.id} dailyBusinessId={selected.id} boxCount={draft.boxes.length} />}
               </section>
 
               <DragOverlay>
