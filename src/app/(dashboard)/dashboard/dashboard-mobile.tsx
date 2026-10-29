@@ -5,7 +5,7 @@ import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } 
 import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, GripVertical, ListChecks, PackageX, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { getProductSummary, isCardComplete, isUndecidedQuantity, roundLabel, type OrderItem, type OrderRound, type OrderRow } from '@/lib/orders';
 import { BoxDots } from '@/components/box-dots';
-import { STAGE_LABEL, stageDetail, stageOf } from '@/lib/overview';
+import { STAGE_LABEL, stageDetail, stageOf, type Stage } from '@/lib/overview';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
 
 // 휴대폰(768px 이하)용 대시보드. PC의 "고객 × 상품" 표를 가로로 밀어 보는 대신, 고객 한 곳이 카드 하나다.
@@ -75,6 +75,14 @@ function statsOf(rowItems: OrderItem[]): Stats {
   };
 }
 const hasException = (s: Stats, row: OrderRow) => s.added + s.modified + s.cancelled + s.unshipped + s.undecided > 0 || !!row.packingChanged;
+
+// 카드의 단계 칩 옆 설명. 칩·진행 막대와 겹치는 내용(박스 미정, 포장 n/m줄)은 빼고 박스 수나 라벨·상차 진행만 보여준다.
+function cardStageDetail(stage: Stage, row: OrderRow, s: Stats): string {
+  if (row.parcel) return stage === 'done' ? '택배 · 포장 완료' : '택배';
+  if (stage === 'boxing') return '';
+  if (stage === 'packing') return `박스 ${row.boxStates.length}개`;
+  return stageDetail(stage, { parcel: false, boxStates: row.boxStates, itemsDone: s.done, itemsLive: s.live });
+}
 
 // 고객 카드 한 장. 순서는 카드 오른쪽 끝의 손잡이를 끌어서만 바꾼다(카드 전체를 끌게 하면 목록을 스크롤하다가 순서가 바뀐다).
 function SortableCard({ id, disabled, className, children }: { id: string; disabled: boolean; className: string; children: (handle: ReactNode) => ReactNode }) {
@@ -275,44 +283,50 @@ export function DashboardMobile(props: DashboardMobileProps) {
             const summary = live.slice(0, 3).map((i) => `${i.productName} ${isUndecidedQuantity(i) ? '미정' : `${i.quantity}${i.unit}`}`).join(' · ') + (live.length > 3 ? ` 외 ${live.length - 3}건` : '');
             const badge = terminalBadgeProps(row.terminal, terminalColors);
             const stageKey = stageOf(row.totalBoxes, row.boxStates, done, row.parcel);
-            const stage = { key: stageKey, visible: live.length > 0, detail: stageDetail(stageKey, { parcel: row.parcel, boxStates: row.boxStates, itemsDone: s.done, itemsLive: s.live }) };
+            const stage = { key: stageKey, visible: live.length > 0, detail: cardStageDetail(stageKey, row, s) };
             return (
               <SortableCard key={row.dailyBusinessId} id={row.dailyBusinessId} disabled={!canReorder} className={`dm-card ${done ? 'dm-card-done' : ''}`}>
                 {(handle) => (
                 <>
                 <div className="dm-card-top">
-                <span className="dm-no">{segmentRows.indexOf(row) + 1}</span>
-                <button className="dm-card-head" onClick={() => toggleOpen(row.dailyBusinessId)} aria-expanded={open}>
-                  <span className={`dm-term ${badge.className}`} style={badge.style}>{row.terminal || '-'}</span>
-                  <span className="dm-name">
-                    {done && <span className="dm-done"><Check size={12} strokeWidth={4} />완료</span>}
-                    {round && <span className="dm-round">{roundLabel(round)}</span>}
-                    {row.businessName}
-                  </span>
-                  <span className="dm-boxes">박스 {row.totalBoxes ?? '-'}</span>
-                  <ChevronDown size={18} className={`dm-chev ${open ? 'dm-chev-open' : ''}`} />
-                </button>
-                {handle}
+                  <button className="dm-card-head" onClick={() => toggleOpen(row.dailyBusinessId)} aria-expanded={open}>
+                    <span className="dm-no">{segmentRows.indexOf(row) + 1}</span>
+                    <span className="dm-title">
+                      <span className={`dm-term ${badge.className}`} style={badge.style}>{row.terminal || '-'}</span>
+                      <span className="dm-name">
+                        {round && <span className="dm-round">{roundLabel(round)}</span>}
+                        {row.businessName}
+                      </span>
+                    </span>
+                    <ChevronDown size={18} className={`dm-chev ${open ? 'dm-chev-open' : ''}`} />
+                  </button>
+                  {handle}
                 </div>
-                <div className="dm-meta">
-                  <span className="dm-prog"><b>{s.done}</b>/{s.live}</span>
-                  <div className="dm-bar dm-bar-sm"><span style={{ width: `${s.live ? (s.done / s.live) * 100 : 0}%` }} /></div>
-                  {s.added > 0 && <span className="dm-tag dm-tag-green">신규 {s.added}</span>}
-                  {s.modified > 0 && <span className="dm-tag dm-tag-amber">수정 {s.modified}</span>}
-                  {s.unshipped > 0 && <span className="dm-tag dm-tag-amber">미출고 {s.unshipped}</span>}
-                  {s.cancelled > 0 && <span className="dm-tag dm-tag-red">취소 {s.cancelled}</span>}
-                  {s.undecided > 0 && <span className="dm-tag dm-tag-amber">수량 미정 {s.undecided}</span>}
-                  {row.packingChanged && <span className="dm-tag dm-tag-red">박스 재확인</span>}
-                </div>
-                {stage.visible && (
-                  <div className="dm-stage-row">
-                    <span className={`dm-tag dm-stage dm-stage-${stage.key}`}>{STAGE_LABEL[stage.key]}</span>
-                    <BoxDots states={row.boxStates} />
-                    <span className="dm-stage-detail">{stage.detail}</span>
+                <div className="dm-body">
+                  {stage.visible && (
+                    <div className="dm-stage-row">
+                      <span className={`dm-stage dm-stage-${stage.key}`}>{STAGE_LABEL[stage.key]}</span>
+                      <BoxDots states={row.boxStates} />
+                      {stage.detail && <span className="dm-stage-detail">{stage.detail}</span>}
+                    </div>
+                  )}
+                  <div className="dm-prog-row">
+                    <span className="dm-prog"><b>{s.done}</b>/{s.live}</span>
+                    <div className="dm-bar"><span style={{ width: `${s.live ? (s.done / s.live) * 100 : 0}%` }} /></div>
                   </div>
-                )}
-                {row.memo && <p className="dm-memo">메모: {row.memo}</p>}
-                {!open && <p className="dm-summary">{summary || '상품 없음'}</p>}
+                  {(s.added > 0 || s.modified > 0 || s.unshipped > 0 || s.cancelled > 0 || s.undecided > 0 || row.packingChanged) && (
+                    <div className="dm-tags">
+                      {s.added > 0 && <span className="dm-tag dm-tag-green">신규 {s.added}</span>}
+                      {s.modified > 0 && <span className="dm-tag dm-tag-amber">수정 {s.modified}</span>}
+                      {s.unshipped > 0 && <span className="dm-tag dm-tag-amber">미출고 {s.unshipped}</span>}
+                      {s.cancelled > 0 && <span className="dm-tag dm-tag-red">취소 {s.cancelled}</span>}
+                      {s.undecided > 0 && <span className="dm-tag dm-tag-amber">수량 미정 {s.undecided}</span>}
+                      {row.packingChanged && <span className="dm-tag dm-tag-red">박스 재확인</span>}
+                    </div>
+                  )}
+                  {row.memo && <p className="dm-memo">메모: {row.memo}</p>}
+                  {!open && <p className="dm-summary">{summary || '상품 없음'}</p>}
+                </div>
                 {open && (
                   <div className="dm-items">
                     {rowItems.map((item) => (
@@ -407,7 +421,6 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-progress span { font-size: 0.75rem; color: var(--muted-foreground); font-weight: 700; white-space: nowrap; }
         .dm-bar { flex: 1; min-width: 2rem; height: 7px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
         .dm-bar span { display: block; height: 100%; background: #22c55e; border-radius: 999px; }
-        .dm-bar-sm { height: 6px; flex: 1; min-width: 3rem; }
         .dm-chips { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
         .dm-chips::-webkit-scrollbar { display: none; }
         .dm-chip { flex: none; height: var(--chip-h); padding: 0 0.75rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; white-space: nowrap; }
@@ -424,28 +437,30 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-empty button { min-height: 44px; padding: 0 1.2rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-weight: 800; }
         .dm-card { background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
         .dm-card-done { background: #f0fdf4; border-color: #86efac; }
-        .dm-card-top { display: flex; align-items: center; }
-        .dm-no { flex: none; min-width: 1.9rem; padding-left: 0.6rem; font-size: 0.75rem; font-weight: 800; color: #94a3b8; font-variant-numeric: tabular-nums; }
-        .dm-grip { flex: none; width: 40px; height: 40px; margin-right: 0.15rem; display: grid; place-items: center; background: none; border: 0; color: #94a3b8; touch-action: none; cursor: grab; border-radius: 10px; }
+        .dm-card-top { display: flex; align-items: flex-start; }
+        .dm-no { flex: none; width: 22px; height: 22px; border-radius: 999px; background: #f1f5f9; color: #64748b; display: grid; place-items: center; font-size: 0.6875rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .dm-card-done .dm-no { background: #dcfce7; color: #166534; }
+        .dm-grip { flex: none; width: 40px; height: 44px; margin-right: 0.2rem; display: grid; place-items: center; background: none; border: 0; color: #94a3b8; touch-action: none; cursor: grab; border-radius: 10px; }
         .dm-grip:active { background: #f1f5f9; color: #475569; }
         .dm-dragging { position: relative; z-index: 30; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.28); opacity: 0.95; }
-        .dm-card-head { width: 100%; display: flex; align-items: center; gap: 0.45rem; padding: 0.55rem 0.7rem 0.25rem; background: none; border: 0; text-align: left; min-height: 44px; }
+        .dm-card-head { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.55rem; padding: 0.55rem 0.1rem 0.15rem 0.875rem; background: none; border: 0; text-align: left; min-height: 44px; }
+        .dm-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.5rem; }
         .dm-term { flex: none; white-space: nowrap; padding: 0.1rem 0.45rem; border-radius: 7px; border: 1px solid; font-size: 0.6875rem; font-weight: 800; }
-        .dm-name { flex: 1; min-width: 0; font-size: 0.9375rem; font-weight: 800; line-height: 1.25; word-break: keep-all; }
-        .dm-done { display: inline-flex; align-items: center; gap: 2px; margin-right: 0.3rem; padding: 0 0.35rem; border-radius: 6px; border: 1px solid #34d399; background: #d1fae5; color: #065f46; font-size: 0.6875rem; font-weight: 800; vertical-align: 2px; }
-        .dm-round { margin-right: 0.3rem; padding: 0 0.35rem; border-radius: 6px; border: 1px solid #c4b5fd; background: #f5f3ff; color: #6d28d9; font-size: 0.6875rem; font-weight: 800; vertical-align: 2px; }
-        .dm-boxes { flex: none; font-size: 0.75rem; font-weight: 700; color: #64748b; white-space: nowrap; }
+        .dm-name { flex: 1; min-width: 0; font-size: 1rem; font-weight: 800; line-height: 1.3; word-break: keep-all; }
+        .dm-round { margin-right: 0.35rem; padding: 0 0.4rem; border-radius: 6px; border: 1px solid #c4b5fd; background: #f5f3ff; color: #6d28d9; font-size: 0.6875rem; font-weight: 800; vertical-align: 2px; }
         .dm-chev { flex: none; color: #94a3b8; transition: transform 0.15s; }
         .dm-chev-open { transform: rotate(180deg); }
-        .dm-meta { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; padding: 0 0.7rem 0.25rem; }
-        .dm-prog { font-size: 0.8125rem; font-weight: 700; color: #475569; }
+        .dm-body { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.3rem 0.875rem 0.8rem; min-width: 0; }
+        .dm-prog-row { display: flex; align-items: center; gap: 0.6rem; }
+        .dm-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+        .dm-prog { flex: none; min-width: 2rem; font-size: 0.8125rem; font-weight: 700; color: #475569; font-variant-numeric: tabular-nums; }
         .dm-prog b { font-weight: 900; color: #0f172a; }
-        .dm-tag { font-size: 0.6875rem; font-weight: 800; border-radius: 6px; padding: 0.05rem 0.35rem; border: 1px solid; white-space: nowrap; }
+        .dm-tag { font-size: 0.6875rem; font-weight: 800; line-height: 1.4; border-radius: 6px; padding: 0.1rem 0.45rem; border: 1px solid; white-space: nowrap; }
         .dm-tag-green { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
         .dm-tag-amber { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
-        .dm-stage-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.4rem; min-width: 0; font-size: 0.75rem; line-height: 1.5; }
+        .dm-stage-row { display: flex; align-items: center; gap: 0.55rem; min-width: 0; font-size: 0.75rem; line-height: 1.5; }
         .dm-stage-detail { color: var(--muted-foreground); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-        .dm-stage { font-weight: 800; flex: none; }
+        .dm-stage { flex: none; font-size: 0.75rem; font-weight: 800; line-height: 1.4; border-radius: 999px; padding: 0.15rem 0.65rem; border: 1px solid; white-space: nowrap; }
         .dm-stage-boxing { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
         .dm-stage-labeling { background: #f5f3ff; border-color: #c4b5fd; color: #6d28d9; }
         .dm-stage-packing { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
@@ -453,10 +468,10 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-stage-loading { background: #f0f9ff; border-color: #7dd3fc; color: #0369a1; }
         .dm-stage-done { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
         .dm-tag-red { background: #fff1f2; border-color: #fda4af; color: #be123c; }
-        .dm-memo { margin: 0; padding: 0 0.7rem 0.25rem; font-size: 0.75rem; font-weight: 700; color: #92400e; }
-        .dm-summary { margin: 0; padding: 0 0.7rem 0.6rem; font-size: 0.8125rem; color: #334155; line-height: 1.4; }
+        .dm-memo { margin: 0; font-size: 0.75rem; font-weight: 700; color: #92400e; }
+        .dm-summary { margin: 0; font-size: 0.8125rem; color: #475569; line-height: 1.45; }
         .dm-items { border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; }
-        .dm-item { display: flex; align-items: center; gap: 0.55rem; padding: 0.3rem 0.7rem; min-height: 42px; background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left; width: 100%; }
+        .dm-item { display: flex; align-items: center; gap: 0.55rem; padding: 0.3rem 0.875rem; min-height: 42px; background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left; width: 100%; }
         .dm-item-done .dm-item-name, .dm-item-done .dm-item-detail { color: #94a3b8; }
         .dm-item-cancelled .dm-item-name { text-decoration: line-through; color: #be123c; }
         .dm-check { flex: none; width: 24px; height: 24px; border-radius: 999px; border: 2px solid #cbd5e1; display: grid; place-items: center; color: #fff; background: #fff; }
@@ -465,7 +480,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-item-name { font-size: 0.875rem; font-weight: 800; line-height: 1.25; min-width: 0; }
         .dm-item-detail { font-size: 0.8125rem; font-weight: 700; color: #0369a1; text-align: right; flex: none; max-width: 55%; }
         .dm-item-flags { display: flex; flex-direction: column; gap: 0.2rem; align-items: flex-end; flex: none; }
-        .dm-card-actions { display: flex; gap: 0.5rem; padding: 0.5rem 0.7rem 0.65rem; font-size: 0.8125rem; }
+        .dm-card-actions { display: flex; gap: 0.5rem; padding: 0.5rem 0.875rem 0.75rem; font-size: 0.8125rem; }
         .dm-card-actions button { flex: 1; min-height: 44px; border-radius: 12px; border: 1px dashed #94a3b8; background: #fff; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; }
         .dm-card-actions .dm-danger { border-style: solid; border-color: #fecdd3; color: #be123c; flex: none; padding: 0 1rem; }
         .dm-products li { display: flex; align-items: center; gap: 0.5rem; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0.5rem 0.75rem; min-height: 44px; }
