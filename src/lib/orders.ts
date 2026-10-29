@@ -1,3 +1,4 @@
+import type { MergeGroups } from '@/lib/box-merge';
 import type { BoxState } from '@/lib/overview';
 
 // mockData.ts를 대체한다. 타입과 순수 집계 함수(getProductSummary/getTerminalBoxTotals)는
@@ -36,6 +37,8 @@ export interface OrderRow {
   memo: string | null;
   // 박스 구성을 정한 뒤 주문이 바뀌어 박스를 다시 확인해야 한다 (박스 기록의 추천·제출 기준)
   packingChanged?: boolean;
+  // 합포장 묶음(포장 뒤 함께 테이핑하는 박스 번호들). 없으면 빈 배열
+  mergeGroups: MergeGroups;
   // 택배 터미널(택배사 송장을 붙인다): 박스 라벨을 출력·스캔하지 않는다
   parcel: boolean;
   // 박스 번호별 라벨 상태(미출력·출력·상차). 박스 수를 모르면 빈 배열
@@ -94,12 +97,46 @@ export function isCardComplete(items: Pick<OrderItem, 'changeStatus' | 'isPacked
   return live.every((i) => !isUndecidedQuantity(i) && (i.isPacked || i.quantity - i.unshippedQuantity <= 0));
 }
 
+// 같은 품목으로 묶는 기준: 상품(없으면 입력한 이름) + 사이즈·종류 + 단위
+export const productKeyOf = (item: Pick<OrderItem, 'productId' | 'productName' | 'sizeRequest' | 'unit'>) =>
+  `${item.productId ?? item.productName}|${(item.sizeRequest ?? '').trim()}|${item.unit}`;
+
+export interface ProductCustomer {
+  dailyBusinessId: string;
+  name: string;
+  quantity: number; // 발송할 수량(미출고 제외)
+  unshipped: number;
+  allPacked: boolean;
+  undecided: boolean; // 같은 품목이지만 수량을 아직 못 정한 줄이 있다
+}
+
+// 한 품목(getProductSummary의 한 줄)을 받는 업체와 업체별 수량. 업체는 rowOrder(화면 순서)대로 나열한다.
+export function getProductCustomers(items: OrderItem[], product: Pick<ProductSummaryRow, 'key'>, rowOrder: Map<string, number>): ProductCustomer[] {
+  const base = product.key.slice(0, product.key.lastIndexOf('|'));
+  const byRow = new Map<string, ProductCustomer>();
+  for (const item of items) {
+    if (item.changeStatus === 'cancelled') continue;
+    const undecided = isUndecidedQuantity(item);
+    // 수량 미정 줄은 단위가 없어 키가 달라지므로 상품·사이즈까지만 맞춰 본다.
+    if (undecided ? !productKeyOf(item).startsWith(`${base}|`) : productKeyOf(item) !== product.key) continue;
+    const entry = byRow.get(item.dailyBusinessId) ?? { dailyBusinessId: item.dailyBusinessId, name: item.businessName, quantity: 0, unshipped: 0, allPacked: true, undecided: false };
+    if (undecided) entry.undecided = true;
+    else {
+      entry.quantity += Math.max(0, item.quantity - item.unshippedQuantity);
+      entry.unshipped += item.unshippedQuantity;
+      if (!item.isPacked) entry.allPacked = false;
+    }
+    byRow.set(item.dailyBusinessId, entry);
+  }
+  return [...byRow.values()].sort((a, b) => (rowOrder.get(a.dailyBusinessId) ?? 999) - (rowOrder.get(b.dailyBusinessId) ?? 999));
+}
+
 export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
   const map = new Map<string, ProductSummaryRow>();
   for (const item of items) {
     if (item.changeStatus === 'cancelled' || isUndecidedQuantity(item)) continue;
     const size = (item.sizeRequest ?? '').trim();
-    const key = `${item.productId ?? item.productName}|${size}|${item.unit}`;
+    const key = productKeyOf(item);
     const existing = map.get(key);
     const shippable = Math.max(0, item.quantity - item.unshippedQuantity);
     if (existing) {

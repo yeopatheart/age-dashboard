@@ -558,18 +558,22 @@ function ItemFormModal({
   onClose: () => void;
 }) {
   const [productName, setProductName] = useState(initial?.productName ?? '');
-  const [quantity, setQuantity] = useState(initial?.quantity?.toString() ?? '');
+  // 수량을 모르는 상품(수량 0·단위 없음 = "수량 미정")은 수정할 때 수량 칸을 비워서 보여준다.
+  const wasUndecided = initial?.quantity === 0 && !initial.unit;
+  const [quantity, setQuantity] = useState(wasUndecided ? '' : initial?.quantity?.toString() ?? '');
   const [unit, setUnit] = useState(initial?.unit ?? '');
   const [weightKg, setWeightKg] = useState(initial?.secondaryWeightKg?.toString() ?? '');
   const [sizeRequest, setSizeRequest] = useState(initial?.sizeRequest ?? '');
   const [status, setStatus] = useState<ChangeStatus>(initial?.changeStatus ?? 'new');
 
   const handleSave = () => {
-    if (!productName.trim() || !quantity.trim() || !unit.trim()) return;
+    if (!productName.trim() || (quantity.trim() && !unit.trim())) return;
+    // 수량을 비우면 "수량 미정"(수량 0·단위 없음)으로 저장한다 — 나중에 수정에서 채운다.
+    const undecided = !quantity.trim();
     onSave({
       productName: productName.trim(),
-      quantity: parseFloat(quantity),
-      unit: unit.trim(),
+      quantity: undecided ? 0 : parseFloat(quantity),
+      unit: undecided ? '' : unit.trim(),
       secondaryWeightKg: weightKg.trim() ? parseFloat(weightKg) : null,
       sizeRequest: sizeRequest.trim() || null,
       changeStatus: status,
@@ -592,7 +596,7 @@ function ItemFormModal({
 
         <div className="flex gap-3">
           <div className="flex-1">
-            <label className="block text-xs font-bold text-slate-600 mb-1">수량 *</label>
+            <label className="block text-xs font-bold text-slate-600 mb-1">수량 <span className="text-slate-400 font-normal">(선택)</span></label>
             <input
               type="number" min="0" step="any"
               value={quantity}
@@ -602,7 +606,7 @@ function ItemFormModal({
             />
           </div>
           <div className="w-24">
-            <label className="block text-xs font-bold text-slate-600 mb-1">단위 *</label>
+            <label className="block text-xs font-bold text-slate-600 mb-1">단위{quantity.trim() ? ' *' : ''}</label>
             <input
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
@@ -1417,6 +1421,7 @@ export function DashboardClient({
                     </div>
                     <div className="border-r border-slate-100 px-2 bg-slate-50/60 flex items-center justify-center">
                       <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null ? 'text-slate-300' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{row.totalBoxes ?? '-'}</span>
+                      {row.mergeGroups.length > 0 && <span className="ml-1 rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`}>합포장</span>}
                     </div>
 
                     {Array.from({ length: productSlotCount }).map((_, slotIndex) => {
@@ -1592,6 +1597,7 @@ export function DashboardClient({
                       <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
                       <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} /></span>
                       <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes ?? '-'}</span>
+                      {row.mergeGroups.length > 0 && <span className="flex-shrink-0 rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800">합포장</span>}
                     </div>
                     <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
                       {row.memo && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">메모: {row.memo}</span>}

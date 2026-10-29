@@ -3,6 +3,7 @@ import { requireMenu } from '@/lib/permissions/access';
 import { fetchAll } from '@/lib/supabase/fetch-all';
 import { todayKST } from '@/lib/order-date';
 import { buildOverviewCard, type LabelRow, type OverviewCardInput } from '@/lib/overview';
+import { normalizeMergeGroups } from '@/lib/box-merge';
 import { findChangedAfterPacking } from '@/lib/packing/server';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { OverviewClient } from './overview-client';
@@ -17,7 +18,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
 
   const [, { data: dailies, error }, businesses, { data: terminals }] = await Promise.all([
     accessCheck,
-    supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id, display_name').eq('order_date', orderDate).order('sort_order'),
+    supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id, display_name, merge_groups').eq('order_date', orderDate).order('sort_order'),
     fetchAll((from, to) => supabase.from('businesses').select('id, name').order('id').range(from, to), '업체 조회 실패: '),
     supabase.from('terminals').select('id, name, is_separate, is_parcel'),
   ]);
@@ -78,6 +79,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
         .map((i) => ({ changeStatus: i.change_status, isPacked: i.is_packed, quantity: Number(i.quantity), unit: i.unit, unshippedQuantity: Number(i.unshipped_quantity ?? 0) })),
       submittedBoxes: submittedBoxes.has(d.id) ? submittedBoxes.get(d.id)! : null,
       labels: labelsByDaily.get(d.id) ?? [],
+      mergeGroups: normalizeMergeGroups(d.merge_groups),
       packingChanged: changedAfterPacking.has(d.id),
     };
     return buildOverviewCard(input);

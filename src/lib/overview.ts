@@ -12,6 +12,7 @@
 // 그래서 박스 할당·라벨 출력 단계를 건너뛰고, 포장이 끝나면 더 진행할 단계가 없어 "출고 완료"로 본다(택배사 인계는 이 시스템에서 따로 관리하지 않는다).
 // 택배 외 별도 주문(직배송 등)은 기본 주문과 똑같이 박스 할당 → 라벨 출력 → 상차를 거친다.
 // 라벨 행(box_labels)은 라벨을 출력할 때 만들어지므로 행이 있으면 출력된 박스다.
+import { normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
 import { isCardComplete, isUndecidedQuantity, type OrderItem } from '@/lib/orders';
 
 export type BoxState = 'none' | 'printed' | 'loaded';
@@ -78,6 +79,7 @@ export interface OverviewCardInput {
   items: Pick<OrderItem, 'changeStatus' | 'isPacked' | 'quantity' | 'unit' | 'unshippedQuantity'>[];
   submittedBoxes: number | null; // 박스 할당에서 제출한 박스 수(제출 전이면 null)
   labels: LabelRow[];
+  mergeGroups: MergeGroups; // 합포장 묶음
   packingChanged: boolean; // 박스 구성을 정한 뒤 주문이 바뀌어 박스를 다시 확인해야 한다(경고 표시만 한다)
 }
 
@@ -97,7 +99,7 @@ export function buildOverviewCard(c: OverviewCardInput): OverviewCard {
   const boxes = c.submittedBoxes ?? (c.parcel ? 1 : null);
   const boxStates = c.parcel ? [] : boxStatesOf(boxes, c.labels);
   const packed = isCardComplete(c.items);
-  return { ...c, hasOrder: live.length > 0, itemsLive: live.length, itemsDone: done.length, boxes, boxStates, packed, stage: stageOf(boxes, boxStates, packed, c.parcel) };
+  return { ...c, mergeGroups: normalizeMergeGroups(c.mergeGroups, boxes ?? 99), hasOrder: live.length > 0, itemsLive: live.length, itemsDone: done.length, boxes, boxStates, packed, stage: stageOf(boxes, boxStates, packed, c.parcel) };
 }
 
 export interface StageTotals {

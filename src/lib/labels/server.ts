@@ -2,6 +2,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
 import { loadAppSettings } from '@/lib/settings-server';
+import { normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
 import { LABEL_TEMPLATE_KEY, buildTemplate, type LabelData, type LabelTemplate } from './template';
 
 type Client = SupabaseClient<Database>;
@@ -43,11 +44,12 @@ export async function loadCardLabels(supabase: Client, dailyBusinessId: string):
 export interface CardLabelBase {
   orderDate: string;
   businessNumber: number;
-  data: Omit<LabelData, 'boxNo' | 'barcode'>;
+  data: Omit<LabelData, 'boxNo' | 'barcode' | 'merge'>;
+  mergeGroups: MergeGroups; // 합포장 묶음(라벨의 합포장 표시에 쓴다)
 }
 
 export async function loadCardLabelBase(supabase: Client, dailyBusinessId: string): Promise<CardLabelBase | null> {
-  const { data: daily } = await supabase.from('daily_businesses').select('id, order_date, business_id, business_number, terminal_id, display_name').eq('id', dailyBusinessId).maybeSingle();
+  const { data: daily } = await supabase.from('daily_businesses').select('id, order_date, business_id, business_number, terminal_id, display_name, merge_groups').eq('id', dailyBusinessId).maybeSingle();
   if (!daily) return null;
   const [{ data: business }, { data: terminal }, settings] = await Promise.all([
     supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle(),
@@ -57,6 +59,7 @@ export async function loadCardLabelBase(supabase: Client, dailyBusinessId: strin
   return {
     orderDate: daily.order_date,
     businessNumber: daily.business_number,
+    mergeGroups: normalizeMergeGroups(daily.merge_groups),
     data: {
       terminal: terminal?.name ?? '',
       separate: terminal?.is_separate ?? false,

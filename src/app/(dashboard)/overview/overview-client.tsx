@@ -137,6 +137,7 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
                     <div className="ov-row-sub">
                       <BoxDots states={c.boxStates} />
                       <span className="ov-detail">{stageDetail(c.stage, c)}</span>
+                      {c.mergeGroups.length > 0 && <span className="ov-merge">합포장</span>}
                       {c.packingChanged && (
                         <span className="ov-warn">
                           <TriangleAlert size={12} /> 박스 재확인
@@ -207,6 +208,7 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
         .ov-stage-packed { background: #f0fdfa; color: #0f766e; } .ov-stage-loading { background: #f0f9ff; color: #0369a1; } .ov-stage-done { background: #dcfce7; color: #15803d; }
         .ov-row-sub { display: flex; align-items: center; gap: 0.6rem; min-width: 0; padding-left: 2.2rem; font-size: 0.75rem; line-height: 1.5; }
         .ov-detail { font-weight: 700; color: var(--muted-foreground); white-space: nowrap; }
+        .ov-merge { font-weight: 800; color: #166534; background: #f0fdf4; border: 1px solid #86efac; border-radius: 999px; padding: 0 0.5rem; white-space: nowrap; }
         .ov-warn { display: inline-flex; align-items: center; gap: 0.2rem; margin-left: auto; font-weight: 800; color: #b45309; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 999px; padding: 0 0.5rem; white-space: nowrap; }
         @media (max-width: 768px) {
           .ov-root { padding: 0.75rem 0.75rem 1.5rem; gap: 0.7rem; }

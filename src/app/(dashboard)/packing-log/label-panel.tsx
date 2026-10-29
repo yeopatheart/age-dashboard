@@ -1,5 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import { useCan } from '@/components/permissions-context';
+import { mergeGroupOf, mergeLabelText, mergeSelected, normalizeMergeGroups, unmergeGroup, type MergeGroups } from '@/lib/box-merge';
 import Link from 'next/link';
 import { Barcode, Printer } from 'lucide-react';
 import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
@@ -7,7 +9,7 @@ import { LabelView } from '@/components/labels/label-view';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
 import { FOLD_KEEP_OUT_MM, type LabelData } from '@/lib/labels/template';
 import type { CardLabelInfo } from '@/lib/labels/server';
-import { getCardLabels, prepareLabelPrint, type CardLabelPreviewSource } from '../labels/actions';
+import { getCardLabels, prepareLabelPrint, saveMergeGroups, type CardLabelPreviewSource } from '../labels/actions';
 
 const PREVIEW_UNIT = '3px'; // 미리보기에서 1mm를 그리는 크기
 
@@ -24,6 +26,10 @@ export function LabelPanel({ dailyBusinessId, boxCount }: { dailyBusinessId: str
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<LabelPrintJob | null>(null);
+  const [groups, setGroups] = useState<MergeGroups>([]);
+  // 합포장 표시가 바뀐 박스 중 이미 라벨을 출력한 박스 — 다시 출력하기 전까지 알려 준다.
+  const [staleSeqs, setStaleSeqs] = useState<number[]>([]);
+  const canMerge = useCan()('packing:submit');
 
   // 업체가 바뀌면 이 컴포넌트가 새로 만들어진다(key). 처음 한 번 라벨 상태와 미리보기 재료를 읽는다.
   useEffect(() => {
@@ -33,6 +39,7 @@ export function LabelPanel({ dailyBusinessId, boxCount }: { dailyBusinessId: str
       if (cancelled) return;
       setInfos(result.infos);
       setSource({ template: result.template, base: result.base });
+      setGroups(result.base?.mergeGroups ?? []);
       setLoaded(true);
     })();
     return () => {
@@ -48,17 +55,79 @@ export function LabelPanel({ dailyBusinessId, boxCount }: { dailyBusinessId: str
     setBusyKey(null);
     if (payload.error || !payload.template) return setError(payload.error ?? '라벨을 준비하지 못했습니다.');
     setInfos(payload.infos);
+    setStaleSeqs((prev) => prev.filter((n) => !targetSeqs.includes(n)));
     setJob({ template: payload.template, labels: payload.labels });
   };
 
+  const changeGroups = async (next: MergeGroups) => {
+    if (busyKey) return;
+    setBusyKey('merge');
+    setError(null);
+    const result = await saveMergeGroups(dailyBusinessId, next);
+    setBusyKey(null);
+    if (result.error) return setError(result.error);
+    // 합포장 표시가 달라진 박스(묶음이 생기거나 바뀌거나 없어진 박스) 중 이미 출력한 것
+    const changed = new Set<number>();
+    for (let seq = 1; seq <= 99; seq++) if (mergeLabelText(groups, seq) !== mergeLabelText(result.groups, seq)) changed.add(seq);
+    setGroups(result.groups);
+    setStaleSeqs((prev) => [...new Set([...prev, ...infos.filter((i) => changed.has(i.seq) && i.printCount > 0).map((i) => i.seq)])]);
+  };
+
   return (
-    <LabelPanelView boxCount={boxCount} infos={infos} source={source} loaded={loaded} busyKey={busyKey} error={error} job={job} onPrint={print} onJobDone={() => setJob(null)} />
+    <LabelPanelView boxCount={boxCount} groups={normalizeMergeGroups(groups, boxCount)} staleSeqs={staleSeqs} onGroupsChange={canMerge ? changeGroups : undefined} infos={infos} source={source} loaded={loaded} busyKey={busyKey} error={error} job={job} onPrint={print} onJobDone={() => setJob(null)} />
+  );
+}
+
+// 합포장 지정: 박스 번호 칩을 눌러 고른 뒤 "묶기". 포장이 끝난 뒤 묶음의 박스들을 함께 테이핑한다(라벨에 "합포장 1·2"가 찍힌다).
+function MergeEditor({ boxCount, groups, disabled, onChange }: { boxCount: number; groups: MergeGroups; disabled: boolean; onChange?: (next: MergeGroups) => void }) {
+  const [picked, setPicked] = useState<number[]>([]);
+  const seqs = Array.from({ length: Math.min(boxCount, 99) }, (_, i) => i + 1);
+  const toggle = (seq: number) => setPicked((p) => (p.includes(seq) ? p.filter((n) => n !== seq) : [...p, seq]));
+  if (!onChange && groups.length === 0) return null;
+  return (
+    <div className="lp-merge">
+      <span className="lp-merge-title">합포장</span>
+      {groups.map((g) => (
+        <span key={g[0]} className="lp-merge-group">
+          {g.join('·')}번
+          {onChange && (
+            <button type="button" disabled={disabled} onClick={() => onChange(unmergeGroup(groups, g))} aria-label={`${g.join('·')}번 합포장 해제`}>×</button>
+          )}
+        </span>
+      ))}
+      {onChange && (
+        <>
+          <span className="lp-merge-pick" role="group" aria-label="합포장할 박스 고르기">
+            {seqs.map((seq) => (
+              <button key={seq} type="button" disabled={disabled} className={picked.includes(seq) ? 'lp-pick-on' : ''} aria-pressed={picked.includes(seq)} onClick={() => toggle(seq)}>
+                {seq}
+              </button>
+            ))}
+          </span>
+          <button
+            type="button"
+            className="lp-merge-do"
+            disabled={disabled || picked.length < 2}
+            onClick={() => {
+              onChange(mergeSelected(groups, picked));
+              setPicked([]);
+            }}
+          >
+            묶기
+          </button>
+        </>
+      )}
+      {groups.length === 0 && onChange && <span className="lp-merge-hint">같이 테이핑할 박스를 고르면 라벨에 합포장 번호가 찍힙니다</span>}
+    </div>
   );
 }
 
 // 화면만 그리는 부분(데이터를 props로 받는다).
 export function LabelPanelView({
   boxCount,
+  groups,
+  staleSeqs,
+  onGroupsChange,
   infos,
   source,
   loaded,
@@ -69,6 +138,9 @@ export function LabelPanelView({
   onJobDone,
 }: {
   boxCount: number;
+  groups: MergeGroups;
+  staleSeqs: number[];
+  onGroupsChange?: (next: MergeGroups) => void; // 없으면 합포장은 보기만 한다(권한 없음)
   infos: CardLabelInfo[];
   source: Pick<CardLabelPreviewSource, 'template' | 'base'> | null;
   loaded: boolean;
@@ -94,7 +166,7 @@ export function LabelPanelView({
         return null;
       }
     }
-    return { ...source.base.data, boxNo: seq, barcode };
+    return { ...source.base.data, boxNo: seq, barcode, merge: mergeLabelText(groups, seq) };
   };
 
   const statusOf = (seq: number) => {
@@ -118,6 +190,8 @@ export function LabelPanelView({
         )}
       </div>
 
+      {boxCount >= 2 && <MergeEditor boxCount={boxCount} groups={groups} disabled={!!busyKey} onChange={onGroupsChange} />}
+
       {boxCount === 0 ? (
         <p className="lp-empty">박스를 먼저 할당하면 라벨을 출력할 수 있습니다.</p>
       ) : (
@@ -131,6 +205,7 @@ export function LabelPanelView({
                 <div className="lp-box-head">
                   <strong>박스 {seq}번</strong>
                   <span className="lp-chip">{loaded ? st.text : '…'}</span>
+                  {mergeGroupOf(groups, seq) && <span className="lp-chip lp-chip-merge">{mergeLabelText(groups, seq)}</span>}
                 </div>
                 <div className="lp-preview">
                   {data && template ? (
@@ -155,6 +230,9 @@ export function LabelPanelView({
         </div>
       )}
 
+      {staleSeqs.length > 0 && (
+        <p className="lp-warn">합포장 표시가 바뀌었습니다. 이미 붙인 {staleSeqs.join(', ')}번 라벨은 옛 표시이니 다시 출력해서 바꿔 붙이세요.</p>
+      )}
       {extra.length > 0 && (
         <p className="lp-warn">박스를 줄여서 번호 {extra.map((e) => e.seq).join(', ')}번 라벨이 남아 있습니다. 해당 라벨은 붙이지 마세요.</p>
       )}
@@ -173,6 +251,17 @@ export function LabelPanelView({
         .lp-spacer { flex: 1; }
         .lp-bulk { display: inline-flex; align-items: center; gap: 0.35rem; height: 2.25rem; padding: 0 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; cursor: pointer; }
         .lp-bulk:disabled, .lp-print:disabled { opacity: 0.55; cursor: not-allowed; }
+        .lp-merge { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.8125rem; }
+        .lp-merge-title { font-weight: 800; }
+        .lp-merge-group { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.1rem 0.35rem 0.1rem 0.65rem; border-radius: 999px; background: #ecfdf5; border: 1px solid #6ee7b7; color: #047857; font-weight: 800; }
+        .lp-merge-group button { width: 1.25rem; height: 1.25rem; border-radius: 999px; border: 0; background: transparent; color: #047857; font-weight: 800; cursor: pointer; line-height: 1; }
+        .lp-merge-pick { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
+        .lp-merge-pick button { min-width: 2rem; height: 2rem; padding: 0 0.4rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 800; cursor: pointer; }
+        .lp-merge-pick .lp-pick-on { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .lp-merge-do { height: 2rem; padding: 0 0.9rem; border-radius: 999px; border: 1px solid var(--primary); background: #fff; color: var(--primary); font-size: 0.8125rem; font-weight: 800; cursor: pointer; }
+        .lp-merge button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .lp-merge-hint { color: var(--muted-foreground); font-size: 0.75rem; }
+        .lp-box .lp-chip-merge { background: #ecfdf5; color: #047857; }
         .lp-empty { color: var(--muted-foreground); font-size: 0.875rem; }
         .lp-boxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr)); gap: 0.8rem; }
         .lp-box { border: 2px solid var(--border); border-radius: 14px; padding: 0.75rem 0.85rem 0.9rem; background: #fff; display: flex; flex-direction: column; gap: 0.65rem; min-width: 0; }
