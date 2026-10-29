@@ -51,7 +51,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     ? await Promise.all([
         supabase
           .from('order_items')
-          .select('id, daily_business_id, product_sequence, product_id, product_name_raw, quantity, unit, secondary_weight_kg, size_request, is_mulbong, is_packed, unshipped_quantity, unshipped_reason, change_status')
+          .select('id, daily_business_id, product_sequence, product_id, product_name_raw, quantity, unit, secondary_weight_kg, measured_weight_kg, size_request, is_mulbong, is_packed, unshipped_quantity, unshipped_reason, change_status')
           .in('daily_business_id', dailyBusinessIds),
         supabase.from('packing_records').select('id, daily_business_id, order_signature').in('daily_business_id', dailyBusinessIds),
         supabase.from('packing_recommendations').select('daily_business_id, order_signature, created_at').in('daily_business_id', dailyBusinessIds).order('created_at'),
@@ -125,6 +125,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         quantity: Number(row.quantity),
         unit: row.unit,
         secondaryWeightKg: row.secondary_weight_kg ?? undefined,
+        measuredWeightKg: row.measured_weight_kg == null ? undefined : Number(row.measured_weight_kg),
         sizeRequest: row.size_request ?? undefined,
         isMulbong: row.is_mulbong,
         isPacked: row.is_packed,

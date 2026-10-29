@@ -928,36 +928,26 @@ export function DashboardClient({
     }
   });
 
-  // 전체보기 기준(기본 주문표 전체, 입력 순서) 주문 목록을 엑셀에서 열리는 CSV로 내려받는다.
-  // 상품 칸은 "상품명 수량단위 (사이즈·중량)"이고, 추가/수정/취소된 상품은 앞에 표시한다.
-  const exportOrders = () => {
-    const STATUS_PREFIX: Partial<Record<ChangeStatus, string>> = { new: '[추가] ', modified: '[수정] ', cancelled: '[취소] ' };
-    const rowItems = mainRows.map((row) =>
-      items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence),
-    );
-    const maxItems = rowItems.reduce((m, list) => Math.max(m, list.length), 0);
-    const head = ['번호', '터미널', '고객명', '박스', '메모', ...Array.from({ length: maxItems }, (_, i) => `상품 ${i + 1}`)];
-    const lines = mainRows.map((row, idx) => [
-      idx + 1,
-      row.terminal,
-      `${row.businessName}${roundOf(row) ? ` (${roundLabel(roundOf(row) as OrderRound)})` : ''}`,
-      row.totalBoxes ?? '',
-      row.memo ?? '',
-      ...Array.from({ length: maxItems }, (_, i) => {
-        const item = rowItems[idx][i];
-        if (!item) return '';
-        const extra = [item.secondaryWeightKg != null ? `${item.secondaryWeightKg}kg` : null, item.sizeRequest].filter(Boolean).join(', ');
-        const unshippedPrefix = item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' ? `[미출고 ${item.unshippedQuantity}] ` : '';
-        return `${STATUS_PREFIX[item.changeStatus] ?? ''}${unshippedPrefix}${item.productName} ${isUndecidedQuantity(item) ? '수량 미정' : `${item.quantity}${item.unit}`}${extra ? ` (${extra})` : ''}`;
-      }),
-    ]);
-    const csv = [head, ...lines].map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `주문목록_${orderDate}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  // 별도 주문(택배) 고객의 정산용 엑셀(.xlsx)을 내려받는다. 양식은 src/lib/export/settlement.ts. 엑셀 라이브러리는 클릭할 때만 불러온다.
+  const [exporting, setExporting] = useState(false);
+  const exportOrders = async () => {
+    if (exporting) return;
+    if (separateRows.length === 0) {
+      window.alert('내려받을 별도 주문(택배) 고객이 없습니다. 터미널 관리에서 별도 주문으로 지정한 터미널의 주문이 이 파일에 담깁니다.');
+      return;
+    }
+    setExporting(true);
+    try {
+      const { buildSettlementLines, buildSettlementWorkbook } = await import('@/lib/export/settlement');
+      const blob = await buildSettlementWorkbook(buildSettlementLines(separateRows, items, orderDate), orderDate);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `정산_${orderDate}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } finally {
+      setExporting(false);
+    }
   };
 
   // 강조 상품: 날짜별로 DB에 저장해서 PC와 TV가 같은 선택을 본다. 누르는 즉시 화면에 반영하고 저장은 뒤에서 한다.
@@ -1182,8 +1172,8 @@ export function DashboardClient({
             onClick={exportOrders}
             disabled={mainRows.length === 0}
             className="w-8 h-8 rounded-lg border border-slate-200 text-slate-600 bg-white hover:bg-slate-100 disabled:opacity-40 transition-colors flex items-center justify-center"
-            title="주문 목록 엑셀(CSV) 다운로드 — 전체보기 기준"
-            aria-label="주문 목록 엑셀 다운로드"
+            title="정산용 엑셀 다운로드 — 별도 주문(택배) 고객"
+            aria-label="정산용 엑셀 다운로드"
           >
             <Download className="w-4 h-4" />
           </button>
