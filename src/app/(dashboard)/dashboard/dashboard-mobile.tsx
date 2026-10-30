@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, GripVertical, ListChecks, PackageX, Pencil, Plus, Trash2, X } from 'lucide-react';
-import { getProductCustomers, getProductSummary, isCardComplete, isUndecidedQuantity, roundLabel, type OrderItem, type OrderRound, type OrderRow } from '@/lib/orders';
+import { getProductCustomers, getProductSummary, prepLabelOf, isCardComplete, isUndecidedQuantity, roundLabel, type OrderItem, type OrderRound, type OrderRow } from '@/lib/orders';
 import { BoxDots } from '@/components/box-dots';
 import { STAGE_LABEL, stageDetail, stageOf, type Stage } from '@/lib/overview';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
@@ -47,7 +47,7 @@ const isLive = (i: OrderItem) => i.changeStatus !== 'cancelled';
 function detailOf(item: OrderItem): string {
   if (isUndecidedQuantity(item)) return '수량 미정';
   const parts = [`${item.quantity}${item.unit}`];
-  const extra = [item.secondaryWeightKg != null ? `${item.secondaryWeightKg}kg` : null, item.sizeRequest].filter(Boolean).join(', ');
+  const extra = [item.secondaryWeightKg != null ? `${item.secondaryWeightKg}kg` : null, item.sizeRequest, prepLabelOf(item)].filter(Boolean).join(', ');
   if (extra) parts.push(`(${extra})`);
   return parts.join(' ');
 }

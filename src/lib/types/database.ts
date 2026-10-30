@@ -110,6 +110,8 @@ type OrderItem = {
   secondary_weight_kg: number | null;
   size_request: string | null;
   is_mulbong: boolean;
+  // 기포기(0040): 물봉에 기포기를 부착해서 나간다. true면 is_mulbong도 true다.
+  has_aerator: boolean;
   mulbong_box_count: number | null;
   has_ice_pack: boolean;
   from_stock: boolean;
@@ -325,6 +327,7 @@ export type Database = {
           secondary_weight_kg?: number | null;
           size_request?: string | null;
           is_mulbong?: boolean;
+          has_aerator?: boolean;
           mulbong_box_count?: number | null;
           has_ice_pack?: boolean;
           from_stock?: boolean;

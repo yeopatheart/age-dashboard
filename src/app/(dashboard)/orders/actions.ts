@@ -9,7 +9,7 @@ import { editableDateError } from '@/lib/order-date';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from '@/lib/kakao-parser';
 import { repairFailedLine } from '@/lib/kakao-ai-repair';
-import type { OrderRound } from '@/lib/orders';
+import { prepOf, type OrderRound } from '@/lib/orders';
 import { requirePermission } from '@/lib/permissions/access';
 
 // parseLine이 "터미널/업체명/상품" 3분할 자체에 실패했을 때만 붙는 고정 reviewReason —
@@ -27,6 +27,7 @@ function blankProduct(raw: string, productName: string): ParsedProduct {
     secondaryWeightKg: null,
     sizeRequest: null,
     isMulbong: false,
+    hasAerator: false,
     mulbongBoxCount: null,
     hasIcePack: false,
     fromStock: false,
@@ -157,7 +158,7 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
     dailyBusinessIds.length > 0
       ? await supabase
           .from('order_items')
-          .select('id, daily_business_id, product_name_raw, quantity, unit, secondary_weight_kg, size_request, is_mulbong, mulbong_box_count, has_ice_pack, from_stock, change_status')
+          .select('id, daily_business_id, product_name_raw, quantity, unit, secondary_weight_kg, size_request, is_mulbong, has_aerator, mulbong_box_count, has_ice_pack, from_stock, change_status')
           .in('daily_business_id', dailyBusinessIds)
       : { data: [] };
 
@@ -228,7 +229,8 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
     }
 
     line.products.forEach((product, idx) => {
-      const existing = existingItems.find((i) => i.product_name_raw === product.productName);
+      // 같은 상품도 물봉·기포기·일반은 준비 방식이 달라 별개 줄이다(예: "보리새우 30미(일반, 물봉)"과 "(일반, 기포기)"). 취소는 상품명만으로 찾는다.
+      const existing = existingItems.find((i) => i.product_name_raw === product.productName && (product.isCancel || prepOf({ isMulbong: i.is_mulbong, hasAerator: i.has_aerator }) === prepOf(product)));
       const spec = parseSizeSpec(product.sizeRequest, settings);
       const common = {
         ...base,
@@ -264,6 +266,7 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
           (existing.secondary_weight_kg ?? null) === product.secondaryWeightKg &&
           (existing.size_request ?? null) === (product.sizeRequest ?? null) &&
           existing.is_mulbong === product.isMulbong &&
+          existing.has_aerator === product.hasAerator &&
           (existing.mulbong_box_count ?? null) === (product.mulbongBoxCount ?? null) &&
           existing.has_ice_pack === product.hasIcePack &&
           existing.from_stock === product.fromStock;
@@ -466,6 +469,7 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
               size_request: product.sizeRequest,
               size_spec: parseSizeSpec(product.sizeRequest, settings),
               is_mulbong: product.isMulbong,
+              has_aerator: product.hasAerator,
               mulbong_box_count: product.mulbongBoxCount,
               has_ice_pack: product.hasIcePack,
               from_stock: product.fromStock,
@@ -503,6 +507,7 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
           size_request: product.sizeRequest,
           size_spec: parseSizeSpec(product.sizeRequest, settings),
           is_mulbong: product.isMulbong,
+          has_aerator: product.hasAerator,
           mulbong_box_count: product.mulbongBoxCount,
           has_ice_pack: product.hasIcePack,
           from_stock: product.fromStock,

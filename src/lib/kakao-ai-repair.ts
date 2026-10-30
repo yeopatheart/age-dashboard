@@ -17,6 +17,7 @@ const SYSTEM_PROMPT = `너는 통영 수산물 도매업체의 카카오톡 주�
 - 수량과 중량이 함께 쓰이면 "3미+2.5kg"처럼 개수 다음에 중량이 온다 — secondaryWeightKg로 분리.
 - 괄호 안 텍스트는 사이즈 요청/메모(sizeRequest)일 수 있다.
 - "물봉"이 포함되면 isMulbong: true, "물봉 N박스"면 mulbongBoxCount: N.
+- "기포기"가 포함되면 hasAerator: true이고 isMulbong도 true다(기포기는 물봉에 부착해서 나간다). "물봉"만 있으면 hasAerator는 false.
 - "얼음"/"아이스팩"/"얼려서" 등이 포함되면 hasIcePack: true.
 - "재고"/"있는거" 등 재고 사용을 뜻하면 fromStock: true.
 확신이 서지 않는 값은 각 필드의 기본값(0이 아닌 경우 null 또는 false)을 사용해라. 절대 상품을 지어내지 마라 —
@@ -31,13 +32,14 @@ const PRODUCT_SCHEMA = {
     secondaryWeightKg: { type: ['number', 'null'] },
     sizeRequest: { type: ['string', 'null'] },
     isMulbong: { type: 'boolean' },
+    hasAerator: { type: 'boolean' },
     mulbongBoxCount: { type: ['number', 'null'] },
     hasIcePack: { type: 'boolean' },
     fromStock: { type: 'boolean' },
   },
   required: [
     'productName', 'quantity', 'unit', 'secondaryWeightKg', 'sizeRequest',
-    'isMulbong', 'mulbongBoxCount', 'hasIcePack', 'fromStock',
+    'isMulbong', 'hasAerator', 'mulbongBoxCount', 'hasIcePack', 'fromStock',
   ],
 } as const;
 
@@ -62,6 +64,7 @@ interface RepairedProduct {
   secondaryWeightKg: number | null;
   sizeRequest: string | null;
   isMulbong: boolean;
+  hasAerator: boolean;
   mulbongBoxCount: number | null;
   hasIcePack: boolean;
   fromStock: boolean;
@@ -115,6 +118,7 @@ export async function repairFailedLine(
       secondaryWeightKg: p.secondaryWeightKg,
       sizeRequest: p.sizeRequest,
       isMulbong: p.isMulbong,
+      hasAerator: p.hasAerator === true,
       mulbongBoxCount: p.mulbongBoxCount,
       hasIcePack: p.hasIcePack,
       fromStock: p.fromStock,

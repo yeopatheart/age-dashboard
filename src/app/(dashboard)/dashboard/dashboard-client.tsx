@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
-import { businessIdsInBothRounds, roundLabel, getProductSummary, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
+import { businessIdsInBothRounds, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
@@ -567,6 +567,7 @@ function ItemFormModal({
   const [weightKg, setWeightKg] = useState(initial?.secondaryWeightKg?.toString() ?? '');
   const [sizeRequest, setSizeRequest] = useState(initial?.sizeRequest ?? '');
   const [status, setStatus] = useState<ChangeStatus>(initial?.changeStatus ?? 'new');
+  const [prep, setPrep] = useState<Prep>(initial?.prep ?? 'none');
 
   const handleSave = () => {
     if (!productName.trim() || (quantity.trim() && !unit.trim())) return;
@@ -579,6 +580,7 @@ function ItemFormModal({
       secondaryWeightKg: weightKg.trim() ? parseFloat(weightKg) : null,
       sizeRequest: sizeRequest.trim() || null,
       changeStatus: status,
+      prep,
     });
   };
 
@@ -629,6 +631,22 @@ function ItemFormModal({
             placeholder="예) 2.5"
             className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:border-[#003057] focus:outline-none"
           />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-slate-600 mb-1">포장 방식</label>
+          <div className="relative">
+            <select
+              value={prep}
+              onChange={(e) => setPrep(e.target.value as Prep)}
+              className="w-full appearance-none border border-slate-300 rounded-lg px-3 pr-9 py-2 text-sm focus:border-[#003057] focus:outline-none"
+            >
+              <option value="none">일반</option>
+              <option value="mulbong">물봉 (물봉 안에 상품을 담음)</option>
+              <option value="aerator">기포기 (물봉 + 기포기 부착)</option>
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          </div>
         </div>
 
         <div>
@@ -1126,6 +1144,7 @@ export function DashboardClient({
             secondaryWeightKg: editItemModal.secondaryWeightKg ?? null,
             sizeRequest: editItemModal.sizeRequest ?? null,
             changeStatus: editItemModal.changeStatus,
+            prep: prepOf(editItemModal),
           }}
           onSave={handleSaveItem}
           onClose={() => setEditItemModal(null)}
@@ -1469,6 +1488,7 @@ export function DashboardClient({
                       const suffixParts: string[] = [];
                       if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
                       if (item.sizeRequest) suffixParts.push(item.sizeRequest);
+                      if (prepLabelOf(item)) suffixParts.push(prepLabelOf(item) as string);
                       const suffix = suffixParts.length ? ` (${suffixParts.join(', ')})` : '';
 
                       return (
@@ -1608,6 +1628,7 @@ export function DashboardClient({
                         const suffixParts: string[] = [];
                         if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
                         if (item.sizeRequest) suffixParts.push(item.sizeRequest);
+                      if (prepLabelOf(item)) suffixParts.push(prepLabelOf(item) as string);
                         return (
                           <div key={item.id} className={`relative group/pill flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
                             <span className="flex items-baseline gap-1 min-w-0">

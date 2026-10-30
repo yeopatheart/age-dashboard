@@ -302,6 +302,7 @@ export function NewOrderClient({
                           <Sparkles size={11} /> AI 보정
                         </span>
                       )}
+                      {s.product.hasAerator ? <span className="spec-chip" title="물봉에 기포기를 부착해서 내보냅니다">기포기</span> : s.product.isMulbong ? <span className="spec-chip" title="물봉 안에 상품을 담습니다">물봉</span> : null}
                       {s.sizeSpecText.map((t) => <span key={t} className="spec-chip" title="입력한 사이즈 표기를 중량 범위로 해석한 값">{t}</span>)}
                       {s.sizeSpecUnparsed.map((t) => <span key={t} className="spec-chip spec-chip-off" title="이 표기는 중량 범위로 해석하지 못했습니다(원문 그대로 저장)">해석 못 함: {t}</span>)}
                       {s.normalizedFrom && (
