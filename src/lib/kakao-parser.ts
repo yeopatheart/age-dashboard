@@ -12,6 +12,8 @@ export interface ParsedProduct {
   secondaryWeightKg: number | null;
   sizeRequest: string | null;
   isMulbong: boolean;
+  // 기포기: 물봉에 기포기를 부착해서 나간다(isMulbong도 true). "물봉"만 쓰면 false.
+  hasAerator: boolean;
   mulbongBoxCount: number | null;
   hasIcePack: boolean;
   fromStock: boolean;
@@ -104,6 +106,7 @@ function parseProduct(original: string): ParsedProduct {
       secondaryWeightKg: null,
       sizeRequest: null,
       isMulbong: false,
+      hasAerator: false,
       mulbongBoxCount: null,
       hasIcePack: false,
       fromStock: false,
@@ -170,6 +173,7 @@ function parseProduct(original: string): ParsedProduct {
   }
 
   let isMulbong = false;
+  let hasAerator = false;
   let mulbongBoxCount: number | null = null;
   let hasIcePack = false;
   let fromStock = false;
@@ -178,8 +182,12 @@ function parseProduct(original: string): ParsedProduct {
   if (parenContent) {
     for (const token of parenContent.split(",").map((t) => t.trim()).filter(Boolean)) {
       const mulbongBoxMatch = token.match(MULBONG_BOX_RE);
-      if (token === "물봉" || token === "기포기") {
+      if (token === "물봉") {
         isMulbong = true;
+      } else if (token === "기포기") {
+        // 기포기는 물봉에 부착해서 내보내므로 물봉도 함께 있는 것으로 본다.
+        isMulbong = true;
+        hasAerator = true;
       } else if (mulbongBoxMatch) {
         isMulbong = true;
         mulbongBoxCount = parseInt(mulbongBoxMatch[1], 10);
@@ -201,6 +209,7 @@ function parseProduct(original: string): ParsedProduct {
     secondaryWeightKg,
     sizeRequest: sizeParts.length > 0 ? sizeParts.join(", ") : null,
     isMulbong,
+    hasAerator,
     mulbongBoxCount,
     hasIcePack,
     fromStock,

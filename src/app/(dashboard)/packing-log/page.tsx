@@ -33,7 +33,7 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
     ? await Promise.all([
         supabase
           .from('order_items')
-          .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, measured_weight_kg, secondary_weight_kg, size_request, change_status, unshipped_quantity, is_mulbong')
+          .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, measured_weight_kg, secondary_weight_kg, size_request, change_status, unshipped_quantity, is_mulbong, has_aerator')
           .in('daily_business_id', dailyIds)
           .order('product_sequence'),
         supabase.from('packing_records').select('id, daily_business_id, submitted_at, order_signature').in('daily_business_id', dailyIds),
@@ -107,6 +107,8 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
           secondaryWeightKg: i.secondary_weight_kg == null ? null : Number(i.secondary_weight_kg),
           sizeRequest: i.size_request,
           needsMulbong: needsMulbong.get(i.product_name_raw) ?? false,
+          aerator: i.has_aerator,
+          orderMulbong: i.is_mulbong && !i.has_aerator,
         })),
       recommendation: recommendations.get(d.id)?.current ?? null,
       // 미제출: 추천을 만든 뒤 주문이 바뀜 / 제출: 제출한 뒤 주문이 바뀜 → 박스를 다시 확인해야 한다

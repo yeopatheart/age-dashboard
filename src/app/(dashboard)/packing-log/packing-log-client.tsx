@@ -32,6 +32,10 @@ export interface PackingItem {
   secondaryWeightKg: number | null;
   sizeRequest: string | null;
   needsMulbong: boolean;
+  // 주문에 "기포기"가 적힌 상품 — 물봉에 기포기를 부착해서 내보낸다
+  aerator: boolean;
+  // 주문에 "물봉"이 적힌 상품(기포기가 아닌 물봉만)
+  orderMulbong: boolean;
 }
 export interface PackingBusiness {
   id: string;
@@ -582,6 +586,7 @@ export function PackingLogClient({
         .pk-qty { color: var(--muted-foreground); white-space: nowrap; }
         .pk-mini { width: 3.4rem; height: 1.7rem; border: 1px solid var(--border); border-radius: 8px; text-align: center; font-size: 0.75rem; background: #fff; }
         .pk-slot-meta .pk-mulbong { font-size: 0.75rem; padding: 0.05rem 0.5rem; }
+        .pk-aerator { font-size: 0.625rem; font-weight: 800; color: #0f766e; background: #f0fdfa; border: 1px solid #5eead4; border-radius: 999px; padding: 0 0.35rem; }
         .pk-mulbong { font-size: 0.625rem; font-weight: 800; color: #1d4ed8; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 999px; padding: 0 0.35rem; }
         .pk-pool-row { display: flex; flex-direction: column; gap: 0.25rem; }
         .pk-pool-opts { display: flex; align-items: center; gap: 0.4rem; font-size: 0.6875rem; color: var(--muted-foreground); padding-left: 1.2rem; flex-wrap: wrap; }
@@ -671,7 +676,7 @@ function PoolItem({
           <GripVertical size={14} color="#94a3b8" />
           <span className="pk-name">{item.name}</span>
           <span className="pk-qty">{fmt(remaining)}{item.unit}{partial ? ` / ${fmt(item.quantity)}` : ''}</span>
-          {item.needsMulbong && <span className="pk-mulbong">물봉</span>}
+          {item.aerator ? <span className="pk-aerator">기포기</span> : (item.needsMulbong || item.orderMulbong) && <span className="pk-mulbong">물봉</span>}
         </span>
       </div>
       <div className="pk-pool-opts">
@@ -783,6 +788,7 @@ function PlacedChip({
         <GripVertical size={14} color="#94a3b8" />
         <span className="pk-name">{item.name}</span>
         <span className="pk-qty">{fmt(qty)}{item.unit}{qty < item.quantity - EPS ? ` / ${fmt(item.quantity)}` : ''}</span>
+        {item.aerator && <span className="pk-aerator">기포기</span>}
         {mulbongMismatch && <span className="pk-warn" title="물봉 포장이 필요한 상품인데 물봉용 박스가 아닙니다">물봉 필요</span>}
       </span>
       <button className="pk-x" onClick={onRemove} title="박스에서 빼기"><X size={13} /></button>

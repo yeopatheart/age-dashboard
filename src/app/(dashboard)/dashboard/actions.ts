@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { findOrCreateBusiness, findOrCreateDailyBusiness } from '@/lib/business-lookup';
-import type { ChangeStatus, OrderRound } from '@/lib/orders';
+import type { ChangeStatus, OrderRound, Prep } from '@/lib/orders';
 import { requirePermission } from '@/lib/permissions/access';
 
 export async function togglePacked(orderItemId: string, nextPacked: boolean) {
@@ -102,6 +102,8 @@ export interface ManualItemFields {
   secondaryWeightKg: number | null;
   sizeRequest: string | null;
   changeStatus: ChangeStatus;
+  // 포장 방식: 일반 / 물봉 / 기포기(물봉 + 기포기 부착)
+  prep: Prep;
 }
 
 export async function addOrderItemManual(dailyBusinessId: string, fields: ManualItemFields) {
@@ -122,6 +124,8 @@ export async function addOrderItemManual(dailyBusinessId: string, fields: Manual
     unit: fields.unit,
     secondary_weight_kg: fields.secondaryWeightKg,
     size_request: fields.sizeRequest,
+    is_mulbong: fields.prep !== 'none',
+    has_aerator: fields.prep === 'aerator',
     change_status: fields.changeStatus,
     created_by: userId,
   });
@@ -139,6 +143,8 @@ export async function updateOrderItemManual(orderItemId: string, fields: ManualI
       unit: fields.unit,
       secondary_weight_kg: fields.secondaryWeightKg,
       size_request: fields.sizeRequest,
+      is_mulbong: fields.prep !== 'none',
+      has_aerator: fields.prep === 'aerator',
       change_status: fields.changeStatus,
     })
     .eq('id', orderItemId);

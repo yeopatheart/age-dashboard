@@ -63,6 +63,8 @@ export interface OrderItem {
   measuredWeightKg?: number;
   sizeRequest?: string;
   isMulbong: boolean;
+  // 기포기(물봉에 기포기를 부착해서 나간다). true면 isMulbong도 true다.
+  hasAerator: boolean;
   isPacked: boolean;
   // 미출고 수량(0이면 정상) — 주문취소와 별개로, 주문은 유효하지만 현장에서 출고하지 못한 수량.
   unshippedQuantity: number;
@@ -74,7 +76,8 @@ export interface ProductSummaryRow {
   key: string;
   productName: string;
   size: string; // 사이즈/종류 요청(예: "선별", "6-800"). 없으면 빈 문자열
-  label: string; // 화면 표시용: "보리새우 (선별)"
+  label: string; // 화면 표시용: "보리새우 (선별)", 물봉·기포기면 "보리새우 (선별) · 기포기"
+  prep: Prep;
   total: number; // 출고 대상 수량 = 주문 − 미출고
   unshipped: number; // 미출고 수량(출고하지 못한 것)
   unit: string;
@@ -97,9 +100,20 @@ export function isCardComplete(items: Pick<OrderItem, 'changeStatus' | 'isPacked
   return live.every((i) => !isUndecidedQuantity(i) && (i.isPacked || i.quantity - i.unshippedQuantity <= 0));
 }
 
+// 준비 방식: 일반 / 물봉(물봉 안에 상품을 담는다) / 기포기(물봉 + 기포기를 부착해서 나간다).
+// 같은 상품도 준비 방식이 다르면 별개 줄·별개 합계다.
+export type Prep = 'none' | 'mulbong' | 'aerator';
+export const PREP_LABEL: Record<Exclude<Prep, 'none'>, string> = { mulbong: '물봉', aerator: '기포기' };
+const PREP_ORDER: Prep[] = ['none', 'mulbong', 'aerator'];
+export const prepOf = (item: { isMulbong: boolean; hasAerator: boolean }): Prep => (item.hasAerator ? 'aerator' : item.isMulbong ? 'mulbong' : 'none');
+export const prepLabelOf = (item: { isMulbong: boolean; hasAerator: boolean }): string | null => {
+  const prep = prepOf(item);
+  return prep === 'none' ? null : PREP_LABEL[prep];
+};
+
 // 같은 품목으로 묶는 기준: 상품(없으면 입력한 이름) + 사이즈·종류 + 단위
-export const productKeyOf = (item: Pick<OrderItem, 'productId' | 'productName' | 'sizeRequest' | 'unit'>) =>
-  `${item.productId ?? item.productName}|${(item.sizeRequest ?? '').trim()}|${item.unit}`;
+export const productKeyOf = (item: Pick<OrderItem, 'productId' | 'productName' | 'sizeRequest' | 'unit' | 'isMulbong' | 'hasAerator'>) =>
+  `${item.productId ?? item.productName}|${(item.sizeRequest ?? '').trim()}|${item.unit}|${prepOf(item)}`;
 
 export interface ProductCustomer {
   dailyBusinessId: string;
@@ -112,13 +126,16 @@ export interface ProductCustomer {
 
 // 한 품목(getProductSummary의 한 줄)을 받는 업체와 업체별 수량. 업체는 rowOrder(화면 순서)대로 나열한다.
 export function getProductCustomers(items: OrderItem[], product: Pick<ProductSummaryRow, 'key'>, rowOrder: Map<string, number>): ProductCustomer[] {
-  const base = product.key.slice(0, product.key.lastIndexOf('|'));
+  // 키는 "상품|사이즈|단위|준비 방식"이다. 수량 미정 줄은 단위가 없어 키가 달라지므로 상품·사이즈·준비 방식까지만 맞춰 본다.
+  const parts = product.key.split('|');
+  const prep = parts.pop();
+  parts.pop();
+  const base = parts.join('|');
   const byRow = new Map<string, ProductCustomer>();
   for (const item of items) {
     if (item.changeStatus === 'cancelled') continue;
     const undecided = isUndecidedQuantity(item);
-    // 수량 미정 줄은 단위가 없어 키가 달라지므로 상품·사이즈까지만 맞춰 본다.
-    if (undecided ? !productKeyOf(item).startsWith(`${base}|`) : productKeyOf(item) !== product.key) continue;
+    if (undecided ? !(productKeyOf(item).startsWith(`${base}|`) && prepOf(item) === prep) : productKeyOf(item) !== product.key) continue;
     const entry = byRow.get(item.dailyBusinessId) ?? { dailyBusinessId: item.dailyBusinessId, name: item.businessName, quantity: 0, unshipped: 0, allPacked: true, undecided: false };
     if (undecided) entry.undecided = true;
     else {
@@ -149,7 +166,8 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
         key,
         productName: item.productName,
         size,
-        label: size ? `${item.productName} (${size})` : item.productName,
+        label: `${size ? `${item.productName} (${size})` : item.productName}${prepLabelOf(item) ? ` · ${prepLabelOf(item)}` : ''}`,
+        prep: prepOf(item),
         total: shippable,
         unshipped: item.unshippedQuantity,
         unit: item.unit,
@@ -159,7 +177,7 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
     }
   }
   return Array.from(map.values()).sort(
-    (a, b) => a.productName.localeCompare(b.productName, 'ko') || a.size.localeCompare(b.size, 'ko') || a.unit.localeCompare(b.unit, 'ko'),
+    (a, b) => a.productName.localeCompare(b.productName, 'ko') || a.size.localeCompare(b.size, 'ko') || a.unit.localeCompare(b.unit, 'ko') || PREP_ORDER.indexOf(a.prep) - PREP_ORDER.indexOf(b.prep),
   );
 }
 
