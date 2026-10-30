@@ -922,8 +922,7 @@ export function DashboardClient({
   // 글자가 잘리지 않게 하는 규칙: 글자를 담는 상자에는 overflow를 걸지 않는다(걸면 kg의 g처럼 기준선 아래로 내려오는 글자가
   // 줄 높이 경계에서 잘린다 — 이 글꼴은 글자 위·아래 여백이 커서 줄 높이를 글자 크기에 가깝게 줄이면 실제로 잘렸다).
   // 잘림은 팁 테두리에서만 일어나므로, 두 줄이 팁 안에 "글자 모양(descender 포함)까지" 들어가는 크기를 고른다.
-  // 크기는 3단계를 준비한다: 한 줄일 때(기본) / 두 줄이 팁 안에 들어가는 크기 / 그래도 넘칠 때의 가장 작은 크기.
-  // 실제로 어느 단계가 필요한지는 그려진 결과(넘침)를 보고 아래 효과에서 팁마다 정한다.
+  // 크기는 가장 큰 크기부터 1px씩 줄인 단계를 준비하고, 어느 단계가 필요한지는 그려진 결과(넘침)를 보고 아래 효과에서 팁마다 정한다.
   // 팁 안쪽 높이 = 행 높이 − 테두리 1 − 칸 여백 4 − 팁 테두리 2.
   const pillInnerHeight = rowHeight - 7;
 
@@ -938,14 +937,14 @@ export function DashboardClient({
   // 모니터 1/2는 열 폭이 화면 폭으로 정해진다. 상품이 많아 열이 좁아지면 글자도 그만큼 줄인다.
   const colWidth = isSplitMode && availWidth > 0 ? (availWidth - productGridFixedWidth(nameColumn) - ADD_COLUMN_WIDTH) / Math.max(1, productSlotCount - 1) : Infinity;
   const widthShrink = colWidth >= 120 ? 0 : colWidth >= 100 ? 1 : colWidth >= 88 ? 2 : 3;
-  const shrinkPill = (q: number, f: number) => ({ q: Math.max(8, q - widthShrink), f: Math.max(7, f - widthShrink) });
-  const q2 = Math.min(14, Math.floor((pillInnerHeight - 2) / 2.5));
-  // 마지막 단계는 아주 좁은 열(3줄로 접히는 경우)용으로 줄 간격까지 촘촘하게 둔다.
-  const pillSteps = [
-    { ...shrinkPill(14, 11), lh: 1.15 },
-    { ...shrinkPill(q2, Math.min(11, q2 - 1)), lh: 1.15 },
-    { q: Math.max(7, q2 - 2 - widthShrink), f: Math.max(6, Math.min(11, q2 - 3) - widthShrink), lh: 1.0 },
-  ];
+  // 글자 크기 단계: 가장 큰 크기부터 1px씩 줄여 가며, 팁 안쪽 높이에 들어가는 가장 큰 크기를 팁마다 고른다(아래 효과).
+  // 한 줄에 들어가면 한 줄로, 안 들어가면 두 줄이 팁 안에 들어가는 크기까지 줄인다. 괄호 표기(사이즈·물봉 등)가 붙은 팁도
+  // 같은 규칙이라, 팁에 여백이 있으면 그만큼 크게 보인다. 수량이 품목명·단위보다 크고, 작은 크기에서는 둘이 비슷해진다.
+  const pillSteps = Array.from({ length: 8 }, (_, i) => {
+    const q = Math.max(7, 14 - widthShrink - i);
+    const f = q >= 13 ? q - 3 : q - 1;
+    return { q, f: Math.max(6, f), lh: q <= 8 ? 1.0 : 1.15 };
+  }).filter((step, i, all) => i === 0 || step.q !== all[i - 1].q);
   const pillStepsAttr = pillSteps.map((p) => `${p.q},${p.f},${p.lh}`).join('|');
 
   // 팁마다 글자 크기 단계를 정한다: 기본 단계부터 시작해, 팁 안쪽 높이를 넘치면 한 단계씩 줄인다.
@@ -954,7 +953,7 @@ export function DashboardClient({
     if (!root) return;
     for (const el of root.querySelectorAll<HTMLElement>('[data-pill]')) {
       const steps = (el.dataset.sizes ?? '').split('|').map((p) => p.split(','));
-      let step = Number(el.dataset.start ?? 0);
+      let step = 0;
       const apply = (n: number) => {
         el.style.setProperty('--pq', `${steps[n][0]}px`);
         el.style.setProperty('--pn', `${steps[n][1]}px`);
@@ -1508,7 +1507,6 @@ export function DashboardClient({
                             <div
                               data-pill
                               data-sizes={pillStepsAttr}
-                              data-start={suffix ? 1 : 0}
                               onClick={() => !readOnly && handleTogglePacked(item)}
                               className="w-full min-w-0 flex flex-wrap items-baseline justify-center gap-x-1 z-10 cursor-pointer select-none break-keep [overflow-wrap:anywhere]"
                               // 컨테이너의 글자 크기도 칩 글자 크기에 맞춘다: 안 맞추면 수량을 감싼 상자의 보이지 않는 줄 높이(strut)가 부모의 큰 기본 글자
