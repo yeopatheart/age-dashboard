@@ -210,14 +210,16 @@ const NAME_COLUMN_DEFAULT = 144;
 const NAME_COLUMN_MIN = 72;
 const NAME_COLUMN_MAX = 220;
 const ROUND_BADGE_WIDTH = 28; // RoundBadge("1차") 폭 + 오른쪽 간격
+// 박스 열 폭. 박스 수 옆에 "합포장" 표시가 한 줄로 들어가는 폭이다.
+const BOX_COLUMN = 80;
 function productGridTemplate(slotCount: number, flexible = false, nameColumn = NAME_COLUMN_DEFAULT) {
-  const fixed = `40px 80px ${nameColumn}px 56px`;
+  const fixed = `40px 80px ${nameColumn}px ${BOX_COLUMN}px`;
   if (!flexible) return `${fixed} repeat(${slotCount}, minmax(130px, 1fr))`;
   const productColumns = slotCount - 1;
   return `${fixed} ${productColumns > 0 ? `repeat(${productColumns}, minmax(0, 1fr)) ` : ''}${ADD_COLUMN_WIDTH}px`;
 }
 // 위 열 정의의 최소 폭 합. 표 전체 폭을 이 값 이상으로 잡아야 옆으로 스크롤해도 헤더·행 배경이 끝까지 이어진다.
-const productGridFixedWidth = (nameColumn: number) => 40 + 80 + nameColumn + 56;
+const productGridFixedWidth = (nameColumn: number) => 40 + 80 + nameColumn + BOX_COLUMN;
 function productGridMinWidth(slotCount: number, nameColumn: number) {
   return productGridFixedWidth(nameColumn) + slotCount * 130;
 }
@@ -1419,9 +1421,9 @@ export function DashboardClient({
                       </button>}
                       </div>
                     </div>
-                    <div className="border-r border-slate-100 px-2 bg-slate-50/60 flex items-center justify-center">
+                    <div className="border-r border-slate-100 px-1 bg-slate-50/60 flex items-center justify-center gap-1 whitespace-nowrap">
                       <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null ? 'text-slate-300' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{row.totalBoxes ?? '-'}</span>
-                      {row.mergeGroups.length > 0 && <span className="ml-1 rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`}>합포장</span>}
+                      {row.mergeGroups.length > 0 && <span className="rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`}>합포장</span>}
                     </div>
 
                     {Array.from({ length: productSlotCount }).map((_, slotIndex) => {
