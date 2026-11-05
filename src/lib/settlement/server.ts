@@ -6,6 +6,7 @@ import { fetchAll, mapChunks } from '@/lib/supabase/fetch-all';
 import { stageOfCard, type LabelRow } from '@/lib/overview';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { buildSalesRows, type SalesRow, type SalesSourceCard, type SalesSourceItem, type StoredSale } from './sales';
+import type { StoredPurchase } from './purchases';
 
 type Client = SupabaseClient<Database>;
 const CHUNK = 100;
@@ -105,4 +106,42 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
   ).map((s) => ({ orderItemId: s.order_item_id, sellerId: s.seller_id, price: s.price === null ? null : Number(s.price), paid: s.paid, memo: s.memo }));
 
   return buildSalesRows(cards, items, stored);
+}
+
+// 매입내역에 사용자가 입력해서 저장한 값(기간 안의 출고일). 행 목록은 판매내역에서 계산하고 여기서는 입력값만 읽는다.
+export async function loadStoredPurchases(supabase: Client, from: string, to: string): Promise<StoredPurchase[]> {
+  const rows = await fetchAll(
+    (a, b) =>
+      supabase
+        .from('settlement_purchases')
+        .select('order_date, product_name, seller_id, supplier_id, price, paid, memo')
+        .gte('order_date', from)
+        .lte('order_date', to)
+        .order('order_date')
+        .order('product_name')
+        .range(a, b),
+    '정산 매입 입력값 조회 실패: ',
+  );
+  return rows.map((r) => ({ orderDate: r.order_date, productName: r.product_name, sellerId: r.seller_id, supplierId: r.supplier_id, price: r.price === null ? null : Number(r.price), paid: r.paid, memo: r.memo }));
+}
+
+// 품목별 매입처 드롭다운에 쓰는 목록: 전체 매입처, 그리고 상품명 → 그 상품에 연결된 매입처 id들.
+export interface SupplierDirectory {
+  suppliers: { id: string; name: string }[];
+  supplierIdsByProduct: Record<string, string[]>;
+}
+
+export async function loadSupplierDirectory(supabase: Client): Promise<SupplierDirectory> {
+  const [suppliers, products, links] = await Promise.all([
+    fetchAll((a, b) => supabase.from('suppliers').select('id, name').order('name').order('id').range(a, b), '매입처 조회 실패: '),
+    fetchAll((a, b) => supabase.from('products').select('id, name').order('id').range(a, b), '상품 조회 실패: '),
+    fetchAll((a, b) => supabase.from('product_suppliers').select('product_id, supplier_id').order('product_id').order('supplier_id').range(a, b), '상품 매입처 조회 실패: '),
+  ]);
+  const nameById = new Map(products.map((p) => [p.id, p.name]));
+  const supplierIdsByProduct: Record<string, string[]> = {};
+  for (const l of links) {
+    const name = nameById.get(l.product_id);
+    if (name) (supplierIdsByProduct[name] ??= []).push(l.supplier_id);
+  }
+  return { suppliers, supplierIdsByProduct };
 }
