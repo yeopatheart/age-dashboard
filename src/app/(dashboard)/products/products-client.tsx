@@ -1,7 +1,8 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
-import { Plus, Tag, Trash2, Wand2 } from 'lucide-react';
-import { createProduct, renameProduct, setProductColors, setProductMulbong, autoAssignProductColors, deleteProducts } from './actions';
+import { Plus, Store, Tag, Trash2, Wand2, X } from 'lucide-react';
+import { createProduct, renameProduct, setProductColors, setProductMulbong, setProductsSupplier, autoAssignProductColors, deleteProducts } from './actions';
+import { SupplierPanel, type Supplier } from './supplier-panel';
 import { ColorPicker } from '@/components/color-picker';
 import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
@@ -28,7 +29,7 @@ interface Product {
   needs_mulbong: boolean;
 }
 
-export function ProductsClient({ products }: { products: Product[] }) {
+export function ProductsClient({ products, suppliers, links }: { products: Product[]; suppliers: Supplier[]; links: { product_id: string; supplier_id: string }[] }) {
   const can = useCan();
   const canEdit = can('products:edit');
   const canDelete = can('products:delete');
@@ -36,6 +37,10 @@ export function ProductsClient({ products }: { products: Product[] }) {
   const [viaFilter, setViaFilter] = useState('all');
   const [colorFilter, setColorFilter] = useState('all');
   const [mulbongFilter, setMulbongFilter] = useState('all');
+  const [supplierFilter, setSupplierFilter] = useState('all');
+  const [bulkSupplierId, setBulkSupplierId] = useState('');
+  const [addSupplierId, setAddSupplierId] = useState('');
+  const [suppliersOpen, setSuppliersOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<{ fill: string | null; border: string | null }>({ fill: null, border: null });
@@ -56,6 +61,18 @@ export function ProductsClient({ products }: { products: Product[] }) {
     return p.id in localMulbong ? { ...withColor, needs_mulbong: localMulbong[p.id] } : withColor;
   };
   const hasColor = (p: Product) => !!(p.fill_color || p.border_color);
+  // 상품 → 매입처 id 목록, 매입처 id → 이름·연결된 상품 수
+  const supplierName = useMemo(() => new Map(suppliers.map((s) => [s.id, s.name])), [suppliers]);
+  const suppliersOfProduct = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const l of links) m.set(l.product_id, [...(m.get(l.product_id) ?? []), l.supplier_id]);
+    return m;
+  }, [links]);
+  const productCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const l of links) counts[l.supplier_id] = (counts[l.supplier_id] ?? 0) + 1;
+    return counts;
+  }, [links]);
   const uncolored = products.map(view).filter((p) => !hasColor(p)).length;
   const filtered = useMemo(() => {
     const k = search.trim().toLowerCase();
@@ -64,9 +81,14 @@ export function ProductsClient({ products }: { products: Product[] }) {
       .filter((p) => (k ? p.name.toLowerCase().includes(k) : true))
       .filter((p) => (viaFilter === 'all' ? true : p.created_via === viaFilter))
       .filter((p) => (colorFilter === 'all' ? true : colorFilter === 'none' ? !hasColor(p) : hasColor(p)))
-      .filter((p) => (mulbongFilter === 'all' ? true : mulbongFilter === 'yes' ? p.needs_mulbong : !p.needs_mulbong));
+      .filter((p) => (mulbongFilter === 'all' ? true : mulbongFilter === 'yes' ? p.needs_mulbong : !p.needs_mulbong))
+      .filter((p) => {
+        if (supplierFilter === 'all') return true;
+        const ids = suppliersOfProduct.get(p.id) ?? [];
+        return supplierFilter === 'none' ? ids.length === 0 : ids.includes(supplierFilter);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products, local, localMulbong, search, viaFilter, colorFilter, mulbongFilter]);
+  }, [products, local, localMulbong, search, viaFilter, colorFilter, mulbongFilter, supplierFilter, suppliersOfProduct]);
   const open = openId ? products.map(view).find((p) => p.id === openId) ?? null : null;
 
   const run = async (fn: () => Promise<{ error: string | null }>, okNotice?: string) => {
@@ -130,6 +152,12 @@ export function ProductsClient({ products }: { products: Product[] }) {
       setSelected(new Set());
     }
   };
+  // 상품 여러 개에 매입처 하나를 추가·제거한다(선택한 상품 일괄, 상세 패널에서는 상품 하나).
+  const handleSupplier = async (ids: string[], supplierId: string, mode: 'add' | 'remove') => {
+    if (!supplierId || ids.length === 0) return false;
+    const name = supplierName.get(supplierId) ?? '';
+    return run(() => setProductsSupplier(ids, supplierId, mode), `${ids.length}개 상품에 매입처 '${name}'을(를) ${mode === 'add' ? '추가' : '제거'}했습니다.`);
+  };
   const handleAuto = async () => {
     if (busy) return;
     setBusy(true);
@@ -169,6 +197,20 @@ export function ProductsClient({ products }: { products: Product[] }) {
       label: '물봉 포장',
       render: (p) => <Toggle checked={p.needs_mulbong} onChange={(v) => handleMulbong([p.id], v)} label={`${p.name} 물봉 포장`} disabled={!canEdit} />,
     },
+    {
+      key: 'suppliers',
+      label: '매입처',
+      render: (p) => {
+        const ids = suppliersOfProduct.get(p.id) ?? [];
+        return ids.length === 0 ? (
+          <span className="ak-muted">미지정</span>
+        ) : (
+          <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+            {ids.map((id) => <span key={id} className="ak-tag ak-tag-manual">{supplierName.get(id) ?? '-'}</span>)}
+          </span>
+        );
+      },
+    },
     { key: 'via', label: '등록', render: (p) => <ViaTag via={p.created_via} date={p.created_at} /> },
   ];
 
@@ -187,6 +229,11 @@ export function ProductsClient({ products }: { products: Product[] }) {
           value={mulbongFilter}
           onChange={setMulbongFilter}
           options={[{ value: 'all', label: '물봉: 전체' }, { value: 'yes', label: '물봉 포장 필요' }, { value: 'no', label: '불필요' }]}
+        />
+        <FilterSelect
+          value={supplierFilter}
+          onChange={setSupplierFilter}
+          options={[{ value: 'all', label: '매입처: 전체' }, { value: 'none', label: '미지정' }, ...suppliers.map((s) => ({ value: s.id, label: s.name }))]}
         />
         <FilterSelect
           value={viaFilter}
@@ -210,6 +257,7 @@ export function ProductsClient({ products }: { products: Product[] }) {
             <Plus size={14} /> 추가
           </button>
         </div>}
+        <button className="ak-btn" onClick={() => setSuppliersOpen(true)}><Store size={14} /> 매입처 관리 ({suppliers.length})</button>
         <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
       </div>
 
@@ -221,6 +269,12 @@ export function ProductsClient({ products }: { products: Product[] }) {
             <button className="ak-btn ak-btn-primary" onClick={applyBulk} disabled={busy}>선택한 상품에 색 적용</button>
             <button className="ak-btn" onClick={() => handleMulbong([...selected], true)} disabled={busy}>물봉 포장 지정</button>
             <button className="ak-btn" onClick={() => handleMulbong([...selected], false)} disabled={busy}>물봉 해제</button>
+            <select className="ak-select" value={bulkSupplierId} onChange={(e) => setBulkSupplierId(e.target.value)} title="선택한 상품에 추가·제거할 매입처">
+              <option value="">매입처 선택</option>
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <button className="ak-btn" onClick={() => handleSupplier([...selected], bulkSupplierId, 'add')} disabled={busy || !bulkSupplierId}>매입처 추가</button>
+            <button className="ak-btn" onClick={() => handleSupplier([...selected], bulkSupplierId, 'remove')} disabled={busy || !bulkSupplierId}>매입처 제거</button>
             <span className="ak-spacer" />
             {canDelete && <button
               className="ak-btn ak-btn-danger"
@@ -309,6 +363,34 @@ export function ProductsClient({ products }: { products: Product[] }) {
             <Toggle checked={open.needs_mulbong} onChange={(v) => handleMulbong([open.id], v)} label="물봉 포장 필요" disabled={!canEdit} />
           </div>
           <div className="ak-field">
+            <span className="ak-field-label">매입처</span>
+            <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {(suppliersOfProduct.get(open.id) ?? []).length === 0 && <span className="ak-muted">지정된 매입처가 없습니다</span>}
+              {(suppliersOfProduct.get(open.id) ?? []).map((id) => (
+                <span key={id} className="ak-tag ak-tag-manual" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  {supplierName.get(id) ?? '-'}
+                  {canEdit && <button type="button" aria-label={`${supplierName.get(id)} 제거`} disabled={busy} onClick={() => handleSupplier([open.id], id, 'remove')} style={{ display: 'inline-flex', cursor: 'pointer' }}><X size={12} /></button>}
+                </span>
+              ))}
+            </span>
+            {canEdit && (
+              <span style={{ display: 'flex', gap: 6 }}>
+                <select className="ak-select" value={addSupplierId} onChange={(e) => setAddSupplierId(e.target.value)}>
+                  <option value="">매입처 선택</option>
+                  {suppliers.filter((s) => !(suppliersOfProduct.get(open.id) ?? []).includes(s.id)).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <button
+                  className="ak-btn"
+                  disabled={busy || !addSupplierId}
+                  onClick={async () => {
+                    if (await handleSupplier([open.id], addSupplierId, 'add')) setAddSupplierId('');
+                  }}
+                >추가</button>
+              </span>
+            )}
+            <span className="ak-meta">정산의 매입내역에서 이 상품의 매입처를 이 목록에서 고릅니다. 매입처 자체는 위의 “매입처 관리”에서 등록합니다.</span>
+          </div>
+          <div className="ak-field">
             <span className="ak-field-label">색상 (누르면 바로 저장됩니다)</span>
             <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => handleColor(open, f, b)} sample={open.name} /></fieldset>
           </div>
@@ -317,6 +399,8 @@ export function ProductsClient({ products }: { products: Product[] }) {
           {notice && <p className="ak-notice">{notice}</p>}
         </SidePanel>
       )}
+
+      {suppliersOpen && <SupplierPanel suppliers={suppliers} productCounts={productCounts} canEdit={canEdit} canDelete={canDelete} onClose={() => setSuppliersOpen(false)} />}
     </div>
   );
 }

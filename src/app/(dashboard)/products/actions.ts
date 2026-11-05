@@ -117,3 +117,63 @@ export async function renameProduct(id: string, newName: string): Promise<{ erro
   revalidate();
   return { error: null, updatedItems: count ?? 0 };
 }
+
+// ─── 매입처(정산에서 품목별 매입처 드롭다운에 쓴다. docs/prd/settlement.md) ──────────────────
+
+export interface SupplierInput {
+  id?: string; // 있으면 수정, 없으면 등록
+  name: string;
+  phone: string;
+  memo: string;
+}
+
+const cleanText = (value: string, max: number) => {
+  const t = value.trim();
+  return t === '' ? null : t.slice(0, max);
+};
+
+export async function saveSupplier(input: SupplierInput): Promise<{ error: string | null }> {
+  await requirePermission('products:edit');
+  const name = input.name.trim();
+  if (!name) return { error: '매입처 이름을 입력해주세요.' };
+  if (name.length > 60) return { error: '매입처 이름은 60자 이하로 입력해주세요.' };
+  const row = { name, phone: cleanText(input.phone, 40), memo: cleanText(input.memo, 500) };
+  const supabase = await createClient();
+  const { error } = input.id ? await supabase.from('suppliers').update(row).eq('id', input.id) : await supabase.from('suppliers').insert(row);
+  if (error) return { error: error.code === '23505' ? '이미 등록된 매입처입니다.' : error.message };
+  revalidate();
+  return { error: null };
+}
+
+// 매입처를 지우면 상품과의 연결도 함께 지워진다.
+export async function deleteSupplier(id: string): Promise<{ error: string | null }> {
+  await requirePermission('products:delete');
+  const supabase = await createClient();
+  const { error } = await supabase.from('suppliers').delete().eq('id', id);
+  if (error) return { error: error.message };
+  revalidate();
+  return { error: null };
+}
+
+const CHUNK = 100; // .in()에 수백 개를 한 번에 넣으면 요청 주소가 너무 길어진다
+
+// 상품 여러 개에 매입처 하나를 한 번에 추가하거나 제거한다. 이미 연결된 상품에 다시 추가해도 오류 없이 넘어간다.
+export async function setProductsSupplier(productIds: string[], supplierId: string, mode: 'add' | 'remove'): Promise<{ error: string | null }> {
+  await requirePermission('products:edit');
+  if (productIds.length === 0 || !supplierId) return { error: null };
+  const supabase = await createClient();
+  if (mode === 'add') {
+    const rows = productIds.map((product_id) => ({ product_id, supplier_id: supplierId }));
+    for (let i = 0; i < rows.length; i += 500) {
+      const { error } = await supabase.from('product_suppliers').upsert(rows.slice(i, i + 500), { onConflict: 'product_id,supplier_id', ignoreDuplicates: true });
+      if (error) return { error: error.message };
+    }
+  } else {
+    for (let i = 0; i < productIds.length; i += CHUNK) {
+      const { error } = await supabase.from('product_suppliers').delete().eq('supplier_id', supplierId).in('product_id', productIds.slice(i, i + CHUNK));
+      if (error) return { error: error.message };
+    }
+  }
+  revalidate();
+  return { error: null };
+}
