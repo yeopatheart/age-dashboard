@@ -1,8 +1,6 @@
 'use client';
 import { useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, type DotItemDotProps, type LabelProps, type TooltipContentProps } from 'recharts';
-import { PeriodBar } from './period-bar';
-import type { Granularity } from '@/lib/report';
 import { axisFormatter, niceScale, type DayPoint } from '@/lib/settlement/chart';
 import type { PurchaseTotals } from '@/lib/settlement/purchases';
 import { formatWon } from '@/lib/money';
@@ -114,16 +112,10 @@ function BarTooltip({ active, payload }: TooltipContentProps) {
 export function ChartClient({
   series,
   totals,
-  granularity,
-  anchor,
-  today,
   periodLabel,
 }: {
   series: DayPoint[];
   totals: PurchaseTotals;
-  granularity: Granularity;
-  anchor: string;
-  today: string;
   periodLabel: string;
 }) {
   const [hoverBar, setHoverBar] = useState<number | null>(null);
@@ -189,8 +181,6 @@ export function ChartClient({
   return (
     <div className="viz-root">
       <style>{VIZ_CSS}</style>
-
-      <PeriodBar tab="chart" granularity={granularity} anchor={anchor} today={today} periodLabel={periodLabel} />
 
       <div className="viz-tiles">
         {SERIES.map((s) => (

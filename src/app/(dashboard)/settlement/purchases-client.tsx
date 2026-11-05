@@ -3,8 +3,6 @@ import { useMemo, useState } from 'react';
 import { savePurchases, type PurchasePatch } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { DataTable, type Column } from '@/components/admin/admin-kit';
-import { PeriodBar } from './period-bar';
-import type { Granularity } from '@/lib/report';
 import { formatWon, formatWonInput, parseWon } from '@/lib/money';
 import { profitOf, totalsOf, type PurchaseRow } from '@/lib/settlement/purchases';
 
@@ -21,24 +19,16 @@ export function PurchasesClient({
   sellers,
   suppliers,
   supplierIdsByProduct,
-  granularity,
-  anchor,
-  today,
-  periodLabel,
   multiDay,
 }: {
   rows: PurchaseRow[];
   sellers: Option[];
   suppliers: Option[]; // 전체 매입처(이름 표시용)
   supplierIdsByProduct: Record<string, string[]>; // 품목(상품명) → 그 상품에 연결된 매입처 id
-  granularity: Granularity;
-  anchor: string;
-  today: string;
-  periodLabel: string;
   multiDay: boolean;
 }) {
   const canEdit = useCan()('settlement:edit');
-  // 저장 결과를 기다리지 않고 화면에 바로 보이는 값(실패하면 되돌린다). 기간·탭을 옮기면 화면 상태가 새로 시작된다.
+  // 저장 결과를 기다리지 않고 화면에 바로 보이는 값(실패하면 되돌린다). 기간을 옮기면 화면 상태가 새로 시작된다.
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [drafts, setDrafts] = useState<Drafts>({}); // 입력 중인 매입가·메모(칸을 벗어날 때 저장한다)
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -302,14 +292,13 @@ export function PurchasesClient({
 
   return (
     <>
-      <PeriodBar tab="purchases" granularity={granularity} anchor={anchor} today={today} periodLabel={periodLabel} trailing={saving > 0 ? <span className="ak-sub">저장 중…</span> : null} />
-
       <div className="ak-toolbar">
         <span className="ak-count">품목 {totals.rows}개</span>
         <span>총 매입가 <strong>{formatWon(totals.purchaseTotal)}원</strong></span>
         <span>총 판매가 <strong>{formatWon(totals.salesTotal)}원</strong></span>
         <span>총 수익 <strong style={{ color: totals.profitTotal < 0 ? '#b91c1c' : undefined }}>{formatWon(totals.profitTotal)}원</strong></span>
         <span className="ak-spacer" />
+        {saving > 0 && <span className="ak-sub">저장 중…</span>}
         {canEdit && rows.length > pageRows.length && (
           <button className="ak-btn" onClick={() => setSelected(new Set(rows.map((r) => r.key)))}>조회된 전체 {rows.length}건 선택</button>
         )}
