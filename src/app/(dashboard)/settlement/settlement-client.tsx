@@ -1,24 +1,19 @@
 'use client';
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Receipt } from 'lucide-react';
 import { saveSales, type SalesPatch } from './actions';
 import { useCan } from '@/components/permissions-context';
-import { AdminHeader, DataTable, type Column } from '@/components/admin/admin-kit';
-import { GRANULARITY_LABEL, getPeriod, shiftAnchor, type Granularity } from '@/lib/report';
+import { DataTable, type Column } from '@/components/admin/admin-kit';
+import { PeriodBar } from './period-bar';
+import type { Granularity } from '@/lib/report';
 import { formatWon, formatWonInput, parseWon } from '@/lib/money';
 import type { SalesRow } from '@/lib/settlement/sales';
 
-const GRANULARITIES: Granularity[] = ['day', 'week', 'month'];
 const PAGE_SIZE = 100; // 월 조회는 수천 줄이 될 수 있어 100줄씩 나눠 보여 준다
 const NO_SELLER = '__none'; // 일괄 적용에서 "미지정으로 되돌리기"
 const EMPTY_HIDDEN = new Set<string>();
 
 type Edit = Partial<Pick<SalesRow, 'sellerId' | 'price' | 'paid' | 'memo'>>;
 type Drafts = Record<string, { price?: string; memo?: string }>;
-
-const periodUrl = (g: Granularity, d: string) => `/settlement?g=${g}&d=${d}`;
 
 export function SettlementClient({
   rows,
@@ -37,7 +32,6 @@ export function SettlementClient({
   periodLabel: string;
   multiDay: boolean;
 }) {
-  const router = useRouter();
   const canEdit = useCan()('settlement:edit');
   // 저장 결과를 기다리지 않고 화면에 바로 보이는 값(실패하면 되돌린다). 기간을 옮기면 화면 상태가 새로 시작된다.
   const [edits, setEdits] = useState<Record<string, Edit>>({});
@@ -242,40 +236,9 @@ export function SettlementClient({
     },
   ];
 
-  const prevUrl = periodUrl(granularity, shiftAnchor(granularity, anchor, -1));
-  const nextAnchor = shiftAnchor(granularity, anchor, 1);
-  const nextDisabled = getPeriod(granularity, nextAnchor).from > today; // 아직 오지 않은 기간으로는 못 간다
-
   return (
-    <div className="ak-page">
-      <AdminHeader icon={<Receipt size={20} />} title="정산" sub="출고가 끝난 주문이 판매내역으로 올라옵니다. 판매가, 사업자 구분, 입금 여부, 메모를 입력하세요. 입력하면 바로 저장됩니다." />
-
-      <div className="ak-toolbar">
-        <div style={{ display: 'inline-flex', gap: 4 }}>
-          {GRANULARITIES.map((g) => (
-            <Link key={g} href={periodUrl(g, anchor)} className={`ak-btn ${g === granularity ? 'ak-btn-primary' : ''}`}>{GRANULARITY_LABEL[g]}</Link>
-          ))}
-        </div>
-        <Link href={prevUrl} className="ak-btn" aria-label={`이전 ${GRANULARITY_LABEL[granularity]}`}><ChevronLeft size={14} /></Link>
-        <strong style={{ minWidth: '9rem', textAlign: 'center' }}>{periodLabel}</strong>
-        {nextDisabled ? (
-          <span className="ak-btn" aria-disabled style={{ opacity: 0.4, pointerEvents: 'none' }}><ChevronRight size={14} /></span>
-        ) : (
-          <Link href={periodUrl(granularity, nextAnchor)} className="ak-btn" aria-label={`다음 ${GRANULARITY_LABEL[granularity]}`}><ChevronRight size={14} /></Link>
-        )}
-        <Link href="/settlement" className="ak-btn">오늘</Link>
-        <input
-          type="date"
-          className="ak-input"
-          style={{ width: '10.5rem', height: 'var(--ctl-h)' }}
-          value={anchor}
-          max={today}
-          onChange={(e) => e.target.value && e.target.value <= today && router.push(periodUrl(granularity, e.target.value))}
-          aria-label="기준 날짜"
-        />
-        <span className="ak-spacer" />
-        {saving > 0 && <span className="ak-sub">저장 중…</span>}
-      </div>
+    <>
+      <PeriodBar tab="sales" granularity={granularity} anchor={anchor} today={today} periodLabel={periodLabel} trailing={saving > 0 ? <span className="ak-sub">저장 중…</span> : null} />
 
       <div className="ak-toolbar">
         <span className="ak-count">{rows.length}건</span>
@@ -330,6 +293,6 @@ export function SettlementClient({
           <button className="ak-btn" onClick={() => setPage(Math.min(pageCount - 1, currentPage + 1))} disabled={currentPage >= pageCount - 1}>다음 100줄</button>
         </div>
       )}
-    </div>
+    </>
   );
 }

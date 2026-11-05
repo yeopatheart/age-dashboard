@@ -4,12 +4,14 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { colorComboKey, isHueKey, pickUnusedColor } from '@/lib/color-palette';
 import { requirePermission } from '@/lib/permissions/access';
+import { missingTable } from '@/lib/supabase/missing-table';
 
 function revalidate() {
   revalidatePath('/products');
   revalidatePath('/dashboard');
   revalidatePath('/reports');
   revalidatePath('/packing-log');
+  revalidatePath('/settlement');
 }
 
 // 수기 등록. 색을 고르지 않으면 기존 상품이 쓰지 않는 조합을 자동으로 배정한다.
@@ -113,6 +115,12 @@ export async function renameProduct(id: string, newName: string): Promise<{ erro
     // 주문 이름 갱신에 실패하면 상품 이름도 되돌려서 둘이 어긋나지 않게 한다.
     await supabase.from('products').update({ name: current.name }).eq('id', id);
     return { error: itemError.message, updatedItems: 0 };
+  }
+  // 정산 매입내역은 (출고일, 상품명)으로 연결되므로 입력한 매입가가 새 이름을 따라가게 함께 바꾼다. 마이그레이션 0044를 적용하기 전이면 테이블이 없어 건너뛴다.
+  const { error: purchaseError } = await supabase.from('settlement_purchases').update({ product_name: trimmed }).eq('product_name', current.name);
+  if (purchaseError && missingTable(new Error(purchaseError.message)) === null) {
+    revalidate();
+    return { error: `상품명과 과거 주문은 바뀌었지만 정산 매입내역의 이전 이름 행은 바꾸지 못했습니다(${purchaseError.message}). 정산 매입내역에서 확인해주세요.`, updatedItems: count ?? 0 };
   }
   revalidate();
   return { error: null, updatedItems: count ?? 0 };

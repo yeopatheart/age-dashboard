@@ -293,6 +293,18 @@ type SettlementSale = {
   updated_at: string;
 };
 
+// 매입내역의 사용자 입력값(0044). 행은 (출고일, 상품명) 하나다.
+type SettlementPurchase = {
+  order_date: string;
+  product_name: string;
+  seller_id: string | null;
+  supplier_id: string | null;
+  price: number | null;
+  paid: boolean;
+  memo: string | null;
+  updated_at: string;
+};
+
 type TableDef<Row, Insert, Update = Partial<Insert>> = {
   Row: Row;
   Insert: Insert;
@@ -422,6 +434,10 @@ export type Database = {
       settlement_sales: TableDef<
         SettlementSale,
         Pick<SettlementSale, "order_item_id"> & { seller_id?: string | null; price?: number | null; paid?: boolean; memo?: string | null; updated_at?: string }
+      >;
+      settlement_purchases: TableDef<
+        SettlementPurchase,
+        Pick<SettlementPurchase, "order_date" | "product_name"> & { seller_id?: string | null; supplier_id?: string | null; price?: number | null; paid?: boolean; memo?: string | null; updated_at?: string }
       >;
       suppliers: TableDef<Supplier, Pick<Supplier, "name"> & { id?: string; phone?: string | null; memo?: string | null; created_at?: string }>;
       product_suppliers: TableDef<ProductSupplier, Pick<ProductSupplier, "product_id" | "supplier_id"> & { created_at?: string }>;

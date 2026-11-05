@@ -9,6 +9,7 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
   suppliers: '0042_settlement_masters.sql',
   product_suppliers: '0042_settlement_masters.sql',
   settlement_sales: '0043_settlement_sales.sql',
+  settlement_purchases: '0044_settlement_purchases.sql',
 };
 
 // 오류가 "테이블 없음"이면 그 테이블 이름(못 읽으면 'unknown'), 아니면 null.
@@ -33,5 +34,16 @@ export async function rowsOrMissing<T>(load: PromiseLike<T[]>): Promise<{ rows: 
     const table = missingTable(e);
     if (!table) throw e;
     return { rows: [], missing: table };
+  }
+}
+
+// rowsOrMissing와 같지만 행 배열이 아닌 값(여러 조회를 묶은 객체 등)을 돌려주는 조회용.
+export async function valueOrMissing<T>(load: PromiseLike<T>): Promise<{ value: T | null; missing: string | null }> {
+  try {
+    return { value: await load, missing: null };
+  } catch (e) {
+    const table = missingTable(e);
+    if (!table) throw e;
+    return { value: null, missing: table };
   }
 }
