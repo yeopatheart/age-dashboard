@@ -87,3 +87,25 @@ select.ak-input { padding-right: 2.25rem; }
 .ak-meta { font-size: 0.75rem; color: var(--muted-foreground); }
 .ak-error { color: var(--danger); font-size: 0.8125rem; font-weight: 600; }
 .ak-notice { color: var(--success); font-size: 0.8125rem; font-weight: 600; }
+
+/* 정산: 그래프·매입내역·판매내역을 한 화면에 쌓고, 넓은 화면에서는 판매내역(왼쪽)·매입내역(오른쪽)을 나란히 둔다.
+   DOM 순서(그래프 → 매입내역 → 판매내역)가 좁은 화면·휴대폰의 위아래 순서다. 판매내역은 수천 줄이 될 수 있어 맨 뒤에 둔다. */
+/* 스크롤 영역(.main-content)의 위 여백(2.25rem)만큼 올려서, 스크롤하면 화면 맨 위에 붙게 한다.
+   휴대폰은 기간 바가 두 줄(약 100px)이라 붙여 두면 화면을 너무 가려서 고정하지 않는다. */
+.ak-sticky { position: sticky; top: -2.25rem; z-index: 5; }
+@media (max-width: 768px) { .ak-sticky { position: static; } }
+.ak-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.9rem; align-items: start; }
+.ak-section { min-width: 0; }
+.ak-section-head { display: flex; align-items: baseline; gap: 0.6rem; cursor: pointer; list-style: none; padding: 0.1rem 0.1rem 0.5rem; }
+.ak-section-head::-webkit-details-marker { display: none; }
+.ak-section-head::before { content: '▾'; color: var(--muted-foreground); }
+.ak-section:not([open]) > .ak-section-head { padding-bottom: 0.1rem; }
+.ak-section:not([open]) > .ak-section-head::before { content: '▸'; }
+.ak-section-title { font-size: 1rem; font-weight: 700; }
+.ak-section-body { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+@media (min-width: 2400px) { /* 표가 열 폭에 거의 들어가는 폭(매입내역 표가 약 1260px). 이보다 좁으면 한 열로 쌓는다 */
+  .ak-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ak-section-chart { grid-column: 1 / -1; }
+  .ak-section-sales { order: 1; }
+  .ak-section-purchases { order: 2; }
+}

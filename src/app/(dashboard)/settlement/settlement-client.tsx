@@ -3,8 +3,6 @@ import { useMemo, useState } from 'react';
 import { saveSales, type SalesPatch } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { DataTable, type Column } from '@/components/admin/admin-kit';
-import { PeriodBar } from './period-bar';
-import type { Granularity } from '@/lib/report';
 import { formatWon, formatWonInput, parseWon } from '@/lib/money';
 import type { SalesRow } from '@/lib/settlement/sales';
 
@@ -18,18 +16,10 @@ type Drafts = Record<string, { price?: string; memo?: string }>;
 export function SettlementClient({
   rows,
   sellers,
-  granularity,
-  anchor,
-  today,
-  periodLabel,
   multiDay,
 }: {
   rows: SalesRow[];
   sellers: { id: string; name: string }[];
-  granularity: Granularity;
-  anchor: string;
-  today: string;
-  periodLabel: string;
   multiDay: boolean;
 }) {
   const canEdit = useCan()('settlement:edit');
@@ -238,13 +228,12 @@ export function SettlementClient({
 
   return (
     <>
-      <PeriodBar tab="sales" granularity={granularity} anchor={anchor} today={today} periodLabel={periodLabel} trailing={saving > 0 ? <span className="ak-sub">저장 중…</span> : null} />
-
       <div className="ak-toolbar">
         <span className="ak-count">{rows.length}건</span>
         <span>판매가 합계 <strong>{formatWon(totalPrice)}원</strong></span>
         <span className="ak-sub">입금 Y {paidCount}건 · 판매가 미입력 {rows.length - priced.length}건</span>
         <span className="ak-spacer" />
+        {saving > 0 && <span className="ak-sub">저장 중…</span>}
         {canEdit && rows.length > pageRows.length && (
           <button className="ak-btn" onClick={() => setSelected(new Set(rows.map((r) => r.itemId)))}>조회된 전체 {rows.length}건 선택</button>
         )}
