@@ -283,6 +283,16 @@ type ProductSupplier = {
   created_at: string;
 };
 
+// 판매내역의 사용자 입력값(0043). 행은 주문 줄(order_items) 하나당 최대 하나다.
+type SettlementSale = {
+  order_item_id: string;
+  seller_id: string | null;
+  price: number | null;
+  paid: boolean;
+  memo: string | null;
+  updated_at: string;
+};
+
 type TableDef<Row, Insert, Update = Partial<Insert>> = {
   Row: Row;
   Insert: Insert;
@@ -408,6 +418,10 @@ export type Database = {
           memo?: string | null;
           created_at?: string;
         }
+      >;
+      settlement_sales: TableDef<
+        SettlementSale,
+        Pick<SettlementSale, "order_item_id"> & { seller_id?: string | null; price?: number | null; paid?: boolean; memo?: string | null; updated_at?: string }
       >;
       suppliers: TableDef<Supplier, Pick<Supplier, "name"> & { id?: string; phone?: string | null; memo?: string | null; created_at?: string }>;
       product_suppliers: TableDef<ProductSupplier, Pick<ProductSupplier, "product_id" | "supplier_id"> & { created_at?: string }>;

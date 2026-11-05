@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Plus, Store, Tag, Trash2, Wand2, X } from 'lucide-react';
 import { createProduct, renameProduct, setProductColors, setProductMulbong, setProductsSupplier, autoAssignProductColors, deleteProducts } from './actions';
 import { SupplierPanel, type Supplier } from './supplier-panel';
+import { MigrationNotice } from '@/components/migration-notice';
 import { ColorPicker } from '@/components/color-picker';
 import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
@@ -29,7 +30,19 @@ interface Product {
   needs_mulbong: boolean;
 }
 
-export function ProductsClient({ products, suppliers, links }: { products: Product[]; suppliers: Supplier[]; links: { product_id: string; supplier_id: string }[] }) {
+export function ProductsClient({
+  products,
+  suppliers,
+  links,
+  suppliersReady,
+  missingMigrations,
+}: {
+  products: Product[];
+  suppliers: Supplier[];
+  links: { product_id: string; supplier_id: string }[];
+  suppliersReady: boolean; // false면 매입처 테이블(마이그레이션 0042)이 아직 없다: 매입처 기능만 끄고 안내를 보여 준다
+  missingMigrations: string[];
+}) {
   const can = useCan();
   const canEdit = can('products:edit');
   const canDelete = can('products:delete');
@@ -169,7 +182,7 @@ export function ProductsClient({ products, suppliers, links }: { products: Produ
     setNotice(`색이 없는 상품 ${result.assigned}개에 겹치지 않는 색을 배정했습니다.`);
   };
 
-  const columns: Column<Product>[] = [
+  const allColumns: Column<Product>[] = [
     {
       key: 'name',
       label: '상품',
@@ -213,10 +226,13 @@ export function ProductsClient({ products, suppliers, links }: { products: Produ
     },
     { key: 'via', label: '등록', render: (p) => <ViaTag via={p.created_via} date={p.created_at} /> },
   ];
+  const columns = suppliersReady ? allColumns : allColumns.filter((c) => c.key !== 'suppliers');
 
   return (
     <div className="ak-page">
       <AdminHeader icon={<Tag size={20} />} title="상품 관리" sub="상품마다 '품목별 수량' 칩의 안쪽색과 테두리색을 정합니다. 주문 입력에서 처음 나온 상품은 겹치지 않는 색으로 자동 등록됩니다." />
+
+      {!suppliersReady && <MigrationNotice feature="매입처 기능" migrations={missingMigrations} />}
 
       <div className="ak-toolbar">
         <SearchInput value={search} onChange={setSearch} placeholder="상품 검색" />
@@ -230,11 +246,13 @@ export function ProductsClient({ products, suppliers, links }: { products: Produ
           onChange={setMulbongFilter}
           options={[{ value: 'all', label: '물봉: 전체' }, { value: 'yes', label: '물봉 포장 필요' }, { value: 'no', label: '불필요' }]}
         />
-        <FilterSelect
-          value={supplierFilter}
-          onChange={setSupplierFilter}
-          options={[{ value: 'all', label: '매입처: 전체' }, { value: 'none', label: '미지정' }, ...suppliers.map((s) => ({ value: s.id, label: s.name }))]}
-        />
+        {suppliersReady && (
+          <FilterSelect
+            value={supplierFilter}
+            onChange={setSupplierFilter}
+            options={[{ value: 'all', label: '매입처: 전체' }, { value: 'none', label: '미지정' }, ...suppliers.map((s) => ({ value: s.id, label: s.name }))]}
+          />
+        )}
         <FilterSelect
           value={viaFilter}
           onChange={setViaFilter}
@@ -257,7 +275,7 @@ export function ProductsClient({ products, suppliers, links }: { products: Produ
             <Plus size={14} /> 추가
           </button>
         </div>}
-        <button className="ak-btn" onClick={() => setSuppliersOpen(true)}><Store size={14} /> 매입처 관리 ({suppliers.length})</button>
+        {suppliersReady && <button className="ak-btn" onClick={() => setSuppliersOpen(true)}><Store size={14} /> 매입처 관리 ({suppliers.length})</button>}
         <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
       </div>
 
@@ -269,12 +287,16 @@ export function ProductsClient({ products, suppliers, links }: { products: Produ
             <button className="ak-btn ak-btn-primary" onClick={applyBulk} disabled={busy}>선택한 상품에 색 적용</button>
             <button className="ak-btn" onClick={() => handleMulbong([...selected], true)} disabled={busy}>물봉 포장 지정</button>
             <button className="ak-btn" onClick={() => handleMulbong([...selected], false)} disabled={busy}>물봉 해제</button>
-            <select className="ak-select" value={bulkSupplierId} onChange={(e) => setBulkSupplierId(e.target.value)} title="선택한 상품에 추가·제거할 매입처">
-              <option value="">매입처 선택</option>
-              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <button className="ak-btn" onClick={() => handleSupplier([...selected], bulkSupplierId, 'add')} disabled={busy || !bulkSupplierId}>매입처 추가</button>
-            <button className="ak-btn" onClick={() => handleSupplier([...selected], bulkSupplierId, 'remove')} disabled={busy || !bulkSupplierId}>매입처 제거</button>
+            {suppliersReady && (
+              <>
+              <select className="ak-select" value={bulkSupplierId} onChange={(e) => setBulkSupplierId(e.target.value)} title="선택한 상품에 추가·제거할 매입처">
+                <option value="">매입처 선택</option>
+                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <button className="ak-btn" onClick={() => handleSupplier([...selected], bulkSupplierId, 'add')} disabled={busy || !bulkSupplierId}>매입처 추가</button>
+              <button className="ak-btn" onClick={() => handleSupplier([...selected], bulkSupplierId, 'remove')} disabled={busy || !bulkSupplierId}>매입처 제거</button>
+              </>
+            )}
             <span className="ak-spacer" />
             {canDelete && <button
               className="ak-btn ak-btn-danger"
@@ -362,34 +384,36 @@ export function ProductsClient({ products, suppliers, links }: { products: Produ
             </span>
             <Toggle checked={open.needs_mulbong} onChange={(v) => handleMulbong([open.id], v)} label="물봉 포장 필요" disabled={!canEdit} />
           </div>
-          <div className="ak-field">
-            <span className="ak-field-label">매입처</span>
-            <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {(suppliersOfProduct.get(open.id) ?? []).length === 0 && <span className="ak-muted">지정된 매입처가 없습니다</span>}
-              {(suppliersOfProduct.get(open.id) ?? []).map((id) => (
-                <span key={id} className="ak-tag ak-tag-manual" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  {supplierName.get(id) ?? '-'}
-                  {canEdit && <button type="button" aria-label={`${supplierName.get(id)} 제거`} disabled={busy} onClick={() => handleSupplier([open.id], id, 'remove')} style={{ display: 'inline-flex', cursor: 'pointer' }}><X size={12} /></button>}
-                </span>
-              ))}
-            </span>
-            {canEdit && (
-              <span style={{ display: 'flex', gap: 6 }}>
-                <select className="ak-select" value={addSupplierId} onChange={(e) => setAddSupplierId(e.target.value)}>
-                  <option value="">매입처 선택</option>
-                  {suppliers.filter((s) => !(suppliersOfProduct.get(open.id) ?? []).includes(s.id)).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-                <button
-                  className="ak-btn"
-                  disabled={busy || !addSupplierId}
-                  onClick={async () => {
-                    if (await handleSupplier([open.id], addSupplierId, 'add')) setAddSupplierId('');
-                  }}
-                >추가</button>
+          {suppliersReady && (
+            <div className="ak-field">
+              <span className="ak-field-label">매입처</span>
+              <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {(suppliersOfProduct.get(open.id) ?? []).length === 0 && <span className="ak-muted">지정된 매입처가 없습니다</span>}
+                {(suppliersOfProduct.get(open.id) ?? []).map((id) => (
+                  <span key={id} className="ak-tag ak-tag-manual" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    {supplierName.get(id) ?? '-'}
+                    {canEdit && <button type="button" aria-label={`${supplierName.get(id)} 제거`} disabled={busy} onClick={() => handleSupplier([open.id], id, 'remove')} style={{ display: 'inline-flex', cursor: 'pointer' }}><X size={12} /></button>}
+                  </span>
+                ))}
               </span>
-            )}
-            <span className="ak-meta">정산의 매입내역에서 이 상품의 매입처를 이 목록에서 고릅니다. 매입처 자체는 위의 “매입처 관리”에서 등록합니다.</span>
-          </div>
+              {canEdit && (
+                <span style={{ display: 'flex', gap: 6 }}>
+                  <select className="ak-select" value={addSupplierId} onChange={(e) => setAddSupplierId(e.target.value)}>
+                    <option value="">매입처 선택</option>
+                    {suppliers.filter((s) => !(suppliersOfProduct.get(open.id) ?? []).includes(s.id)).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <button
+                    className="ak-btn"
+                    disabled={busy || !addSupplierId}
+                    onClick={async () => {
+                      if (await handleSupplier([open.id], addSupplierId, 'add')) setAddSupplierId('');
+                    }}
+                  >추가</button>
+                </span>
+              )}
+              <span className="ak-meta">정산의 매입내역에서 이 상품의 매입처를 이 목록에서 고릅니다. 매입처 자체는 위의 “매입처 관리”에서 등록합니다.</span>
+            </div>
+          )}
           <div className="ak-field">
             <span className="ak-field-label">색상 (누르면 바로 저장됩니다)</span>
             <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => handleColor(open, f, b)} sample={open.name} /></fieldset>

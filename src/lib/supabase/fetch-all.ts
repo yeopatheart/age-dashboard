@@ -22,3 +22,15 @@ export async function fetchAll<T>(page: (from: number, to: number) => PromiseLik
     }
   }
 }
+
+// id가 수백~수천 개면 .in()에 한꺼번에 넣을 수 없다(요청 주소가 너무 길어진다). size개씩 나눠 concurrency개씩 한꺼번에 조회하고 결과를 이어 붙인다.
+export async function mapChunks<T, R>(items: T[], size: number, fn: (chunk: T[]) => Promise<R[]>, concurrency = 4): Promise<R[]> {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  const out: R[] = [];
+  for (let i = 0; i < chunks.length; i += concurrency) {
+    const results = await Promise.all(chunks.slice(i, i + concurrency).map(fn));
+    for (const rows of results) out.push(...rows);
+  }
+  return out;
+}
