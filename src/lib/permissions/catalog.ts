@@ -10,6 +10,7 @@ export const MENU_DEFS = {
   dashboard: { label: '주문 목록', href: '/dashboard', paths: ['/dashboard'], actions: { edit: '포장 체크·주문/상품 수정·순서 변경', delete: '주문·상품 삭제/취소' } },
   scan: { label: '상차 스캔', href: '/scan', paths: ['/scan'], actions: { scan: '상차 스캔', undo: '상차 되돌리기' } },
   reports: { label: '리포트', href: '/reports', paths: ['/reports'], actions: {} },
+  settlement: { label: '정산', href: '/settlement', paths: ['/settlement'], actions: { edit: '판매가·사업자·입금·메모 입력' } },
   businesses: { label: '고객사 관리', href: '/businesses', paths: ['/businesses'], actions: { edit: '등록·수정', delete: '삭제' } },
   sellers: { label: '사업자 관리', href: '/sellers', paths: ['/sellers'], actions: { edit: '등록·수정', delete: '삭제' } },
   terminals: { label: '터미널 관리', href: '/terminals', paths: ['/terminals'], actions: { edit: '등록·수정', delete: '삭제' } },

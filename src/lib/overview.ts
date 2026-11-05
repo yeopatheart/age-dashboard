@@ -93,13 +93,19 @@ export interface OverviewCard extends OverviewCardInput {
   stage: Stage;
 }
 
-export function buildOverviewCard(c: OverviewCardInput): OverviewCard {
-  const live = c.items.filter((i) => i.changeStatus !== 'cancelled');
-  const done = live.filter((i) => !isUndecidedQuantity(i) && (i.isPacked || i.quantity - i.unshippedQuantity <= 0));
+// 카드 하나의 단계 판정(박스 수·박스별 상태·포장 완료·단계). 대시보드 카드와 정산이 같은 기준을 쓰도록 한 곳에 둔다.
+export function stageOfCard(c: Pick<OverviewCardInput, 'items' | 'submittedBoxes' | 'labels' | 'parcel'>): { boxes: number | null; boxStates: BoxState[]; packed: boolean; stage: Stage } {
   const boxes = c.submittedBoxes ?? (c.parcel ? 1 : null);
   const boxStates = c.parcel ? [] : boxStatesOf(boxes, c.labels);
   const packed = isCardComplete(c.items);
-  return { ...c, mergeGroups: normalizeMergeGroups(c.mergeGroups, boxes ?? 99), hasOrder: live.length > 0, itemsLive: live.length, itemsDone: done.length, boxes, boxStates, packed, stage: stageOf(boxes, boxStates, packed, c.parcel) };
+  return { boxes, boxStates, packed, stage: stageOf(boxes, boxStates, packed, c.parcel) };
+}
+
+export function buildOverviewCard(c: OverviewCardInput): OverviewCard {
+  const live = c.items.filter((i) => i.changeStatus !== 'cancelled');
+  const done = live.filter((i) => !isUndecidedQuantity(i) && (i.isPacked || i.quantity - i.unshippedQuantity <= 0));
+  const { boxes, boxStates, packed, stage } = stageOfCard(c);
+  return { ...c, mergeGroups: normalizeMergeGroups(c.mergeGroups, boxes ?? 99), hasOrder: live.length > 0, itemsLive: live.length, itemsDone: done.length, boxes, boxStates, packed, stage };
 }
 
 export interface StageTotals {
