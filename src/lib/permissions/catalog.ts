@@ -11,6 +11,7 @@ export const MENU_DEFS = {
   scan: { label: '상차 스캔', href: '/scan', paths: ['/scan'], actions: { scan: '상차 스캔', undo: '상차 되돌리기' } },
   reports: { label: '리포트', href: '/reports', paths: ['/reports'], actions: {} },
   businesses: { label: '고객사 관리', href: '/businesses', paths: ['/businesses'], actions: { edit: '등록·수정', delete: '삭제' } },
+  sellers: { label: '사업자 관리', href: '/sellers', paths: ['/sellers'], actions: { edit: '등록·수정', delete: '삭제' } },
   terminals: { label: '터미널 관리', href: '/terminals', paths: ['/terminals'], actions: { edit: '등록·수정', delete: '삭제' } },
   products: { label: '상품 관리', href: '/products', paths: ['/products'], actions: { edit: '등록·수정', delete: '삭제' } },
   boxes: { label: '박스 관리', href: '/boxes', paths: ['/boxes'], actions: { edit: '등록·수정', delete: '삭제' } },

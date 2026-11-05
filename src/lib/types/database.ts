@@ -254,6 +254,35 @@ type DailyProductHighlight = {
   created_at: string;
 };
 
+// 우리 쪽 사업자등록(0042). 사업자등록번호는 숫자 10자리로 저장한다.
+type SellerBusiness = {
+  id: string;
+  name: string;
+  representative_name: string | null;
+  registration_no: string;
+  opened_on: string | null;
+  address: string | null;
+  business_type: string | null;
+  business_item: string | null;
+  memo: string | null;
+  created_at: string;
+};
+
+// 매입처(0042)와 상품 ↔ 매입처 연결
+type Supplier = {
+  id: string;
+  name: string;
+  phone: string | null;
+  memo: string | null;
+  created_at: string;
+};
+
+type ProductSupplier = {
+  product_id: string;
+  supplier_id: string;
+  created_at: string;
+};
+
 type TableDef<Row, Insert, Update = Partial<Insert>> = {
   Row: Row;
   Insert: Insert;
@@ -367,6 +396,21 @@ export type Database = {
           created_at?: string;
         }
       >;
+      seller_businesses: TableDef<
+        SellerBusiness,
+        Pick<SellerBusiness, "name" | "registration_no"> & {
+          id?: string;
+          representative_name?: string | null;
+          opened_on?: string | null;
+          address?: string | null;
+          business_type?: string | null;
+          business_item?: string | null;
+          memo?: string | null;
+          created_at?: string;
+        }
+      >;
+      suppliers: TableDef<Supplier, Pick<Supplier, "name"> & { id?: string; phone?: string | null; memo?: string | null; created_at?: string }>;
+      product_suppliers: TableDef<ProductSupplier, Pick<ProductSupplier, "product_id" | "supplier_id"> & { created_at?: string }>;
       app_settings: TableDef<
         { key: string; value: unknown; updated_at: string },
         { key: string; value: unknown; updated_at?: string }

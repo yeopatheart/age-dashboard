@@ -25,6 +25,7 @@ import {
   Barcode,
   ScanLine,
   ShieldCheck,
+  Landmark,
 } from 'lucide-react';
 
 // 하루 업무 순서대로: 주문 입력 → 박스 할당 → 대시보드, 그 아래는 관리 메뉴.
@@ -37,6 +38,7 @@ const NAV_ITEMS: { menu: MenuKey | 'users'; icon: typeof Sparkles }[] = [
   { menu: 'scan', icon: ScanLine },
   { menu: 'reports', icon: BarChart3 },
   { menu: 'businesses', icon: Building2 },
+  { menu: 'sellers', icon: Landmark },
   { menu: 'terminals', icon: MapPinned },
   { menu: 'products', icon: Tag },
   { menu: 'boxes', icon: Package },
