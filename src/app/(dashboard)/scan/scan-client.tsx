@@ -6,6 +6,7 @@ import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { AlertTriangle, Camera, CheckCircle2, Keyboard, ScanLine, Undo2, X, XCircle } from 'lucide-react';
 import { scanBarcode, undoScan, type ScanResult } from './actions';
 import { useCan } from '@/components/permissions-context';
+import { playTone, unlockAudio } from '@/lib/sound/tones';
 
 export interface ScanCard {
   id: string;
@@ -40,26 +41,14 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
   const [onlyPending, setOnlyPending] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
-  const audioRef = useRef<AudioContext | null>(null);
   const last = useRef<{ code: string; at: number } | null>(null);
   const busy = useRef(false);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   const beep = useCallback((tone: Banner['tone']) => {
     navigator.vibrate?.(tone === 'ok' ? 60 : [120, 60, 120]);
-    try {
-      const ctx = (audioRef.current ??= new AudioContext());
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.frequency.value = tone === 'ok' ? 880 : 220;
-      gain.gain.value = 0.15;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + (tone === 'ok' ? 0.12 : 0.35));
-    } catch {
-      // 소리를 못 내는 환경(자동재생 제한 등)이면 진동과 화면 표시만으로 알린다.
-    }
+    // 소리를 못 내는 환경(자동재생 제한 등)이면 진동과 화면 표시만으로 알린다(playTone이 조용히 넘어간다).
+    void playTone(tone === 'ok' ? 'scan-ok' : 'scan-fail');
   }, []);
 
   const handleResult = useCallback(
@@ -112,7 +101,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
     setCameraError(null);
     if (!videoRef.current) return;
     try {
-      audioRef.current ??= new AudioContext(); // 버튼을 누른 순간에 켜야 브라우저가 소리를 허용한다
+      void unlockAudio(); // 버튼을 누른 순간에 켜야 브라우저가 소리를 허용한다
       const hints = new Map();
       hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]);
       hints.set(DecodeHintType.TRY_HARDER, true);
