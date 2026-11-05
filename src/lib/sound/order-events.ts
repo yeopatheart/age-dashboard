@@ -124,7 +124,7 @@ export function diffOrders(prev: OrderSnapshot, next: OrderSnapshot): OrderEvent
 
 export interface Cue {
   tone: ToneName;
-  say?: string; // 음성 모드에서만 읽는다
+  say?: string[]; // 음성 모드에서만 읽는다. 구절 하나씩 따로 천천히 읽는다(이어 읽으면 알아듣기 어렵다)
 }
 
 const SUMMARY_LABEL: Partial<Record<OrderEventKind, string>> = {
@@ -139,6 +139,23 @@ const SUMMARY_LABEL: Partial<Record<OrderEventKind, string>> = {
 };
 
 const byPriority = (a: OrderEvent, b: OrderEvent) => EVENT_PRIORITY.indexOf(a.kind) - EVENT_PRIORITY.indexOf(b.kind);
+
+// 음성으로 읽을 구절. 종류 → 업체 → 상품 순으로 끊어서 마침표로 쉼을 준다.
+export function spokenEvent(e: OrderEvent): string {
+  const who = e.product ? `${e.business}. ${e.product}` : e.business;
+  switch (e.kind) {
+    case 'packed-item-changed': return `포장된 품목 변경. ${who}`;
+    case 'item-cancelled': return `취소. ${who}`;
+    case 'order-removed': return `주문 삭제. ${e.business}`;
+    case 'item-added': return `품목 추가. ${who}`;
+    case 'qty-changed': return `수량 변경. ${who}`;
+    case 'order-new': return e.round && e.round > 1 ? `${e.round}차 새 주문. ${e.business}` : `새 주문. ${e.business}`;
+    case 'unshipped': return `미출고. ${who}`;
+    case 'item-modified': return `상품 수정. ${who}`;
+    case 'card-complete': return `${e.business}. 포장 완료`;
+    case 'item-packed': return '';
+  }
+}
 
 // 화면과 목록에 보여줄 한 줄 설명.
 export function describeEvent(e: OrderEvent): string {
@@ -174,21 +191,22 @@ export function planCues(events: OrderEvent[], mode: 'voice' | 'tone', disabled:
   const urgent = on.filter((e) => e.kind === 'packed-item-changed');
   const rest = on.filter((e) => e.kind !== 'packed-item-changed').sort(byPriority);
   if (urgent.length) {
-    cues.push({ tone: 'urgent', say: urgent.length === 1 ? describeEvent(urgent[0]) : `포장된 품목 변경 ${urgent.length}건` });
+    cues.push({ tone: 'urgent', say: [urgent.length === 1 ? spokenEvent(urgent[0]) : `포장된 품목 변경. ${urgent.length}건`] });
   }
   if (rest.length) {
     const spoken = rest.filter((e) => e.kind !== 'item-packed');
     const tone = TONE_OF[rest[0].kind];
     if (spoken.length <= 3) {
-      cues.push({ tone, say: spoken.map(describeEvent).join('. ') || undefined });
+      cues.push({ tone, say: spoken.length ? spoken.map(spokenEvent) : undefined });
     } else {
       const counts = new Map<string, number>();
       for (const e of spoken) {
         const label = SUMMARY_LABEL[e.kind];
         if (label) counts.set(label, (counts.get(label) ?? 0) + 1);
       }
-      const parts = [...counts].map(([label, n]) => `${label} ${n}`);
-      cues.push({ tone, say: `${spoken.length}건 변경. ${parts.join(', ')}` });
+      // 숫자만 읽으면 "일, 삼"처럼 들려서 "건"을 붙이고 구절마다 끊어 읽는다.
+      const parts = [...counts].map(([label, n]) => `${label} ${n}건`);
+      cues.push({ tone, say: [`${spoken.length}건 변경`, ...parts] });
     }
   }
   return cues;

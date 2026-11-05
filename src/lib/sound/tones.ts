@@ -1,5 +1,5 @@
 // 칠판 효과음: 파일 없이 Web Audio로 만든 짧은 톤. 브라우저는 사용자가 한 번 누르기 전에는 소리를 막으므로(자동재생 제한)
-// 칠판에서 "칠판 모드 켜기"를 한 번 눌러야 한다(unlockAudio). Chrome을 --autoplay-policy=no-user-gesture-required로 띄우면 누르지 않아도 된다.
+// 칠판에서 "실시간 알림 켜기"를 한 번 눌러야 한다(unlockAudio). Chrome을 --autoplay-policy=no-user-gesture-required로 띄우면 누르지 않아도 된다.
 
 export type ToneName = 'urgent' | 'cancel' | 'added' | 'changed' | 'new-order' | 'unshipped' | 'complete' | 'tick' | 'disconnected' | 'scan-ok' | 'scan-fail' | 'test';
 
