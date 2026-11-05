@@ -9,26 +9,29 @@ import { MigrationNotice } from '@/components/migration-notice';
 import { todayKST } from '@/lib/order-date';
 import { getPeriod, type Granularity } from '@/lib/report';
 import { loadSalesRows, loadStoredPurchases, loadSupplierDirectory } from '@/lib/settlement/server';
-import { buildPurchaseRows } from '@/lib/settlement/purchases';
+import { buildPurchaseRows, totalsOf } from '@/lib/settlement/purchases';
+import { buildDailySeries } from '@/lib/settlement/chart';
 import { settlementUrl, type SettlementTab } from '@/lib/settlement/url';
 import { SettlementClient } from './settlement-client';
 import { PurchasesClient } from './purchases-client';
+import { ChartClient } from './chart-client';
 
 const isValidDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 
 const TABS: { tab: SettlementTab; label: string }[] = [
   { tab: 'sales', label: '판매내역' },
   { tab: 'purchases', label: '매입내역' },
+  { tab: 'chart', label: '그래프' },
 ];
 
 // 정산: 출고가 끝난 주문을 판매내역과 매입내역으로 보여 주고 가격·사업자 구분·입금 여부·메모를 입력한다.
-// ?g=day|week|month(기본 day), ?d=YYYY-MM-DD(기준일, 기본 오늘, 미래는 오늘로 본다), ?t=purchases(매입내역 탭, 기본은 판매내역)로 정한다.
+// ?g=day|week|month(기본 day), ?d=YYYY-MM-DD(기준일, 기본 오늘, 미래는 오늘로 본다), ?t=purchases|chart(매입내역·그래프 탭, 기본은 판매내역)로 정한다.
 export default async function SettlementPage({ searchParams }: { searchParams: Promise<{ g?: string; d?: string; t?: string }> }) {
   const accessCheck = requireMenu('settlement'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 await로 확정)
   const { g, d, t } = await searchParams;
   const today = todayKST();
   const granularity: Granularity = g === 'week' || g === 'month' ? g : 'day';
-  const tab: SettlementTab = t === 'purchases' ? 'purchases' : 'sales';
+  const tab: SettlementTab = t === 'purchases' || t === 'chart' ? t : 'sales';
   const anchor = d && isValidDate(d) && d <= today ? d : today;
   const period = getPeriod(granularity, anchor);
   const multiDay = period.from !== period.to;
@@ -80,6 +83,28 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
         {header}
         {tabs}
         <SettlementClient key={key} rows={sales.rows} sellers={sellers.rows} granularity={granularity} anchor={anchor} today={today} periodLabel={period.label} multiDay={multiDay} />
+      </div>
+    );
+  }
+
+  if (tab === 'chart') {
+    // 그래프: 판매내역과 매입내역에 입력된 값을 일별로 모아서 보여 준다. 매입가가 필요하므로 0044를 적용하기 전이면 이 탭에만 안내를 보여 준다.
+    const stored = await rowsOrMissing(loadStoredPurchases(supabase, period.from, period.to));
+    if (stored.missing) {
+      return (
+        <div className="ak-page">
+          {header}
+          {tabs}
+          <MigrationNotice feature="그래프" migrations={migrationsFor([stored.missing])} />
+        </div>
+      );
+    }
+    const purchaseRows = buildPurchaseRows(sales.rows, stored.rows);
+    return (
+      <div className="ak-page">
+        {header}
+        {tabs}
+        <ChartClient key={key} series={buildDailySeries(purchaseRows, period.from, period.to)} totals={totalsOf(purchaseRows)} granularity={granularity} anchor={anchor} today={today} periodLabel={period.label} />
       </div>
     );
   }
