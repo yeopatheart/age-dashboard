@@ -5,6 +5,7 @@ import { Barcode, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/admin-kit';
 import { LabelView } from '@/components/labels/label-view';
 import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
+import { LabelMockupCard } from '@/components/labels/label-mockup-card';
 import {
   DEFAULT_TEMPLATE,
   ELEMENT_TYPE_NAMES,
@@ -18,7 +19,8 @@ import {
   type LabelField,
   type LabelTemplate,
 } from '@/lib/labels/template';
-import { saveLabelMargin, saveLabelTemplate } from './actions';
+import { saveLabelMargin, saveLabelRotate, saveLabelTemplate } from './actions';
+import { barcodeTestTemplate, moduleDots, moduleMm, PRINTER_DPI } from '@/lib/labels/barcode-test';
 import { SilentPrintSetup } from './silent-print-setup';
 import { useCan } from '@/components/permissions-context';
 
@@ -55,7 +57,7 @@ const newElement = (type: LabelElementType): LabelElement => {
   return { id, type: 'text', text: '문구', x: 5, y: 5, w: 40, h: 8, fontSize: 14, bold: false, align: 'left' };
 };
 
-export function LabelsClient({ initial, company, contact, initialMarginMm }: { initial: LabelTemplate; company: string; contact: string; initialMarginMm: number }) {
+export function LabelsClient({ initial, company, contact, initialMarginMm, initialRotate }: { initial: LabelTemplate; company: string; contact: string; initialMarginMm: number; initialRotate: boolean }) {
   const canEdit = useCan()('labels:edit');
   const [template, setTemplate] = useState(initial);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -67,6 +69,10 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
   // 프린터가 찍지 못하는 가장자리(mm). 빗금으로 보여주고, 여백에 걸친 항목에는 경고한다.
   const [marginMm, setMarginMm] = useState(initialMarginMm);
   const [marginDirty, setMarginDirty] = useState(false);
+  // 롤 방향에 맞춰 90도 돌려 출력(프린터 용지는 높이×가로가 된다). 프린터 설정이라 라벨 디자인과 따로 저장한다.
+  const [rotate, setRotate] = useState(initialRotate);
+  const [rotateDirty, setRotateDirty] = useState(false);
+  const paperText = rotate ? `${template.heightMm}×${template.widthMm}mm` : `${template.widthMm}×${template.heightMm}mm`;
   const drag = useRef<DragState | null>(null);
 
   const selected = template.elements.find((e) => e.id === selectedId) ?? null;
@@ -154,12 +160,13 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
     setBusy(true);
     setError(null);
     // 이 라벨 디자인과 프린터 여백 중 바뀐 것만 저장한다.
-    const [templateResult, marginResult] = await Promise.all([
+    const [templateResult, marginResult, rotateResult] = await Promise.all([
       dirty ? saveLabelTemplate(template) : null,
       marginDirty ? saveLabelMargin(marginMm) : null,
+      rotateDirty ? saveLabelRotate(rotate) : null,
     ]);
     setBusy(false);
-    const failure = templateResult?.error ?? marginResult?.error;
+    const failure = templateResult?.error ?? marginResult?.error ?? rotateResult?.error;
     if (failure) return setError(failure);
     if (templateResult) {
       setTemplate(templateResult.template);
@@ -168,6 +175,10 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
     if (marginResult) {
       setMarginMm(marginResult.marginMm);
       setMarginDirty(false);
+    }
+    if (rotateResult) {
+      setRotate(rotateResult.rotate);
+      setRotateDirty(false);
     }
     setNotice('저장했습니다.');
   };
@@ -203,10 +214,13 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
         {error && <span className="ak-error">{error}</span>}
         {notice && <span className="ak-notice">{notice}</span>}
         <button className="ak-btn" onClick={resetToDefault} disabled={busy}><RotateCcw size={14} /> 기본 배치로</button>
-        <button className="ak-btn" onClick={() => setPrintJob({ template, labels: [sample] })} disabled={busy} title="지금 화면의 디자인을 샘플 값으로 한 장 출력합니다. 용지 크기와 위치를 확인할 때 씁니다.">
+        <button className="ak-btn" onClick={() => setPrintJob({ template, labels: [sample], rotate })} disabled={busy} title="지금 화면의 디자인을 샘플 값으로 한 장 출력합니다. 용지 크기와 위치를 확인할 때 씁니다.">
           <Printer size={14} /> 테스트 출력
         </button>
-        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !(dirty || marginDirty)}>저장</button>
+        <button className="ak-btn" onClick={() => setPrintJob({ template: barcodeTestTemplate(template), labels: [sample], rotate })} disabled={busy} title={`같은 바코드를 막대 한 칸 2~6도트(${PRINTER_DPI}dpi)로 한 장에 출력합니다. 폰으로 각 줄을 스캔해서 읽히는 가장 가는 줄을 찾습니다.`}>
+          <Barcode size={14} /> 바코드 시험 출력
+        </button>
+        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !(dirty || marginDirty || rotateDirty)}>저장</button>
       </div>
 
       <div className="lb-layout">
@@ -219,7 +233,10 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
               {numberInput('측면 높이', sideHeightMm(template), (v) => updateTemplate((t) => ({ ...t, heightMm: t.topHeightMm + clamp(v, 8, 300) })), 1)}
               {numberInput('측면 가로(옆면 폭)', template.sideWidthMm, (v) => updateTemplate((t) => ({ ...t, sideWidthMm: clamp(v, 10, t.widthMm) })), 1)}
             </div>
-            <p className="ak-muted">전체 {template.widthMm}×{template.heightMm}mm = 프린터 용지(롤) 크기와 같아야 합니다. 상단 면과 측면 사이의 선이 접히는 곳이고, 그 위아래 {FOLD_KEEP_OUT_MM}mm에는 글자·바코드를 두지 않습니다. 측면 가로는 옆면이 라벨보다 좁을 때만 줄입니다(가운데 폭만 씁니다).</p>
+            <label className="lb-check" title="롤에 들어 있는 라벨의 방향에 맞춰 출력 방향을 바꿉니다. 같은 롤로 가로·세로 배치를 모두 시험할 때 씁니다.">
+              <input type="checkbox" checked={rotate} onChange={(e) => { setRotate(e.target.checked); setRotateDirty(true); setNotice(null); }} /> 롤 방향에 맞춰 90도 돌려 출력
+            </label>
+            <p className="ak-muted">{rotate ? `라벨 ${template.widthMm}×${template.heightMm}mm를 시계 방향으로 90도 돌려 ${paperText} 용지에 출력합니다. 프린터 용지 크기를 ${paperText}로 맞추세요.` : `전체 ${template.widthMm}×${template.heightMm}mm = 프린터 용지(롤) 크기와 같아야 합니다.`} 상단 면과 측면 사이의 선이 접히는 곳이고, 그 위아래 {FOLD_KEEP_OUT_MM}mm에는 글자·바코드를 두지 않습니다. 측면 가로는 옆면이 라벨보다 좁을 때만 줄입니다(가운데 폭만 씁니다).</p>
           </section>
 
           <section className="lb-card">
@@ -231,8 +248,10 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
           </section>
 
           <section className="lb-card">
-            <SilentPrintSetup sizeText={`${template.widthMm}×${template.heightMm}mm`} />
+            <SilentPrintSetup sizeText={paperText} />
           </section>
+
+          <LabelMockupCard template={template} data={sample} />
 
           <section className="lb-card">
             <h3>항목 추가</h3>
@@ -280,6 +299,9 @@ export function LabelsClient({ initial, company, contact, initialMarginMm }: { i
                 )}
                 {selected.type === 'barcode' && (
                   <label className="lb-check"><input type="checkbox" checked={selected.showText !== false} onChange={(e) => updateElement(selected.id, { showText: e.target.checked })} /> 바코드 아래에 숫자도 찍기</label>
+                )}
+                {selected.type === 'barcode' && (
+                  <p className="ak-muted">막대 한 칸 {moduleMm(selected.w).toFixed(2)}mm = {moduleDots(selected.w).toFixed(1)}도트({PRINTER_DPI}dpi). 정수 도트에 가까울수록 또렷하게 찍힙니다.</p>
                 )}
                 <div className="lb-grid">
                   {numberInput('가로 위치', selected.x, (v) => updateElement(selected.id, { x: clamp(v, 0, template.widthMm - selected.w) }))}
