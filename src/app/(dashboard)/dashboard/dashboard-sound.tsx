@@ -10,7 +10,7 @@ import { useSoundSettings } from '@/lib/sound/settings';
 import { getAudioContext, isAudioRunning, playTone, subscribeAudioState, unlockAudio } from '@/lib/sound/tones';
 import { primeVoice } from '@/lib/sound/voice';
 
-// 칠판 모드 = 실시간 갱신 + 변경 소리. 칠판 기기에서만 켠다(기기마다 따로 저장). 입력하는 PC·휴대폰에서는 켜지 않으므로
+// 실시간 알림 = 실시간 갱신 + 변경 소리·목록. 칠판 기기에서만 켠다(기기마다 따로 저장). 입력하는 PC·휴대폰에서는 켜지 않으므로
 // 내가 고친 주문이 나에게 울리거나 입력 중 화면이 바뀌는 일이 없다. 같은 브라우저의 두 창은 설정을 공유하므로
 // 한쪽 칠판 창의 주소에 `&sound=off`를 붙이면 그 창만 조용히 갱신만 한다.
 const BURST_QUIET_MS = 1500; // 이벤트가 이 시간 동안 더 오지 않으면 모아서 한 번에 알린다
@@ -26,6 +26,7 @@ interface RecentEvent {
 // 휴대폰 화면에는 붙이지 않는다(dashboard-client가 PC 화면에만 렌더한다).
 export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { orderDate: string }) {
   const searchParams = useSearchParams();
+  // 저장 키는 예전 이름(board-mode)을 그대로 쓴다: 바꾸면 이미 켜 둔 기기의 설정이 초기화된다.
   const [mode, setBoardOn] = useLocalFlag('board-mode');
   const [settings] = useSoundSettings();
   const soundOn = mode && searchParams.get('sound') !== 'off';
@@ -40,7 +41,7 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
     live.current = { soundOn, settings };
   });
 
-  // 칠판 모드에서는 음성 컨텍스트를 미리 만들어 둔다(자동재생이 허용된 환경이면 바로 running이 된다).
+  // 실시간 알림이 켜져 있으면 음성 컨텍스트를 미리 만들어 둔다(자동재생이 허용된 환경이면 바로 running이 된다).
   useEffect(() => {
     if (soundOn) getAudioContext();
   }, [soundOn]);
@@ -71,7 +72,7 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
         [...batch.filter((e) => e.kind !== 'item-packed').map((e) => ({ at: now, text: describeEvent(e), urgent: e.kind === 'packed-item-changed' })), ...list].slice(0, RECENT_LIMIT),
       );
       const { soundOn: on, settings: s } = live.current;
-      if (on) void playCues(planCues(batch, s.mode, s.disabled), s.mode, s.volume);
+      if (on) void playCues(planCues(batch, s.mode, s.disabled), s);
     };
     clearTimeout(quietTimer.current);
     quietTimer.current = setTimeout(flush, BURST_QUIET_MS);
@@ -90,7 +91,7 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
   useEffect(() => {
     if (status !== 'down') return;
     const { soundOn: on, settings: s } = live.current;
-    if (on) void playCues([{ tone: 'disconnected', say: '연결이 끊겼습니다' }], s.mode, s.volume);
+    if (on) void playCues([{ tone: 'disconnected', say: ['연결이 끊겼습니다'] }], s);
   }, [status]);
 
   const turnOn = async () => {
@@ -115,7 +116,7 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
           onClick={turnOn}
           className="fixed bottom-3 right-3 z-40 h-8 px-3 rounded-full bg-slate-800/80 text-white text-xs font-bold hover:bg-slate-800"
         >
-          칠판 모드 켜기
+          실시간 알림 켜기
         </button>
       )}
 

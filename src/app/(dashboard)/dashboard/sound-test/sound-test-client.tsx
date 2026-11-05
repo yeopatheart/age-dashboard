@@ -5,7 +5,7 @@ import { describeEvent, EVENT_LABEL, EVENT_PRIORITY, planCues, type OrderEvent, 
 import { playCues } from '@/lib/sound/player';
 import { useSoundSettings } from '@/lib/sound/settings';
 import { isAudioRunning, subscribeAudioState, unlockAudio } from '@/lib/sound/tones';
-import { koreanVoices, primeVoice } from '@/lib/sound/voice';
+import { koreanVoices, MAX_RATE, MIN_RATE, pickVoice, primeVoice } from '@/lib/sound/voice';
 
 // 현장에서 소리를 골라 보는 화면: 이벤트별 소리 듣기, 톤/음성 전환, 볼륨, 이벤트별 켜기·끄기, 묶음 알림 시연.
 // 설정은 이 기기에만 저장된다(칠판마다 따로).
@@ -24,25 +24,25 @@ const BURST: OrderEvent[] = [
 export function SoundTestClient() {
   const [settings, update] = useSoundSettings();
   const running = useSyncExternalStore(subscribeAudioState, isAudioRunning, () => false);
-  const [voices, setVoices] = useState<string[] | null>(null);
+  const [voices, setVoices] = useState<{ name: string; lang: string }[] | null>(null);
 
   // 음성 목록은 브라우저가 늦게 채우므로(voiceschanged) 이벤트로도 다시 읽는다.
   useEffect(() => {
     if (!('speechSynthesis' in window)) return;
-    const read = () => setVoices(koreanVoices().map((v) => `${v.name} (${v.lang})`));
+    const read = () => setVoices(koreanVoices().map((v) => ({ name: v.name, lang: v.lang })));
     read();
     window.speechSynthesis.addEventListener('voiceschanged', read);
     return () => window.speechSynthesis.removeEventListener('voiceschanged', read);
   }, []);
 
-  const play = (events: OrderEvent[]) => void playCues(planCues(events, settings.mode, []), settings.mode, settings.volume);
+  const play = (events: OrderEvent[]) => void playCues(planCues(events, settings.mode, []), settings);
   const toggleKind = (kind: OrderEventKind) =>
     update({ disabled: settings.disabled.includes(kind) ? settings.disabled.filter((k) => k !== kind) : [...settings.disabled, kind] });
 
   return (
     <div className="max-w-2xl mx-auto p-6 space-y-6">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-bold text-slate-800">칠판 소리 설정</h1>
+        <h1 className="text-xl font-bold text-slate-800">실시간 알림 설정</h1>
         <Link href="/dashboard" className="text-sm font-bold text-sky-700 hover:underline">← 주문 목록</Link>
       </div>
 
@@ -62,8 +62,17 @@ export function SoundTestClient() {
         </div>
         <p className="text-sm text-slate-600">
           한국어 음성:{' '}
-          {voices === null ? '확인 중' : voices.length > 0 ? <b className="text-emerald-700">{voices.join(', ')}</b> : <b className="text-red-600">없음 — 이 기기에서는 음성 모드가 소리를 내지 못합니다(톤만 사용)</b>}
+          {voices === null ? '확인 중' : voices.length > 0 ? <b className="text-emerald-700">{voices.map((v) => `${v.name} (${v.lang})`).join(', ')}</b> : <b className="text-red-600">없음 — 이 기기에서는 음성 모드가 소리를 내지 못합니다(톤만 사용)</b>}
         </p>
+        {voices !== null && voices.length > 0 && (
+          <label className="flex items-center gap-3 text-sm font-bold text-slate-700">
+            음성
+            <select value={settings.voiceName} onChange={(e) => update({ voiceName: e.target.value })} className="flex-1 h-9 rounded-lg border border-slate-300 px-2 text-sm font-bold bg-white">
+              <option value="">자동 ({pickVoice('')?.name ?? '-'})</option>
+              {voices.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
+            </select>
+          </label>
+        )}
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
@@ -76,6 +85,14 @@ export function SoundTestClient() {
           <input type="range" min={0.1} max={1} step={0.1} value={settings.volume} onChange={(e) => update({ volume: Number(e.target.value) })} className="flex-1" />
           <span className="w-10 text-right">{Math.round(settings.volume * 100)}%</span>
         </label>
+        <label className="flex items-center gap-3 text-sm font-bold text-slate-700">
+          말 속도
+          <span className="text-xs text-slate-500">느림</span>
+          <input type="range" min={MIN_RATE} max={MAX_RATE} step={0.05} value={settings.rate} onChange={(e) => update({ rate: Number(e.target.value) })} className="flex-1" />
+          <span className="text-xs text-slate-500">빠름</span>
+          <span className="w-12 text-right">{settings.rate.toFixed(2)}</span>
+        </label>
+        <p className="text-xs text-slate-500">속도를 바꾼 뒤 아래 &lsquo;듣기&rsquo;로 바로 들어볼 수 있습니다. 소음이 큰 곳에서는 0.7~0.85가 알아듣기 좋습니다.</p>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
