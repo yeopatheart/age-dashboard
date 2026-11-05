@@ -27,9 +27,12 @@ import {
   ShieldCheck,
   Landmark,
   Receipt,
+  ChevronDown,
+  Database,
+  SlidersHorizontal,
 } from 'lucide-react';
 
-// 하루 업무 순서대로: 주문 입력 → 박스 할당 → 대시보드, 그 아래는 관리 메뉴.
+// 하루 업무 순서대로: 주문 입력 → 박스 할당 → 대시보드, 그 아래는 접고 펼 수 있는 "관리"·"설정" 그룹.
 // 보여줄 메뉴는 사용자 권한(allowedMenus)으로 거른다. 라벨·주소는 src/lib/permissions/catalog.ts의 MENU_DEFS와 같다.
 const NAV_ITEMS: { menu: MenuKey | 'users'; icon: typeof Sparkles }[] = [
   { menu: 'overview', icon: LayoutDashboard },
@@ -51,6 +54,12 @@ const NAV_ITEMS: { menu: MenuKey | 'users'; icon: typeof Sparkles }[] = [
 // 하단 탭에 올릴 메뉴(왼쪽부터). 라벨은 탭 폭에 맞춰 짧게 쓴다.
 const BOTTOM_TABS: MenuKey[] = ['overview', 'dashboard', 'orders', 'scan'];
 const BOTTOM_TAB_LABELS: Partial<Record<MenuKey, string>> = { overview: '대시보드', dashboard: '주문 목록', orders: '주문 입력', scan: '상차 스캔' };
+// 자주 쓰는 메뉴는 항상 보이고, 관리·설정 메뉴는 그룹으로 묶어 접고 펼친다. 그룹 안의 메뉴는 사용자 권한으로 거르며, 보일 메뉴가 없는 그룹은 통째로 숨긴다.
+const MAIN_MENUS: (MenuKey | 'users')[] = ['overview', 'orders', 'packing', 'dashboard', 'scan', 'reports', 'settlement'];
+const NAV_GROUPS: { id: string; label: string; icon: typeof Sparkles; menus: (MenuKey | 'users')[] }[] = [
+  { id: 'manage', label: '관리', icon: Database, menus: ['businesses', 'sellers', 'terminals', 'products', 'boxes'] },
+  { id: 'config', label: '설정', icon: SlidersHorizontal, menus: ['labels', 'settings', 'users'] },
+];
 const navEntry = (menu: MenuKey | 'users') => (menu === 'users' ? { href: '/users', label: '사용자 및 권한' } : { href: MENU_DEFS[menu].href, label: MENU_DEFS[menu].label });
 
 const COLLAPSE_STORAGE_KEY = 'age-dashboard-sidebar-collapsed';
@@ -69,6 +78,8 @@ export function DashboardShell({
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // 그룹을 직접 접거나 펼친 것(없으면 현재 페이지가 그룹 안에 있을 때만 펼쳐 둔다). 새로고침하면 처음 상태로 돌아간다.
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({});
   // 사이드바 접힘은 이 브라우저에 저장한다. 서버 렌더는 항상 펼친 상태로 그리고 하이드레이션 뒤에 저장된 값으로 바뀐다.
   const [collapsed, setCollapsed] = useLocalFlag(COLLAPSE_STORAGE_KEY);
   const toggleCollapsed = () => setCollapsed(!collapsed);
@@ -83,6 +94,25 @@ export function DashboardShell({
   // 모바일 오버레이가 열려있을 땐 항상 펼친 모습으로 보여준다 — collapsed는 데스크톱 레일 전용
   // 상태라, 좁은 화면에서까지 아이콘만 보이면 오히려 못 쓰게 된다.
   const effectiveCollapsed = collapsed && !sidebarOpen;
+
+  const visible = (menu: MenuKey | 'users') => (menu === 'users' ? isMaster : isMaster || allowedMenus.includes(menu));
+  const inPath = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const renderItem = (menu: MenuKey | 'users', nested = false) => {
+    const { href, label } = navEntry(menu);
+    const Icon = NAV_ITEMS.find((n) => n.menu === menu)!.icon;
+    return (
+      <Link
+        key={href}
+        href={href}
+        className={`sidebar-nav-item ${nested ? 'sidebar-nav-sub' : ''} ${pathname === href ? 'active' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+        title={effectiveCollapsed ? label : undefined}
+      >
+        <Icon size={nested ? 16 : 18} />
+        {!effectiveCollapsed && <span>{label}</span>}
+      </Link>
+    );
+  };
 
   return (
     <div className="app-shell">
@@ -124,21 +154,39 @@ export function DashboardShell({
 
         {/* Nav */}
         <nav className="sidebar-nav">
-          {!effectiveCollapsed && <p className="sidebar-nav-label">메뉴</p>}
-          {NAV_ITEMS.filter(({ menu }) => (menu === 'users' ? isMaster : isMaster || allowedMenus.includes(menu))).map(({ menu, icon: Icon }) => {
-            const { href, label } = navEntry(menu);
-            const active = pathname === href;
+          {MAIN_MENUS.filter(visible).map((menu) => renderItem(menu))}
+          {NAV_GROUPS.map((group) => {
+            const items = group.menus.filter(visible);
+            if (items.length === 0) return null;
+            // 아이콘만 보이는 좁은 사이드바에는 그룹 제목을 둘 자리가 없어서, 그룹의 메뉴를 구분선 아래에 아이콘으로 모두 보여 준다.
+            if (effectiveCollapsed) {
+              return (
+                <div key={group.id} className="sidebar-rail-group">
+                  {items.map((menu) => renderItem(menu))}
+                </div>
+              );
+            }
+            const open = groupOpen[group.id] ?? items.some((menu) => inPath(navEntry(menu).href));
+            const GroupIcon = group.icon;
             return (
-              <Link
-                key={href}
-                href={href}
-                className={`sidebar-nav-item ${active ? 'active' : ''}`}
-                onClick={() => setSidebarOpen(false)}
-                title={effectiveCollapsed ? label : undefined}
-              >
-                <Icon size={18} />
-                {!effectiveCollapsed && <span>{label}</span>}
-              </Link>
+              <div key={group.id} className="sidebar-group">
+                <button
+                  type="button"
+                  className="sidebar-group-head"
+                  aria-expanded={open}
+                  aria-controls={`nav-group-${group.id}`}
+                  onClick={() => setGroupOpen((prev) => ({ ...prev, [group.id]: !open }))}
+                >
+                  <GroupIcon size={18} />
+                  <span>{group.label}</span>
+                  <ChevronDown size={16} className="sidebar-group-chevron" data-open={open} />
+                </button>
+                {open && (
+                  <div id={`nav-group-${group.id}`} className="sidebar-sub">
+                    {items.map((menu) => renderItem(menu, true))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
@@ -285,20 +333,54 @@ export function DashboardShell({
           flex: 1;
           overflow-y: auto;
           overflow-x: hidden;
-          padding: 1.25rem 0.75rem;
+          padding: 0.875rem 0.75rem;
           display: flex;
           flex-direction: column;
           gap: 2px;
         }
-        .sidebar-collapsed .sidebar-nav { padding: 1.25rem 0.625rem; align-items: center; }
-        .sidebar-nav-label {
-          font-size: 0.65rem;
-          font-weight: 700;
-          color: rgba(255,255,255,0.4);
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          padding: 0 0.5rem;
-          margin-bottom: 0.5rem;
+        .sidebar-collapsed .sidebar-nav { padding: 0.875rem 0.625rem; align-items: center; }
+        .sidebar-group { display: flex; flex-direction: column; flex-shrink: 0; }
+        .sidebar-group-head {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          width: 100%;
+          padding: 0.7rem 0.75rem;
+          border: none;
+          border-radius: 0.5rem;
+          background: none;
+          color: rgba(255,255,255,0.75);
+          font-size: 0.875rem;
+          font-weight: 500;
+          text-align: left;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .sidebar-group-head span { flex: 1; }
+        .sidebar-group-head:hover { background: rgba(255,255,255,0.1); color: #ffffff; }
+        .sidebar-group-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
+        .sidebar-group-chevron[data-open='true'] { transform: rotate(180deg); }
+        .sidebar-sub {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          margin: 2px 0 4px 1.15rem;
+          padding-left: 0.5rem;
+          border-left: 1px solid rgba(255,255,255,0.14);
+        }
+        .sidebar-nav-sub { padding: 0.55rem 0.65rem; font-size: 0.8125rem; }
+        .sidebar-sub .sidebar-nav-item.active::before { left: calc(-2.4rem - 1px); }
+        .sidebar-rail-group {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
+          width: 100%;
+          flex-shrink: 0;
+          margin-top: 0.5rem;
+          padding-top: 0.5rem;
+          border-top: 1px solid rgba(255,255,255,0.1);
         }
         .sidebar-nav-item {
           display: flex;
@@ -314,6 +396,7 @@ export function DashboardShell({
           position: relative;
           white-space: nowrap;
           width: 100%;
+          flex-shrink: 0; /* 화면 높이가 모자라면 항목이 찌그러지지 않고 메뉴 영역이 스크롤된다 */
         }
         .sidebar-collapsed .sidebar-nav-item {
           width: 44px;
