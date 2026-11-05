@@ -80,6 +80,14 @@ export const clampLabelMargin = (v: unknown) => {
   return Number.isFinite(n) ? Math.min(10, Math.max(0, Math.round(n * 2) / 2)) : DEFAULT_LABEL_MARGIN_MM;
 };
 
+// 롤 방향에 맞춰 라벨을 90도 돌려 출력할지. 프린터·롤 방향에 따라 정해지므로 여백처럼 app_settings에 따로 저장한다.
+export const LABEL_ROTATE_KEY = 'labelRotate';
+
+export async function loadLabelRotate(supabase: Client): Promise<boolean> {
+  const { data } = await supabase.from('app_settings').select('value').eq('key', LABEL_ROTATE_KEY).maybeSingle();
+  return data?.value === true;
+}
+
 export async function loadLabelMargin(supabase: Client): Promise<number> {
   const { data } = await supabase.from('app_settings').select('value').eq('key', LABEL_MARGIN_KEY).maybeSingle();
   return data ? clampLabelMargin(data.value) : DEFAULT_LABEL_MARGIN_MM;

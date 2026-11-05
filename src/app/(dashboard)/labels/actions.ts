@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
 import { mergeLabelText, normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
 import { LABEL_TEMPLATE_KEY, buildTemplate, parseElements, type LabelData, type LabelTemplate } from '@/lib/labels/template';
-import { LABEL_MARGIN_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelTemplate, type CardLabelBase, type CardLabelInfo } from '@/lib/labels/server';
+import { LABEL_MARGIN_KEY, LABEL_ROTATE_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelRotate, loadLabelTemplate, type CardLabelBase, type CardLabelInfo } from '@/lib/labels/server';
 import { requirePermission } from '@/lib/permissions/access';
 
 // 라벨 디자인 저장(한 장짜리 한 행). 값은 서버에서 한 번 더 검증한다.
@@ -41,6 +41,17 @@ export async function saveLabelMargin(mm: number): Promise<{ error: string | nul
   return { error: null, marginMm };
 }
 
+// 롤 방향에 맞춰 라벨을 90도 돌려 출력하는지 저장(프린터 하나에 하나).
+export async function saveLabelRotate(rotate: boolean): Promise<{ error: string | null; rotate: boolean }> {
+  await requirePermission('labels:edit');
+  const value = rotate === true;
+  const supabase = await createClient();
+  const { error } = await supabase.from('app_settings').upsert({ key: LABEL_ROTATE_KEY, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  if (error) return { error: error.message, rotate: value };
+  revalidatePath('/labels');
+  return { error: null, rotate: value };
+}
+
 // 박스 할당 화면의 라벨 영역이 처음 열릴 때 읽는다: 박스별 출력 상태 + 미리보기에 필요한 라벨 디자인·공통 값.
 // 바코드 번호는 날짜·업체번호·박스 순번으로 정해지므로 미리보기는 발급(DB 쓰기) 없이 화면에서 계산한다.
 export interface CardLabelPreviewSource {
@@ -61,13 +72,14 @@ export interface LabelPrintPayload {
   template: LabelTemplate | null;
   labels: LabelData[];
   infos: CardLabelInfo[];
+  rotated: boolean; // 롤 방향에 맞춰 90도 돌려 출력하는 설정(라벨 설정 화면)
 }
 
 // 박스 순번(seqs)의 라벨을 출력할 준비를 한다: 아직 바코드가 없는 순번에는 바코드를 발급하고, 출력 이력을 남기고,
 // 인쇄에 필요한 라벨 디자인과 값을 돌려준다. 같은 박스를 다시 부르면 같은 바코드로 재출력이 된다.
 export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: number[] }): Promise<LabelPrintPayload> {
   await requirePermission('packing:print');
-  const fail = (error: string): LabelPrintPayload => ({ error, template: null, labels: [], infos: [] });
+  const fail = (error: string): LabelPrintPayload => ({ error, template: null, labels: [], infos: [], rotated: false });
   const seqs = [...new Set(input.seqs)].filter((n) => Number.isInteger(n) && n >= 1 && n <= 99).sort((a, b) => a - b);
   if (seqs.length === 0) return fail('출력할 박스를 선택해주세요.');
 
@@ -75,9 +87,10 @@ export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: 
   const { data: claims } = await supabase.auth.getClaims();
   const userId = claims?.claims.sub ?? null;
 
-  const [base, template, { data: existing }] = await Promise.all([
+  const [base, template, rotated, { data: existing }] = await Promise.all([
     loadCardLabelBase(supabase, input.dailyBusinessId),
     loadLabelTemplate(supabase),
+    loadLabelRotate(supabase),
     supabase.from('box_labels').select('id, seq, barcode').eq('daily_business_id', input.dailyBusinessId),
   ]);
   if (!base) return fail('업체 주문을 찾지 못했습니다.');
@@ -102,7 +115,7 @@ export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: 
 
   const labels: LabelData[] = seqs.map((seq) => ({ ...base.data, boxNo: seq, barcode: labelBySeq.get(seq)!.barcode, merge: mergeLabelText(base.mergeGroups, seq) }));
   revalidatePath('/packing-log');
-  return { error: null, template, labels, infos: await loadCardLabels(supabase, input.dailyBusinessId) };
+  return { error: null, template, labels, infos: await loadCardLabels(supabase, input.dailyBusinessId), rotated };
 }
 
 // 합포장 묶음 저장(박스 할당 화면의 라벨 영역). 묶음을 바꾸면 이미 출력한 라벨의 합포장 표시가 달라지므로 화면에서 다시 출력하도록 안내한다.

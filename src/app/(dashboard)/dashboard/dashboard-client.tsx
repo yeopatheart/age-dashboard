@@ -10,6 +10,7 @@ import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { DashboardMobile } from './dashboard-mobile';
+import { DashboardSound } from './dashboard-sound';
 import {
   setProductHighlight,
   clearProductHighlights,
@@ -747,8 +748,10 @@ export function DashboardClient({
   const canDelete = can('dashboard:delete');
   const readOnly = (isPast && !allowPast) || !can('dashboard:edit');
 
+  // 칠판 창의 `&sound=off`(그 창만 소리 끔)는 모니터·날짜를 바꿔도 유지한다.
+  const soundOffParam = searchParams.get('sound') === 'off' ? '&sound=off' : '';
   const dashboardUrl = (mode: string, date: string) =>
-    `/dashboard?monitor=${mode}${date === today ? '' : `&date=${date}`}`;
+    `/dashboard?monitor=${mode}${date === today ? '' : `&date=${date}`}${soundOffParam}`;
   // 모니터 전환은 데이터가 그대로이고 배치만 바뀌므로 서버에 다시 요청하지 않는다 — 주소만 바꾸면
   // useSearchParams가 즉시 따라온다(날짜 변경은 다른 데이터라 router.push로 서버에서 다시 조회).
   const setMonitorMode = (mode: string) => window.history.pushState(null, '', dashboardUrl(mode, orderDate));
@@ -1203,6 +1206,7 @@ export function DashboardClient({
     // (12px/16px) — 여기서 음수 마진으로 상쇄하는 방식은 main-content의 overflow-y:auto가
     // overflow-x까지 auto로 끌어올리는 CSS 규칙과 부딪혀 표 오른쪽이 잘려 보이는 버그가 있었다.
     <div className="flex flex-col h-[calc(100vh-24px)] gap-2">
+      <DashboardSound rows={rawRows} items={serverItems} orderDate={orderDate} />
       <div className="flex justify-between items-center bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex-shrink-0 flex-wrap gap-x-2 gap-y-1.5">
         <div className="flex gap-2 items-center flex-wrap">
           <div className="flex items-center gap-1">

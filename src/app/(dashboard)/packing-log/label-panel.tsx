@@ -56,7 +56,7 @@ export function LabelPanel({ dailyBusinessId, boxCount }: { dailyBusinessId: str
     if (payload.error || !payload.template) return setError(payload.error ?? '라벨을 준비하지 못했습니다.');
     setInfos(payload.infos);
     setStaleSeqs((prev) => prev.filter((n) => !targetSeqs.includes(n)));
-    setJob({ template: payload.template, labels: payload.labels });
+    setJob({ template: payload.template, labels: payload.labels, rotate: payload.rotated });
   };
 
   const changeGroups = async (next: MergeGroups) => {
