@@ -241,11 +241,13 @@ export function SidePanel({
   onClose,
   children,
   footer,
+  width,
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  width?: string; // 기본 26rem보다 넓은 패널이 필요할 때(예: 영수증 미리보기)
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -254,7 +256,7 @@ export function SidePanel({
   }, [onClose]);
   return (
     <div className="ak-overlay" onClick={onClose}>
-      <aside className="ak-panel" onClick={(e) => e.stopPropagation()}>
+      <aside className="ak-panel" style={width ? { width } : undefined} onClick={(e) => e.stopPropagation()}>
         <div className="ak-panel-head">
           <span>{title}</span>
           <button className="ak-panel-close" onClick={onClose} title="닫기"><X size={16} /></button>

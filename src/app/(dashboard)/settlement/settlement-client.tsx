@@ -4,23 +4,29 @@ import { saveSales, type SalesPatch } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { DataTable, type Column } from '@/components/admin/admin-kit';
 import { formatWon, formatWonInput, parseWon } from '@/lib/money';
+import { amountFromUnitPrice } from '@/lib/settlement/receipt';
 import type { SalesRow } from '@/lib/settlement/sales';
+import { ReceiptIssuePanel } from './receipt-issue-panel';
 
 const PAGE_SIZE = 100; // 월 조회는 수천 줄이 될 수 있어 100줄씩 나눠 보여 준다
 const NO_SELLER = '__none'; // 일괄 적용에서 "미지정으로 되돌리기"
 const EMPTY_HIDDEN = new Set<string>();
 
-type Edit = Partial<Pick<SalesRow, 'sellerId' | 'price' | 'paid' | 'memo'>>;
-type Drafts = Record<string, { price?: string; memo?: string }>;
+type Edit = Partial<Pick<SalesRow, 'sellerId' | 'price' | 'unitPrice' | 'paid' | 'memo'>>;
+type Drafts = Record<string, { price?: string; unitPrice?: string; memo?: string }>;
 
 export function SettlementClient({
   rows,
   sellers,
   multiDay,
+  from,
+  to,
 }: {
   rows: SalesRow[];
   sellers: { id: string; name: string }[];
   multiDay: boolean;
+  from: string; // 조회 기간(영수증 발행 때 서버가 같은 기간의 판매내역을 다시 읽는다)
+  to: string;
 }) {
   const canEdit = useCan()('settlement:edit');
   // 저장 결과를 기다리지 않고 화면에 바로 보이는 값(실패하면 되돌린다). 기간을 옮기면 화면 상태가 새로 시작된다.
@@ -30,6 +36,7 @@ export function SettlementClient({
   const [page, setPage] = useState(0);
   const [bulkSeller, setBulkSeller] = useState('');
   const [bulkPaid, setBulkPaid] = useState('');
+  const [receiptOpen, setReceiptOpen] = useState(false);
   const [saving, setSaving] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -54,6 +61,7 @@ export function SettlementClient({
     const local: Edit = {};
     if (patch.sellerId !== undefined) local.sellerId = patch.sellerId;
     if (patch.price !== undefined) local.price = patch.price;
+    if (patch.unitPrice !== undefined) local.unitPrice = patch.unitPrice;
     if (patch.paid !== undefined) local.paid = patch.paid;
     if (patch.memo !== undefined) local.memo = patch.memo ?? '';
     const previous = Object.fromEntries(ids.map((id) => [id, edits[id]]));
@@ -77,8 +85,8 @@ export function SettlementClient({
     return true;
   };
 
-  const setDraft = (id: string, key: 'price' | 'memo', value: string) => setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], [key]: value } }));
-  const clearDraft = (id: string, key: 'price' | 'memo') =>
+  const setDraft = (id: string, key: 'price' | 'unitPrice' | 'memo', value: string) => setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], [key]: value } }));
+  const clearDraft = (id: string, key: 'price' | 'unitPrice' | 'memo') =>
     setDrafts((prev) => {
       const { [key]: _removed, ...rest } = prev[id] ?? {};
       void _removed;
@@ -148,6 +156,36 @@ export function SettlementClient({
     { key: 'customer', label: '고객명', hideable: false, render: (r) => <strong>{r.customer}</strong> },
     { key: 'product', label: '품목', hideable: false, render: (r) => r.product },
     { key: 'qty', label: '수량', hideable: false, className: 'ak-fit', render: (r) => `${formatWon(r.quantity)}${r.unit}` },
+    {
+      key: 'unitPrice',
+      label: '단가(원)',
+      hideable: false,
+      render: (r0) => {
+        const r = view(r0);
+        return (
+          <input
+            className="ak-input"
+            style={{ width: '7.5rem', height: '2.1rem', textAlign: 'right' }}
+            inputMode="numeric"
+            placeholder="영수증 단가"
+            disabled={!canEdit}
+            aria-label={`${r.customer} ${r.product} 단가`}
+            value={drafts[r.itemId]?.unitPrice ?? formatWon(r.unitPrice)}
+            onChange={(e) => setDraft(r.itemId, 'unitPrice', formatWonInput(e.target.value))}
+            onBlur={() => {
+              const draft = drafts[r.itemId]?.unitPrice;
+              if (draft === undefined) return;
+              clearDraft(r.itemId, 'unitPrice');
+              const next = parseWon(draft);
+              if (next === r.unitPrice) return;
+              // 단가를 입력하면 판매가를 단가 × 수량(원 단위 반올림)으로 채운다. 판매가는 그 뒤에도 직접 고칠 수 있다. 단가를 지우면 판매가는 그대로 둔다.
+              void commit([r.itemId], next === null ? { unitPrice: null } : { unitPrice: next, price: amountFromUnitPrice(next, r.quantity) });
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && e.currentTarget.blur()}
+          />
+        );
+      },
+    },
     {
       key: 'price',
       label: '판매가(원)',
@@ -256,6 +294,7 @@ export function SettlementClient({
               <option value="N">N (미입금)</option>
             </select>
             <button className="ak-btn ak-btn-primary" onClick={applyPaid} disabled={saving > 0 || bulkPaid === ''}>입금 여부 적용</button>
+            <button className="ak-btn ak-btn-primary" onClick={() => setReceiptOpen(true)} title="선택한 줄을 고객사 × 사업자 × 출고일로 묶어 영수증 이미지를 만듭니다">영수증 만들기</button>
           </div>
         </div>
       )}
@@ -274,6 +313,17 @@ export function SettlementClient({
         onToggleAll={canEdit ? toggleAllOnPage : undefined}
         emptyText="이 기간에 출고가 끝난 주문이 없습니다."
       />
+
+      {receiptOpen && (
+        <ReceiptIssuePanel
+          rows={viewed.filter((r) => selected.has(r.itemId))}
+          sellers={sellers}
+          from={from}
+          to={to}
+          saving={saving > 0}
+          onClose={() => setReceiptOpen(false)}
+        />
+      )}
 
       {pageCount > 1 && (
         <div className="ak-toolbar" style={{ justifyContent: 'center' }}>

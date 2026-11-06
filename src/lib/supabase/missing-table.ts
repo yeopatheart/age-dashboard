@@ -16,6 +16,8 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
 // 오류가 "테이블 없음"이면 그 테이블 이름(못 읽으면 'unknown'), 아니면 null.
 export function missingTable(error: unknown): string | null {
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  // 마이그레이션 0047이 기존 테이블에 더한 열(단가 unit_price, 직인 seal_image)이 없을 때도 같은 안내를 한다.
+  if (/unit_price|seal_image/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'settlement_receipts';
   if (!/Could not find the table|schema cache/i.test(message)) return null;
   return /'public\.([a-z_]+)'/.exec(message)?.[1] ?? 'unknown';
 }

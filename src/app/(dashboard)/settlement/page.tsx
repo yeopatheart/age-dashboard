@@ -93,7 +93,7 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
           )}
         </SettlementSection>
         <SettlementSection id="sales" title="판매내역">
-          <SettlementClient key={key} rows={sales.rows} sellers={sellers.rows} multiDay={multiDay} />
+          <SettlementClient key={key} rows={sales.rows} sellers={sellers.rows} multiDay={multiDay} from={period.from} to={period.to} />
         </SettlementSection>
       </div>
     </div>

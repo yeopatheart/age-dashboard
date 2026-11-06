@@ -8,6 +8,7 @@ export interface SalesPatch {
   itemIds: string[]; // 값을 바꿀 판매내역 줄(주문 줄 id). 여러 줄이면 같은 값을 일괄 적용한다
   sellerId?: string | null; // 사업자 구분(null = 미지정)
   price?: number | null; // 판매가(원, null = 비움)
+  unitPrice?: number | null; // 단가(원, null = 비움). 영수증의 단가 칸에 쓴다
   paid?: boolean; // 입금 여부(Y = true)
   memo?: string | null;
 }
@@ -23,11 +24,15 @@ export async function saveSales(patch: SalesPatch): Promise<{ error: string | nu
   if (ids.length === 0) return { error: null };
   if (ids.length > MAX_ROWS) return { error: `한 번에 ${MAX_ROWS.toLocaleString('ko-KR')}건까지만 바꿀 수 있습니다.` };
 
-  const fields: { seller_id?: string | null; price?: number | null; paid?: boolean; memo?: string | null } = {};
+  const fields: { seller_id?: string | null; price?: number | null; unit_price?: number | null; paid?: boolean; memo?: string | null } = {};
   if (patch.sellerId !== undefined) fields.seller_id = patch.sellerId;
   if (patch.price !== undefined) {
     if (patch.price !== null && (!Number.isInteger(patch.price) || patch.price < 0 || patch.price > MAX_PRICE)) return { error: '판매가가 올바르지 않습니다.' };
     fields.price = patch.price;
+  }
+  if (patch.unitPrice !== undefined) {
+    if (patch.unitPrice !== null && (!Number.isInteger(patch.unitPrice) || patch.unitPrice < 0 || patch.unitPrice > MAX_PRICE)) return { error: '단가가 올바르지 않습니다.' };
+    fields.unit_price = patch.unitPrice;
   }
   if (patch.paid !== undefined) fields.paid = patch.paid === true;
   if (patch.memo !== undefined) {
