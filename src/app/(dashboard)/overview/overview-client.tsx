@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { BoxDots } from '@/components/box-dots';
+import { useAutoRefresh } from '@/lib/realtime/use-live-refresh';
 import { DateNav } from '@/components/date-nav';
 import { STAGES, STAGE_LABEL, stageDetail, totalsOf, type OverviewCard, type Stage } from '@/lib/overview';
 
@@ -21,6 +22,8 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
   const [scope, setScope] = useState<Scope>('all');
   const [filter, setFilter] = useState<Filter>('open');
   const [refreshing, setRefreshing] = useState(false);
+  // 폰으로 가끔 열어 보는 화면이라 1분마다(그리고 다른 앱에서 돌아왔을 때) 저절로 새로 받는다. 낡은 진행 상황을 믿지 않게 마지막 갱신 시각을 보여 준다.
+  const lastAt = useAutoRefresh(60_000);
 
   const scoped = cards.filter((c) => c.hasOrder && (scope === 'all' ? true : scope === 'separate' ? c.separate : !c.separate));
   const totals = totalsOf(scoped);
@@ -48,6 +51,7 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
             </button>
           ))}
         </div>
+        {lastAt && <span className="ov-updated" aria-live="off">갱신 {new Date(lastAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>}
         <button type="button" className="ov-refresh" onClick={refresh} aria-label="새로고침" title="새로고침">
           <RefreshCw size={14} className={refreshing ? 'ov-spin' : ''} />
         </button>
@@ -159,6 +163,8 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
         .ov-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: #fff; }
         .ov-seg button { height: var(--ctl-h); padding: 0 0.9rem; font-size: 0.8125rem; font-weight: 700; border: 0; background: transparent; color: var(--muted-foreground); cursor: pointer; }
         .ov-seg .ov-seg-on { background: var(--primary); color: #fff; }
+        .ov-updated { margin-left: auto; font-size: 0.75rem; color: var(--muted-foreground); white-space: nowrap; }
+        .ov-updated + .ov-refresh { margin-left: 0; }
         .ov-refresh { display: inline-flex; align-items: center; justify-content: center; height: var(--ctl-h); width: var(--ctl-h); border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer; margin-left: auto; }
         .ov-spin { animation: ov-spin 0.6s linear infinite; }
         @keyframes ov-spin { to { transform: rotate(360deg); } }

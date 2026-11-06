@@ -353,19 +353,28 @@ export function DashboardMobile(props: DashboardMobileProps) {
                 {open && (
                   <div className="dm-items">
                     {rowItems.map((item) => (
-                      <button key={item.id} className={`dm-item ${isDone(item) && isLive(item) ? 'dm-item-done' : ''} dm-item-${item.changeStatus}`} onClick={() => setSheetItemId(item.id)}>
-                        <span className={`dm-check ${item.isPacked ? 'dm-check-on' : ''}`} aria-label={item.isPacked ? '포장 완료' : '포장 전'}>{item.isPacked && <Check size={14} strokeWidth={4} />}</span>
-                        <span className="dm-item-main">
-                          <span className="dm-item-name">{item.productName}</span>
-                          <span className="dm-item-detail">{detailOf(item)}</span>
-                        </span>
-                        <span className="dm-item-flags">
-                          {item.changeStatus === 'new' && <span className="dm-tag dm-tag-green">신규</span>}
-                          {item.changeStatus === 'modified' && <span className="dm-tag dm-tag-amber">수정</span>}
-                          {item.changeStatus === 'cancelled' && <span className="dm-tag dm-tag-red">취소</span>}
-                          {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && <span className="dm-tag dm-tag-amber">미출고 {item.unshippedQuantity}</span>}
-                        </span>
-                      </button>
+                      <div key={item.id} className={`dm-item ${isDone(item) && isLive(item) ? 'dm-item-done' : ''} dm-item-${item.changeStatus}`}>
+                        {/* 동그라미를 누르면 시트를 열지 않고 바로 포장 체크한다(젖은 손으로 여러 개를 처리할 때 세 번 누르지 않게). 상품 이름 쪽을 누르면 상세 시트가 열린다. */}
+                        {!readOnly && item.changeStatus !== 'cancelled' ? (
+                          <button type="button" className="dm-check-btn" onClick={() => props.onTogglePacked(item)} aria-label={`${item.productName} ${item.isPacked ? '포장 완료 해제' : '포장 완료로 표시'}`} aria-pressed={item.isPacked}>
+                            <span className={`dm-check ${item.isPacked ? 'dm-check-on' : ''}`}>{item.isPacked && <Check size={14} strokeWidth={4} />}</span>
+                          </button>
+                        ) : (
+                          <span className={`dm-check ${item.isPacked ? 'dm-check-on' : ''}`} aria-label={item.isPacked ? '포장 완료' : '포장 전'}>{item.isPacked && <Check size={14} strokeWidth={4} />}</span>
+                        )}
+                        <button type="button" className="dm-item-body" onClick={() => setSheetItemId(item.id)}>
+                          <span className="dm-item-main">
+                            <span className="dm-item-name">{item.productName}</span>
+                            <span className="dm-item-detail">{detailOf(item)}</span>
+                          </span>
+                          <span className="dm-item-flags">
+                            {item.changeStatus === 'new' && <span className="dm-tag dm-tag-green">신규</span>}
+                            {item.changeStatus === 'modified' && <span className="dm-tag dm-tag-amber">수정</span>}
+                            {item.changeStatus === 'cancelled' && <span className="dm-tag dm-tag-red">취소</span>}
+                            {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && <span className="dm-tag dm-tag-amber">미출고 {item.unshippedQuantity}</span>}
+                          </span>
+                        </button>
+                      </div>
                     ))}
                     {rowItems.length === 0 && <p className="dm-summary">상품이 없습니다.</p>}
                     {!readOnly && (
@@ -498,6 +507,8 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-item { display: flex; align-items: center; gap: 0.55rem; padding: 0.3rem 0.875rem; min-height: 42px; background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left; width: 100%; }
         .dm-item-done .dm-item-name, .dm-item-done .dm-item-detail { color: #94a3b8; }
         .dm-item-cancelled .dm-item-name { text-decoration: line-through; color: #be123c; }
+        .dm-item-body { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.55rem; align-self: stretch; background: none; border: 0; padding: 0; text-align: left; min-height: 42px; }
+        .dm-check-btn { flex: none; display: grid; place-items: center; width: 44px; height: 44px; margin: -10px 0 -10px -10px; background: none; border: 0; padding: 0; }
         .dm-check { flex: none; width: 24px; height: 24px; border-radius: 999px; border: 2px solid #cbd5e1; display: grid; place-items: center; color: #fff; background: #fff; }
         .dm-check-on { background: #22c55e; border-color: #22c55e; }
         .dm-item-main { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }

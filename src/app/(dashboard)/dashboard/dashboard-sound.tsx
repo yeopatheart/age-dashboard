@@ -16,6 +16,7 @@ import { primeVoice } from '@/lib/sound/voice';
 const BURST_QUIET_MS = 1500; // 이벤트가 이 시간 동안 더 오지 않으면 모아서 한 번에 알린다
 const BURST_MAX_MS = 4000; // 계속 오더라도 이 시간이 지나면 일단 알린다
 const RECENT_LIMIT = 12;
+const STALE_MS = 10 * 60_000; // 마지막 갱신이 이 시간보다 오래되면 낡은 화면으로 본다
 
 interface RecentEvent {
   at: number;
@@ -29,8 +30,42 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
   // 저장 키는 예전 이름(board-mode)을 그대로 쓴다: 바꾸면 이미 켜 둔 기기의 설정이 초기화된다.
   const [mode, setBoardOn] = useLocalFlag('board-mode');
   const [settings] = useSoundSettings();
-  const soundOn = mode && searchParams.get('sound') !== 'off';
-  const status = useLiveRefresh(mode);
+  // 이 기기의 칠판만 소리를 끄는 스위치(주소의 &sound=off는 창 하나만 끄는 용도라 따로 둔다)
+  const [muted, setMuted] = useLocalFlag('board-muted');
+  const soundOn = mode && !muted && searchParams.get('sound') !== 'off';
+  const { status, lastRefreshAt } = useLiveRefresh(mode);
+  // "마지막 갱신"이 오래되면(타이머가 멈춘 TV 등) 칩을 붉게 바꿔 낡은 화면임을 알린다. 현재 시각은 30초마다만 갱신한다.
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    if (!mode) return;
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [mode]);
+  const stale = lastRefreshAt !== null && now > 0 && now - lastRefreshAt > STALE_MS;
+  // 칠판 끄기는 실수로 누르기 쉬워서(끄면 화면이 멈춘다) 4초 안에 한 번 더 눌러야 꺼진다.
+  const [confirmOff, setConfirmOff] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const requestOff = () => {
+    if (!confirmOff) {
+      setConfirmOff(true);
+      clearTimeout(confirmTimer.current);
+      confirmTimer.current = setTimeout(() => setConfirmOff(false), 4000);
+      return;
+    }
+    clearTimeout(confirmTimer.current);
+    setConfirmOff(false);
+    setBoardOn(false);
+  };
+  const toggleMuted = () => {
+    if (muted) {
+      // 소리를 다시 켜는 이 클릭이 브라우저가 소리를 허용하는 "사용자 조작"이다.
+      setMuted(false);
+      void unlockAudio();
+      primeVoice();
+    } else {
+      setMuted(true);
+    }
+  };
   const audioRunning = useSyncExternalStore(subscribeAudioState, isAudioRunning, () => false);
   const [recent, setRecent] = useState<RecentEvent[]>([]);
   const [listOpen, setListOpen] = useState(false);
@@ -121,12 +156,14 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
       )}
 
       {mode && (
-        <div className="fixed bottom-3 right-3 z-40 flex items-center gap-2 rounded-full bg-white/95 shadow border border-slate-200 pl-3 pr-1 h-8 text-xs font-bold text-slate-600">
-          <span className={`inline-block h-2 w-2 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'down' ? 'bg-red-500' : 'bg-amber-400'}`} />
+        <div className={`fixed bottom-3 right-3 z-40 flex items-center gap-2 rounded-full shadow border pl-4 pr-1 h-10 text-sm font-bold ${stale || status === 'down' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white/95 border-slate-200 text-slate-600'}`}>
+          <span className={`inline-block h-2.5 w-2.5 rounded-full ${status === 'live' && !stale ? 'bg-emerald-500' : status === 'down' || stale ? 'bg-red-500' : 'bg-amber-400'}`} />
           <span>{status === 'live' ? '실시간' : status === 'down' ? '끊김' : '연결 중'}</span>
-          <span>· 소리 {soundOn ? '켬' : '끔'}</span>
-          <Link href="/dashboard/sound-test" className="px-2 h-6 inline-flex items-center rounded-full hover:bg-slate-100">설정</Link>
-          <button type="button" onClick={() => setBoardOn(false)} className="px-2 h-6 rounded-full hover:bg-slate-100">끄기</button>
+          <span className="font-medium">· {lastRefreshAt ? `갱신 ${new Date(lastRefreshAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}` : '갱신 대기'}{stale ? ' (오래됨)' : ''}</span>
+          <span className="font-medium">· 보기 전용</span>
+          <button type="button" onClick={toggleMuted} aria-pressed={!muted} className="px-3 h-8 rounded-full hover:bg-slate-100">소리 {soundOn ? '켬' : '끔'}</button>
+          <Link href="/dashboard/sound-test" className="px-3 h-8 inline-flex items-center rounded-full hover:bg-slate-100">설정</Link>
+          <button type="button" onClick={requestOff} className={`px-3 h-8 rounded-full ${confirmOff ? 'bg-red-600 text-white' : 'hover:bg-slate-100'}`}>{confirmOff ? '정말 끄기?' : '끄기'}</button>
         </div>
       )}
 

@@ -24,6 +24,8 @@ interface Banner {
   title: string;
   detail: string;
   labelId?: string; // 방금 처리한 박스(되돌리기용)
+  seq?: number; // 몇 번째 결과인지(연속으로 같은 색이 나와도 새 스캔임을 알아보게 배너를 다시 그린다)
+  count?: number; // 이번 접속에서 상차한 박스 수(성공했을 때만)
 }
 
 // 초록 조준선(화면 폭·높이에 대한 비율). 카메라는 이 안쪽만 잘라서 읽는다 — 조준선 밖에 보이는 바코드는 읽지 않는다.
@@ -45,18 +47,21 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const last = useRef<{ code: string; at: number } | null>(null);
   const busy = useRef(false);
+  const seq = useRef(0);
+  const loadedCount = useRef(0);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   const beep = useCallback((tone: Banner['tone']) => {
-    navigator.vibrate?.(tone === 'ok' ? 60 : [120, 60, 120]);
+    // 성공은 짧게 한 번, 이미 상차됨은 두 번, 실패는 길게 두 번 — 소리를 못 듣는 곳에서도 진동으로 구분한다. (iOS Safari는 진동을 지원하지 않는다.)
+    navigator.vibrate?.(tone === 'ok' ? 60 : tone === 'dup' ? [80, 60, 80] : [200, 80, 200]);
     // 소리를 못 내는 환경(자동재생 제한 등)이면 진동과 화면 표시만으로 알린다(playTone이 조용히 넘어간다).
-    void playTone(tone === 'ok' ? 'scan-ok' : 'scan-fail');
+    void playTone(tone === 'ok' ? 'scan-ok' : tone === 'dup' ? 'scan-dup' : 'scan-fail');
   }, []);
 
   const reportFailure = useCallback(() => {
     const time = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     const next: Banner = { tone: 'bad', title: '전송 실패 — 처리되지 않았습니다', detail: '신호를 확인하고 같은 라벨을 다시 비춰 주세요' };
-    setBanner(next);
+    setBanner({ ...next, seq: ++seq.current });
     setRecent((prev) => [{ time, text: next.title, tone: next.tone }, ...prev].slice(0, 8));
     beep(next.tone);
   }, [beep]);
@@ -75,7 +80,8 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       } else {
         next = { tone: 'bad', title: result.status === 'invalid' ? '우리 라벨이 아닙니다' : '출력된 적 없는 바코드', detail: result.code };
       }
-      setBanner(next);
+      if (result.status === 'loaded') loadedCount.current += 1;
+      setBanner({ ...next, seq: ++seq.current, count: result.status === 'loaded' ? loadedCount.current : undefined });
       setRecent((prev) => [{ time, text: next.title, tone: next.tone }, ...prev].slice(0, 8));
       beep(next.tone);
     },
@@ -267,10 +273,11 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         {cameraError && <p className="ak-error">{cameraError}</p>}
 
         {banner && (
-          <div className={`sc-banner sc-${banner.tone}`} aria-live="polite" role="status">
+          <div key={banner.seq} className={`sc-banner sc-${banner.tone} sc-pop`} aria-live="polite" role="status">
             {banner.tone === 'bad' ? <XCircle size={40} /> : banner.tone === 'dup' ? <AlertTriangle size={40} /> : <CheckCircle2 size={40} />}
             <div className="sc-title">{banner.title}</div>
             <div className="sc-detail">{banner.detail}</div>
+            {banner.count !== undefined && <div className="sc-count">이번 접속 {banner.count}번째 상차</div>}
             {banner.labelId && canUndo && (
               <button className="sc-undo" onClick={undo}><Undo2 size={16} /> {banner.tone === 'dup' ? '상차를 취소할래요' : '잘못 스캔했어요 (되돌리기)'}</button>
             )}
@@ -344,6 +351,9 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         .sc-root { display: flex; flex-direction: column; gap: 0.9rem; max-width: 42rem; margin: 0 auto; width: 100%; min-width: 0; }
         .sc-warn { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; border-radius: 12px; padding: 0.6rem 0.9rem; font-size: 0.875rem; font-weight: 700; }
         .sc-banner { border-radius: 18px; padding: 1.1rem 1rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; border: 3px solid transparent; }
+        .sc-pop { animation: sc-pop 0.28s ease-out; }
+        @keyframes sc-pop { 0% { transform: scale(0.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
+        .sc-count { font-size: 0.8125rem; font-weight: 700; opacity: 0.85; }
         .sc-ok { background: #dcfce7; border-color: #22c55e; color: #14532d; }
         .sc-dup { background: #fef9c3; border-color: #eab308; color: #713f12; }
         .sc-bad { background: #fee2e2; border-color: #ef4444; color: #7f1d1d; }

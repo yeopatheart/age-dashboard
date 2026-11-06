@@ -11,6 +11,7 @@ import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { DashboardMobile } from './dashboard-mobile';
 import { DashboardSound } from './dashboard-sound';
+import { useToast } from '@/components/toast';
 import {
   setProductHighlight,
   clearProductHighlights,
@@ -746,7 +747,10 @@ export function DashboardClient({
   // 수정 권한이 없는 계정도 조회 전용이다. 삭제·취소는 별도 권한(dashboard:delete)이다.
   const can = useCan();
   const canDelete = can('dashboard:delete');
-  const readOnly = (isPast && !allowPast) || !can('dashboard:edit');
+  // 칠판 모드를 켠 기기는 보기 전용이다 — 벽걸이 TV 마우스를 건드려 포장 상태가 바뀌는 일을 막는다(칠판 칩에 "보기 전용"으로 표시된다).
+  const [boardMode] = useLocalFlag('board-mode');
+  const readOnly = (isPast && !allowPast) || !can('dashboard:edit') || boardMode;
+  const [toastNode, showToast] = useToast();
 
   // 칠판 창의 `&sound=off`(그 창만 소리 끔)는 모니터·날짜를 바꿔도 유지한다.
   const soundOffParam = searchParams.get('sound') === 'off' ? '&sound=off' : '';
@@ -1022,13 +1026,13 @@ export function DashboardClient({
     startPackedTransition(async () => {
       setOptimisticPacked({ id: item.id, packed: !item.isPacked });
       const { error } = await togglePacked(item.id, !item.isPacked);
-      if (error) window.alert(error);
+      if (error) showToast(error);
     });
   };
 
   const handleCancelItem = async (item: OrderItem) => {
     const { error } = await cancelOrderItem(item.id);
-    if (error) window.alert(error);
+    if (error) showToast(error);
   };
 
   const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; round: OrderRound }): Promise<string | null> => {
@@ -1047,11 +1051,11 @@ export function DashboardClient({
   const handleSaveItem = async (fields: ManualItemFields) => {
     if (editItemModal) {
       const { error } = await updateOrderItemManual(editItemModal.id, fields);
-      if (error) return window.alert(error);
+      if (error) return showToast(error);
       setEditItemModal(null);
     } else if (addItemModal) {
       const { error } = await addOrderItemManual(addItemModal.row.dailyBusinessId, fields);
-      if (error) return window.alert(error);
+      if (error) return showToast(error);
       setAddItemModal(null);
     }
   };
@@ -1108,6 +1112,7 @@ export function DashboardClient({
   // 모달·확인창은 PC와 휴대폰 화면이 같이 쓴다.
   const overlays = (
     <>
+      {toastNode}
       {addOrderModal && (
         <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={allRows.map((r) => ({ businessId: r.businessId, round: r.round, terminal: r.terminal }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
       )}
@@ -1174,7 +1179,7 @@ export function DashboardClient({
                 : confirmDelete.itemId
                   ? await deleteOrderItem(confirmDelete.itemId)
                   : null;
-            if (result?.error) window.alert(result.error);
+            if (result?.error) showToast(result.error);
           }}
           onClose={() => setConfirmDelete(null)}
         />

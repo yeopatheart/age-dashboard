@@ -477,7 +477,7 @@ export function PackingLogClient({
                   </div>
                 ) : (
                   <div className={`pk-board ${unplaced.length === 0 ? 'pk-board-solo' : ''}`}>
-                    {unplaced.length > 0 && <Pool items={unplaced} draft={draft} onMoveQty={(id, v) => updateDraft((d) => ({ ...d, moveQty: { ...d.moveQty, [id]: v } }))} onWeight={(id, v) => updateDraft((d) => ({ ...d, weights: { ...d.weights, [id]: v } }))} remainingOf={(i) => remainingOf(draft, i)} total={selected.items.length} />}
+                    {unplaced.length > 0 && <Pool items={unplaced} draft={draft} onMoveQty={(id, v) => updateDraft((d) => ({ ...d, moveQty: { ...d.moveQty, [id]: v } }))} onWeight={(id, v) => updateDraft((d) => ({ ...d, weights: { ...d.weights, [id]: v } }))} remainingOf={(i) => remainingOf(draft, i)} total={selected.items.length} onPlace={(item, uid) => { const qty = parseMove(draft, item); if (qty > EPS) assign(item.id, uid, qty); }} />}
 
                     <div className="pk-boxes">
                       <div className="pk-palette">
@@ -584,6 +584,7 @@ export function PackingLogClient({
         .pk-grip:active { cursor: grabbing; }
         .pk-name { font-weight: 700; word-break: keep-all; }
         .pk-qty { color: var(--muted-foreground); white-space: nowrap; }
+        .pk-place { height: var(--ctl-h); border: 1px solid var(--border); border-radius: 999px; padding: 0 0.6rem; font-size: 0.75rem; font-weight: 700; background: #fff; }
         .pk-mini { width: 3.4rem; height: 1.7rem; border: 1px solid var(--border); border-radius: 8px; text-align: center; font-size: 0.75rem; background: #fff; }
         .pk-slot-meta .pk-mulbong { font-size: 0.75rem; padding: 0.05rem 0.5rem; }
         .pk-aerator { font-size: 0.625rem; font-weight: 800; color: #0f766e; background: #f0fdfa; border: 1px solid #5eead4; border-radius: 999px; padding: 0 0.35rem; }
@@ -632,6 +633,7 @@ function Pool({
   onWeight,
   remainingOf,
   total,
+  onPlace,
 }: {
   items: PackingItem[];
   draft: Draft;
@@ -639,6 +641,7 @@ function Pool({
   onWeight: (id: string, v: string) => void;
   remainingOf: (i: PackingItem) => number;
   total: number;
+  onPlace: (item: PackingItem, boxUid: string) => void; // 끌지 않고 고른 박스에 바로 담는다(폰·키보드용)
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: 'pool' });
   return (
@@ -646,7 +649,7 @@ function Pool({
       <div className="pk-pool-title">아직 담지 않은 상품 ({items.length}/{total})</div>
       {items.length === 0 && <p className="ak-muted" style={{ fontSize: '0.8125rem' }}>모든 상품을 담았어요. 박스에서 빼려면 상품을 여기로 끌어오세요.</p>}
       {items.map((item) => (
-        <PoolItem key={item.id} item={item} remaining={remainingOf(item)} moveQty={draft.moveQty[item.id] ?? ''} weight={draft.weights[item.id] ?? ''} onMoveQty={(v) => onMoveQty(item.id, v)} onWeight={(v) => onWeight(item.id, v)} />
+        <PoolItem key={item.id} item={item} remaining={remainingOf(item)} moveQty={draft.moveQty[item.id] ?? ''} weight={draft.weights[item.id] ?? ''} onMoveQty={(v) => onMoveQty(item.id, v)} onWeight={(v) => onWeight(item.id, v)} boxes={draft.boxes.map((b, i) => ({ uid: b.uid, label: `${i + 1}번 ${b.name}` }))} onPlace={(uid) => onPlace(item, uid)} />
       ))}
     </div>
   );
@@ -659,6 +662,8 @@ function PoolItem({
   weight,
   onMoveQty,
   onWeight,
+  boxes,
+  onPlace,
 }: {
   item: PackingItem;
   remaining: number;
@@ -666,6 +671,8 @@ function PoolItem({
   weight: string;
   onMoveQty: (v: string) => void;
   onWeight: (v: string) => void;
+  boxes: { uid: string; label: string }[];
+  onPlace: (boxUid: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `item:${item.id}`, data: { itemId: item.id } });
   const partial = remaining < item.quantity - EPS;
@@ -680,6 +687,15 @@ function PoolItem({
         </span>
       </div>
       <div className="pk-pool-opts">
+        {boxes.length > 0 && (
+          <label>
+            {/* 드래그가 어려운 폰이나 키보드에서는 여기서 박스를 골라 바로 담는다(담을 수량 칸의 값을 따른다) */}
+            <select className="pk-place" value="" aria-label={`${item.name} 박스에 담기`} onChange={(e) => e.target.value && onPlace(e.target.value)}>
+              <option value="">박스에 담기…</option>
+              {boxes.map((b) => <option key={b.uid} value={b.uid}>{b.label}</option>)}
+            </select>
+          </label>
+        )}
         {remaining > 1 && (
           <label>
             담을 수량{' '}
