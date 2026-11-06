@@ -1,7 +1,8 @@
 'use client';
-import { useMemo, useState } from 'react';
-import { Landmark, Plus, Trash2 } from 'lucide-react';
-import { deleteSeller, saveSeller, type SellerInput } from './actions';
+import { useMemo, useRef, useState } from 'react';
+import { Landmark, Plus, Stamp, Trash2 } from 'lucide-react';
+import { deleteSeller, saveSeller, saveSellerSeal, type SellerInput } from './actions';
+import { sealFileToDataUrl } from './seal-file';
 import { useCan } from '@/components/permissions-context';
 import { formatRegistrationInput, formatRegistrationNo } from '@/lib/sellers';
 import { AdminHeader, ColumnMenu, DataTable, SearchInput, SidePanel, useHiddenColumns, type Column } from '@/components/admin/admin-kit';
@@ -33,7 +34,8 @@ const draftOf = (s: Seller): SellerInput => ({
   memo: s.memo ?? '',
 });
 
-export function SellersClient({ sellers }: { sellers: Seller[] }) {
+// seals: 사업자 id → 직인 PNG data URL(없으면 null). 마이그레이션 0047 적용 전이면 seals 자체가 null이다.
+export function SellersClient({ sellers, seals }: { sellers: Seller[]; seals: Record<string, string | null> | null }) {
   const can = useCan();
   const canEdit = can('sellers:edit');
   const canDelete = can('sellers:delete');
@@ -46,6 +48,7 @@ export function SellersClient({ sellers }: { sellers: Seller[] }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [hidden, setHidden] = useHiddenColumns('ak-cols-sellers');
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
     const k = search.trim().toLowerCase();
@@ -97,6 +100,19 @@ export function SellersClient({ sellers }: { sellers: Seller[] }) {
     if (await run(() => saveSeller(isNew ? { ...draft, id: undefined } : draft), isNew ? `'${draft.name.trim()}'을(를) 등록했습니다.` : `'${draft.name.trim()}' 정보를 저장했습니다.`)) setPanel(null);
   };
 
+  // 직인은 사업자 정보 저장과 따로 올리는 즉시 저장한다(파일을 고르면 줄여서 바로 저장).
+  const handleSealFile = async (sellerId: string, file: File | undefined) => {
+    if (!file) return;
+    await run(async () => {
+      try {
+        return await saveSellerSeal(sellerId, await sealFileToDataUrl(file));
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : '직인을 올리지 못했습니다.' };
+      }
+    }, '직인을 저장했습니다.');
+    if (fileInput.current) fileInput.current.value = '';
+  };
+
   const columns: Column<Seller>[] = [
     { key: 'name', label: '상호', hideable: false, render: (s) => <strong>{s.name}</strong> },
     { key: 'rep', label: '대표자', render: (s) => s.representative_name ?? <span className="ak-muted">-</span> },
@@ -105,6 +121,7 @@ export function SellersClient({ sellers }: { sellers: Seller[] }) {
     { key: 'type', label: '업태', render: (s) => s.business_type ?? <span className="ak-muted">-</span> },
     { key: 'item', label: '종목', render: (s) => s.business_item ?? <span className="ak-muted">-</span> },
     { key: 'address', label: '사업장 소재지', render: (s) => s.address ?? <span className="ak-muted">-</span> },
+    { key: 'seal', label: '직인', render: (s) => (seals?.[s.id] ? '등록됨' : <span className="ak-muted">-</span>) },
     { key: 'memo', label: '메모', render: (s) => s.memo ?? <span className="ak-muted">-</span> },
   ];
 
@@ -202,6 +219,42 @@ export function SellersClient({ sellers }: { sellers: Seller[] }) {
               <textarea className="ak-input ak-textarea" value={draft.memo} onChange={(e) => set('memo', e.target.value)} maxLength={500} />
             </div>
           </fieldset>
+
+          <div className="ak-field" style={{ marginTop: '0.9rem' }}>
+            <label>직인(도장)</label>
+            {panel === 'new' ? (
+              <span className="ak-meta">사업자를 먼저 등록한 뒤 상세에서 직인을 올릴 수 있습니다.</span>
+            ) : seals === null ? (
+              <span className="ak-meta">직인을 쓰려면 마이그레이션 0047_settlement_receipts.sql을 먼저 적용해주세요.</span>
+            ) : open ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <div style={{ width: 96, height: 96, border: '1px solid var(--border, #e2e8f0)', borderRadius: 8, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {seals[open.id] ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- data URL이라 next/image 최적화 대상이 아니다
+                      <img src={seals[open.id] ?? undefined} alt={`${open.name} 직인`} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                    ) : (
+                      <Stamp size={28} className="ak-muted" aria-hidden />
+                    )}
+                  </div>
+                  {canEdit && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      <button type="button" className="ak-btn" disabled={busy} onClick={() => fileInput.current?.click()}>
+                        {seals[open.id] ? '직인 바꾸기' : '직인 올리기'}
+                      </button>
+                      {seals[open.id] && (
+                        <button type="button" className="ak-btn ak-btn-danger" disabled={busy} onClick={() => void run(() => saveSellerSeal(open.id, null), '직인을 삭제했습니다.')}>
+                          직인 삭제
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => void handleSealFile(open.id, e.target.files?.[0])} />
+                <span className="ak-meta">영수증의 “(인)” 자리에 찍힙니다. 배경이 투명한 PNG가 가장 깔끔합니다. 올리면 자동으로 작게 줄여 저장하고, 공개 주소 없이 이 시스템 안에서만 쓰입니다.</span>
+              </>
+            ) : null}
+          </div>
           {error && <p className="ak-error">{error}</p>}
         </SidePanel>
       )}

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { requirePermission } from '@/lib/permissions/access';
 import { normalizeRegistrationNo } from '@/lib/sellers';
+import { isValidSealDataUrl } from '@/lib/seal-image';
 
 export interface SellerInput {
   id?: string; // 있으면 수정, 없으면 등록
@@ -46,6 +47,19 @@ export async function saveSeller(input: SellerInput): Promise<{ error: string | 
   const supabase = await createClient();
   const { error } = input.id ? await supabase.from('seller_businesses').update(row).eq('id', input.id) : await supabase.from('seller_businesses').insert(row);
   if (error) return { error: error.code === '23505' ? '이미 등록된 사업자등록번호입니다.' : error.message };
+  revalidatePath('/sellers');
+  return { error: null };
+}
+
+// 직인(도장) 등록·삭제. 영수증의 "(인)" 자리에 찍힌다. 사업자 등록 저장과는 따로 즉시 저장한다.
+// 값은 작게 줄인 PNG data URL만 받는다(<img>에 그대로 쓰므로 서버에서 형식·크기를 한 번 더 확인한다). dataUrl이 null이면 삭제.
+export async function saveSellerSeal(id: string, dataUrl: string | null): Promise<{ error: string | null }> {
+  await requirePermission('sellers:edit');
+  if (dataUrl !== null && !isValidSealDataUrl(dataUrl)) return { error: '직인 이미지 형식이 올바르지 않거나 용량이 너무 큽니다. 다시 올려주세요.' };
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('seller_businesses').update({ seal_image: dataUrl }).eq('id', id).select('id');
+  if (error) return { error: /seal_image/.test(error.message) ? '마이그레이션 0047_settlement_receipts.sql을 먼저 적용해주세요.' : error.message };
+  if (!data || data.length === 0) return { error: '사업자를 찾지 못했습니다.' };
   revalidatePath('/sellers');
   return { error: null };
 }
