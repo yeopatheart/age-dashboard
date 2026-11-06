@@ -108,6 +108,7 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-section-chart { grid-column: 1 / -1; }
   .ak-section-sales { order: 1; }
   .ak-section-purchases { order: 2; }
+  .ak-section-receipts { grid-column: 1 / -1; order: 3; }
 }
 
 /* 정산 기간 바: [일 주 월] 묶음과 [‹ 날짜 › 오늘] 묶음. 휴대폰에서는 묶음마다 한 줄로 두어 이전·다음이 날짜 양옆에 붙게 한다. */
