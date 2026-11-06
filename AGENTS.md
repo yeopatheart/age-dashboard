@@ -18,7 +18,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## 명령 (직접 실행해서 동작 확인한 것만 적는다)
 - 개발: `npm run dev`
-- 테스트: (v1은 자동 테스트 없음 — 수동 브라우저 테스트로 검증)
+- 테스트: `npm test` (순수 로직 단위 테스트: 카카오 파서·금액·날짜 규칙·합포장·박스 추천 모델·정산 매입. Node 내장 러너라 별도 라이브러리 없음. 화면·서버 액션은 수동 브라우저 테스트로 검증)
 - 박스 추천 백테스트: `npm run packing:backtest` (`.local-data/packing_export.csv` 필요 — 업체명이 들어 있어 커밋하지 않는다. 내보내는 쿼리는 docs/decisions/2026-10-24-box-recommendation-v1.md 참고)
 - 린트: `npm run lint` (현재 오류·경고 0건)
 - 타입 체크: `npx tsc --noEmit`
