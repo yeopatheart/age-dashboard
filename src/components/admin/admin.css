@@ -123,3 +123,32 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-period-nav .ak-period-icon { padding: 0; width: var(--chip-h); justify-content: center; }
   .ak-period-label { flex: 1; min-width: 0; font-size: 0.875rem; }
 }
+
+/* ─── 정산 판매내역 휴대폰 ──────────────────────────────────────────────────────
+   · 일괄 바(선택한 줄 처리): 휴대폰에서는 화면 아래(하단 탭 위)에 고정해 어느 줄을 입력하다가도 바로 영수증 만들기·일괄 변경을 누를 수 있다.
+     사업자·입금 일괄 변경은 "일괄 변경"을 눌러 펼친다. 넓은 화면에서는 예전처럼 한 줄에 모두 보인다.
+   · 고객명 열은 옆으로 밀어도 왼쪽에 붙어 있다(체크박스 열 옆).
+   · 저장 실패·결과 안내는 화면 위쪽에 고정한다.
+   · 구역 순서: 판매내역 → 영수증 → 매입내역 → 그래프(동생이 가장 많이 쓰는 순서). */
+.ak-link-btn { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.ak-link-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ak-bulk-extra { display: contents; }
+.ak-bulk-toggle { display: none; }
+.ak-bulk-spacer { display: none; }
+@media (max-width: 768px) {
+  .ak-bulk-fixed { position: fixed; left: 0.5rem; right: 0.5rem; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); z-index: 40; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28); }
+  .ak-bulk-spacer { display: block; height: 9rem; }
+  .ak-bulk-toggle { display: inline-flex; }
+  .ak-bulk-extra { display: none; flex-direction: column; gap: 0.5rem; flex: 1 1 100%; }
+  .ak-bulk-extra.is-open { display: flex; }
+  .ak-bulk-extra .ak-select, .ak-bulk-extra .ak-btn { width: 100%; justify-content: center; }
+  .ak-flash { position: fixed; top: calc(64px + env(safe-area-inset-top, 0px)); left: 0.75rem; right: 0.75rem; z-index: 50; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0.6rem 0.8rem; box-shadow: 0 6px 20px rgba(15, 23, 42, 0.2); }
+  .ak-table th.ak-sticky-col, .ak-table td.ak-sticky-col { position: sticky; left: 2.5rem; z-index: 1; background: #fff; box-shadow: 2px 0 4px -2px rgba(15, 23, 42, 0.25); }
+  .ak-table th.ak-sticky-col { background: #f8fafc; z-index: 3; }
+  .ak-table th.ak-check, .ak-table td.ak-check { position: sticky; left: 0; z-index: 1; background: #fff; }
+  .ak-table th.ak-check { background: #f8fafc; z-index: 3; }
+  .ak-split .ak-section-sales { order: 1; }
+  .ak-split .ak-section-receipts { order: 2; }
+  .ak-split .ak-section-purchases { order: 3; }
+  .ak-split .ak-section-chart { order: 4; }
+}
