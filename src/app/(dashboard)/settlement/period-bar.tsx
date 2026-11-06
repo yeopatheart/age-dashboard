@@ -24,19 +24,21 @@ export function PeriodBar({
 
   return (
     <div className="ak-toolbar ak-sticky">
-      <div style={{ display: 'inline-flex', gap: 4 }}>
+      <div className="ak-period-seg">
         {GRANULARITIES.map((g) => (
           <Link key={g} href={settlementUrl(g, anchor)} className={`ak-btn ${g === granularity ? 'ak-btn-primary' : ''}`}>{GRANULARITY_LABEL[g]}</Link>
         ))}
       </div>
-      <Link href={prevUrl} className="ak-btn" aria-label={`이전 ${GRANULARITY_LABEL[granularity]}`}><ChevronLeft size={14} /></Link>
-      <strong style={{ minWidth: '9rem', textAlign: 'center' }}>{periodLabel}</strong>
-      {nextDisabled ? (
-        <span className="ak-btn" aria-disabled style={{ opacity: 0.4, pointerEvents: 'none' }}><ChevronRight size={14} /></span>
-      ) : (
-        <Link href={settlementUrl(granularity, nextAnchor)} className="ak-btn" aria-label={`다음 ${GRANULARITY_LABEL[granularity]}`}><ChevronRight size={14} /></Link>
-      )}
-      <Link href={settlementTodayUrl()} className="ak-btn">오늘</Link>
+      <div className="ak-period-nav">
+        <Link href={prevUrl} className="ak-btn ak-period-icon" aria-label={`이전 ${GRANULARITY_LABEL[granularity]}`}><ChevronLeft size={14} /></Link>
+        <strong className="ak-period-label">{periodLabel}</strong>
+        {nextDisabled ? (
+          <span className="ak-btn ak-period-icon" aria-disabled style={{ opacity: 0.4, pointerEvents: 'none' }}><ChevronRight size={14} /></span>
+        ) : (
+          <Link href={settlementUrl(granularity, nextAnchor)} className="ak-btn ak-period-icon" aria-label={`다음 ${GRANULARITY_LABEL[granularity]}`}><ChevronRight size={14} /></Link>
+        )}
+        <Link href={settlementTodayUrl()} className="ak-btn">오늘</Link>
+      </div>
     </div>
   );
 }
