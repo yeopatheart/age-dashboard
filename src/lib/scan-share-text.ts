@@ -25,6 +25,8 @@ export interface ShareCard {
   packages: PackageCount;
 }
 
+export const NO_TERMINAL = '터미널 없음';
+
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 // 'YYYY-MM-DD' → '11/06(금)'. Date를 로컬 시간대로 만들면 하루 어긋날 수 있어 UTC로 요일만 구한다.
@@ -33,36 +35,34 @@ function dateText(orderDate: string): string {
   return `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}(${WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]})`;
 }
 
-// 터미널별 → 고객별 박스 수. 같은 터미널의 같은 업체(1·2차)는 합산한다. 상차된 박스가 하나도 없으면 null.
-export function buildLoadedListText(orderDate: string, cards: ShareCard[]): string | null {
-  const terminals = new Map<string, Map<string, PackageCount>>(); // 카드 순서대로 처음 나온 순
+// 한 터미널의 상차 완료 목록. 퀵 기사님은 터미널(행선지)별로 따로 보내므로 터미널 하나씩 만든다.
+// 같은 업체의 1·2차는 합산한다. 그 터미널에 상차된 박스가 하나도 없으면 null. terminal은 카드의 터미널 이름('' = 터미널 없음)이다.
+export function buildLoadedListText(orderDate: string, cards: ShareCard[], terminal: string): string | null {
+  const businesses = new Map<string, PackageCount>(); // 카드 순서대로 처음 나온 순
   for (const c of cards) {
-    const key = c.terminal || '터미널 없음';
-    const businesses = terminals.get(key) ?? new Map<string, PackageCount>();
+    if ((c.terminal || NO_TERMINAL) !== (terminal || NO_TERMINAL)) continue;
     const sum = businesses.get(c.business) ?? { loaded: 0, total: 0 };
     sum.loaded += c.packages.loaded;
     sum.total += c.packages.total;
     businesses.set(c.business, sum);
-    terminals.set(key, businesses);
   }
 
-  const lines: string[] = [];
-  const pending = new Map<string, number>(); // 미상차 업체 → 남은 박스 수
-  for (const [terminal, businesses] of terminals) {
-    const done: string[] = [];
-    let loadedSum = 0;
-    for (const [name, p] of businesses) {
-      if (p.loaded > 0) {
-        done.push(`${name} ${p.loaded === p.total ? p.loaded : `${p.loaded}/${p.total}`}박스`);
-        loadedSum += p.loaded;
-      }
-      if (p.loaded < p.total) pending.set(name, (pending.get(name) ?? 0) + p.total - p.loaded);
+  const done: string[] = [];
+  const pending: string[] = [];
+  let loadedSum = 0;
+  for (const [name, p] of businesses) {
+    if (p.loaded > 0) {
+      done.push(`${name} ${p.loaded === p.total ? p.loaded : `${p.loaded}/${p.total}`}박스`);
+      loadedSum += p.loaded;
     }
-    if (done.length) lines.push(`[${terminal}] ${done.join(' / ')} (${loadedSum})`);
+    if (p.loaded < p.total) pending.push(`${name} ${p.total - p.loaded}박스`);
   }
-  if (lines.length === 0) return null;
+  if (done.length === 0) return null;
 
-  const head = `${dateText(orderDate)} 상차 완료`;
-  const warn = pending.size ? [`⚠ 미상차: ${[...pending].map(([name, n]) => `${name} ${n}박스`).join(' / ')}`] : [];
-  return [head, ...lines, ...warn].join('\n');
+  return [
+    `${dateText(orderDate)} ${terminal || NO_TERMINAL} 상차 완료`,
+    ...done,
+    `합계 ${loadedSum}박스`,
+    ...(pending.length ? [`⚠ 미상차: ${pending.join(' / ')}`] : []),
+  ].join('\n');
 }

@@ -7,7 +7,7 @@ import { AlertTriangle, Camera, CheckCircle2, Check, Copy, Keyboard, ScanLine, S
 import { scanBarcode, undoScan, type ScanResult } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { playTone, unlockAudio } from '@/lib/sound/tones';
-import { buildLoadedListText, type PackageCount } from '@/lib/scan-share-text';
+import { buildLoadedListText, NO_TERMINAL, type PackageCount } from '@/lib/scan-share-text';
 
 export interface ScanCard {
   id: string;
@@ -178,44 +178,42 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
   const terminals = useMemo(() => {
     const map = new Map<string, { loaded: number; total: number }>();
     for (const c of cards) {
-      const key = c.terminal || '터미널 없음';
+      const key = c.terminal || NO_TERMINAL;
       const t = map.get(key) ?? { loaded: 0, total: 0 };
       t.loaded += c.loaded;
       t.total += c.total;
       map.set(key, t);
     }
-    return [...map.entries()].map(([name, v]) => ({ name, ...v }));
-  }, [cards]);
+    // 터미널마다 퀵 기사님께 따로 보낼 상차 완료 글(상차된 박스가 없으면 null)
+    return [...map.entries()].map(([name, v]) => ({ name, ...v, text: buildLoadedListText(orderDate, cards, name) }));
+  }, [cards, orderDate]);
   const totalLoaded = cards.reduce((s, c) => s + c.loaded, 0);
   const totalBoxes = cards.reduce((s, c) => s + c.total, 0);
   const visibleCards = onlyPending ? cards.filter((c) => c.loaded < c.total) : cards;
   const isToday = orderDate === today;
 
-  // 퀵 기사님께 보낼 상차 완료 목록. 공유는 지원하는 브라우저(주로 휴대폰)에서만 보이고, 복사는 항상 쓸 수 있다.
-  const shareText = useMemo(() => buildLoadedListText(orderDate, cards), [orderDate, cards]);
+  // 터미널별 상차 완료 글을 퀵 기사님께 보낸다. 공유는 지원하는 브라우저(주로 휴대폰)에서만 보이고, 복사는 항상 쓸 수 있다.
   const canShare = useSyncExternalStore(
     () => () => {},
     () => typeof navigator.share === 'function',
     () => false,
   );
-  const [copied, setCopied] = useState(false);
-  const copyList = async () => {
-    if (!shareText) return;
+  const [copiedTerminal, setCopiedTerminal] = useState<string | null>(null);
+  const copyList = async (terminal: string, text: string) => {
     try {
-      await navigator.clipboard.writeText(shareText);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2500);
+      await navigator.clipboard.writeText(text);
+      setCopiedTerminal(terminal);
+      window.setTimeout(() => setCopiedTerminal((cur) => (cur === terminal ? null : cur)), 2500);
     } catch {
-      window.prompt('아래 글을 복사해서 붙여넣으세요.', shareText);
+      window.prompt('아래 글을 복사해서 붙여넣으세요.', text);
     }
   };
-  const shareList = async () => {
-    if (!shareText) return;
+  const shareList = async (terminal: string, text: string) => {
     try {
-      await navigator.share({ text: shareText });
+      await navigator.share({ text });
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return; // 공유 창을 닫은 것이다
-      await copyList();
+      await copyList(terminal, text);
     }
   };
 
@@ -275,17 +273,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       </section>
 
       <section className="sc-card">
-        <div className="sc-head">
-          <h2>상차 현황 {totalBoxes > 0 && <span className="sc-total">{totalLoaded}/{totalBoxes}박스</span>}</h2>
-          {cards.length > 0 && (
-            <div className="sc-share">
-              {canShare && (
-                <button className="ak-btn ak-btn-primary" onClick={shareList} disabled={!shareText}><Share2 size={14} /> 공유</button>
-              )}
-              <button className="ak-btn" onClick={copyList} disabled={!shareText}>{copied ? <Check size={14} /> : <Copy size={14} />} {copied ? '복사됨' : '복사'}</button>
-            </div>
-          )}
-        </div>
+        <h2>상차 현황 {totalBoxes > 0 && <span className="sc-total">{totalLoaded}/{totalBoxes}박스</span>}</h2>
         {cards.length === 0 ? (
           <p className="ak-muted">이 날짜에 라벨을 출력한 업체가 없습니다. 박스 할당 화면에서 라벨을 출력하면 여기에 나타납니다.</p>
         ) : (
@@ -294,7 +282,15 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
               {terminals.map((t) => (
                 <div key={t.name} className={`sc-term ${t.loaded === t.total ? 'sc-term-done' : ''}`}>
                   <div className="sc-term-name">{t.name}</div>
-                  <div className="sc-term-count">{t.loaded}/{t.total}</div>
+                  <div className="sc-term-row">
+                    <div className="sc-term-count">{t.loaded}/{t.total}</div>
+                    <div className="sc-share">
+                      {canShare && (
+                        <button className="sc-ic sc-ic-primary" onClick={() => t.text && shareList(t.name, t.text)} disabled={!t.text} aria-label={`${t.name} 상차 완료 목록 공유`} title="공유"><Share2 size={15} /></button>
+                      )}
+                      <button className="sc-ic" onClick={() => t.text && copyList(t.name, t.text)} disabled={!t.text} aria-label={copiedTerminal === t.name ? `${t.name} 복사됨` : `${t.name} 상차 완료 목록 복사`} title={copiedTerminal === t.name ? '복사됨' : '복사'}>{copiedTerminal === t.name ? <Check size={15} /> : <Copy size={15} />}</button>
+                    </div>
+                  </div>
                   <div className="sc-bar"><span style={{ width: `${t.total ? (t.loaded / t.total) * 100 : 0}%` }} /></div>
                 </div>
               ))}
@@ -337,8 +333,6 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         .sc-undo { margin-top: 0.4rem; min-height: 2.75rem; padding: 0 1.1rem; border-radius: 999px; border: 2px solid currentColor; background: rgba(255, 255, 255, 0.6); font-weight: 800; display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; }
         .sc-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.7rem; box-shadow: var(--shadow-sm); }
         .sc-card h2 { font-size: 0.9375rem; font-weight: 800; display: flex; align-items: center; gap: 0.5rem; }
-        .sc-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
-        .sc-share { display: flex; gap: 0.4rem; margin-left: auto; }
         .sc-total { font-size: 1rem; color: var(--primary); }
         .sc-scan { padding: 0.7rem; }
         .sc-video { position: relative; background: #0f172a; border-radius: 14px; overflow: hidden; aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; }
@@ -356,7 +350,12 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         .sc-term { border: 1px solid var(--border); border-radius: 12px; padding: 0.55rem 0.7rem; display: flex; flex-direction: column; gap: 0.25rem; }
         .sc-term-done { background: #f0fdf4; border-color: #86efac; }
         .sc-term-name { font-size: 0.8125rem; font-weight: 800; color: var(--muted-foreground); }
+        .sc-term-row { display: flex; align-items: center; justify-content: space-between; gap: 0.2rem 0.4rem; flex-wrap: wrap; }
         .sc-term-count { font-size: 1.35rem; font-weight: 900; }
+        .sc-share { display: flex; gap: 0.3rem; }
+        .sc-ic { width: var(--chip-h); height: var(--chip-h); border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--foreground); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+        .sc-ic-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .sc-ic:disabled { opacity: 0.45; cursor: default; }
         .sc-bar { height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
         .sc-bar span { display: block; height: 100%; background: #22c55e; }
         .sc-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; font-weight: 700; }
