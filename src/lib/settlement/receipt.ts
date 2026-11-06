@@ -162,6 +162,35 @@ export function amountFromUnitPrice(unitPrice: number, quantity: number): number
   return Math.round(unitPrice * quantity);
 }
 
+// 단가를 새로 입력할 때 판매가를 자동으로 채워도 되는지. 판매가가 비어 있거나, 이전 단가 × 수량으로 자동 계산된 값 그대로일 때만 true다.
+// 사용자가 판매가를 따로 적어 둔 경우(할인가 등)에는 덮어쓰지 않는다.
+export function canAutoFillPrice(price: number | null, previousUnitPrice: number | null, quantity: number): boolean {
+  if (price === null) return true;
+  return previousUnitPrice !== null && price === amountFromUnitPrice(previousUnitPrice, quantity);
+}
+
+// 이미 발행한 영수증의 식별 정보(이력 목록에서 가져온다).
+export interface IssuedReceiptKey {
+  orderDate: string;
+  customerName: string;
+  sellerId: string | null;
+  receiptNo: number;
+}
+
+// 발행하려는 묶음 중 같은 출고일·고객·사업자로 이미 발행한 영수증이 있는 것을 찾는다(묶음 key → 기존 NO. 목록).
+// DB의 customer_name은 60자까지만 저장되므로 같은 기준으로 비교한다.
+export function findDuplicateReceipts(groups: ReceiptGroup[], issued: IssuedReceiptKey[]): Map<string, number[]> {
+  const found = new Map<string, number[]>();
+  for (const g of groups) {
+    const nos = issued
+      .filter((r) => r.orderDate === g.orderDate && r.sellerId === g.sellerId && r.customerName === g.customer.slice(0, 60))
+      .map((r) => r.receiptNo)
+      .sort((a, b) => a - b);
+    if (nos.length > 0) found.set(g.key, nos);
+  }
+  return found;
+}
+
 // 이미지 파일 이름: 영수증_2026-11-14_고객명.png (여러 장이면 _1, _2). 파일 이름에 못 쓰는 글자는 뺀다.
 export function receiptFileName(orderDate: string, customer: string, pageIndex = 0, pageCount = 1): string {
   const safe = customer.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim() || '고객';

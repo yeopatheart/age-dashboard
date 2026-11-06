@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { SidePanel } from '@/components/admin/admin-kit';
 import { ReceiptViewer } from '@/components/receipt/receipt-viewer';
 import { formatWon } from '@/lib/money';
-import { groupForReceipts, type ReceiptSkipReason, type ReceiptSourceRow } from '@/lib/settlement/receipt';
+import { findDuplicateReceipts, groupForReceipts, type IssuedReceiptKey, type ReceiptSkipReason, type ReceiptSourceRow } from '@/lib/settlement/receipt';
 import type { SalesRow } from '@/lib/settlement/sales';
 import { issueReceipts, type IssueResult } from './receipt-actions';
 
@@ -27,6 +27,7 @@ export function ReceiptIssuePanel({
   sellers,
   from,
   to,
+  issued,
   saving,
   onClose,
 }: {
@@ -34,11 +35,14 @@ export function ReceiptIssuePanel({
   sellers: { id: string; name: string }[];
   from: string;
   to: string;
+  issued: IssuedReceiptKey[]; // 이 기간에 이미 발행한 영수증(같은 고객·사업자·출고일 중복 경고용)
   saving: boolean; // 판매가·사업자 저장이 끝나기 전에는 발행하지 않는다(서버가 저장된 값을 읽는다)
   onClose: () => void;
 }) {
   const sellerName = useMemo(() => new Map(sellers.map((s) => [s.id, s.name])), [sellers]);
   const preview = useMemo(() => groupForReceipts(rows.map(toSource)), [rows]);
+  const duplicates = useMemo(() => findDuplicateReceipts(preview.groups, issued), [preview.groups, issued]);
+  const [acceptDuplicates, setAcceptDuplicates] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<IssueResult | null>(null);
@@ -78,7 +82,11 @@ export function ReceiptIssuePanel({
           <>
             <span className="ak-spacer" />
             <button className="ak-btn" onClick={onClose} disabled={busy}>취소</button>
-            <button className="ak-btn ak-btn-primary" onClick={issue} disabled={busy || saving || preview.groups.length === 0}>
+            <button
+              className="ak-btn ak-btn-primary"
+              onClick={issue}
+              disabled={busy || saving || preview.groups.length === 0 || (duplicates.size > 0 && !acceptDuplicates)}
+            >
               {busy ? '만드는 중…' : saving ? '저장 중…' : `영수증 ${preview.groups.length}장 발행`}
             </button>
           </>
@@ -94,7 +102,10 @@ export function ReceiptIssuePanel({
                 <div key={g.key} className="ak-setting">
                   <span>
                     <strong>{g.customer}</strong>
-                    <small>{g.orderDate} · {sellerName.get(g.sellerId) ?? '사업자'} · {g.rows.length}줄</small>
+                    <small>
+                      {g.orderDate} · {sellerName.get(g.sellerId) ?? '사업자'} · {g.rows.length}줄
+                      {duplicates.has(g.key) && <b style={{ color: 'var(--danger)' }}> · 이미 발행됨(NO. {duplicates.get(g.key)!.join(', ')})</b>}
+                    </small>
                   </span>
                   <strong>₩ {formatWon(g.rows.reduce((sum, r) => sum + r.price, 0))}</strong>
                 </div>
@@ -102,6 +113,15 @@ export function ReceiptIssuePanel({
             </div>
           ) : (
             <p className="ak-error">영수증으로 만들 수 있는 줄이 없습니다. 선택한 줄의 사업자 구분과 판매가를 먼저 입력해주세요.</p>
+          )}
+          {duplicates.size > 0 && (
+            <label className="ak-error" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', fontWeight: 600 }}>
+              <input type="checkbox" checked={acceptDuplicates} onChange={(e) => setAcceptDuplicates(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+              <span>
+                같은 고객·사업자·출고일로 이미 발행한 영수증이 {duplicates.size}장 있습니다. 같은 영수증이 두 번 만들어져도 괜찮은 경우에만 체크하고 발행하세요.
+                (일부 줄만 다시 선택해서 새로 만드는 경우에도 이 경고가 뜹니다.)
+              </span>
+            </label>
           )}
           {preview.skipped.length > 0 && (
             <div className="ak-error" style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
