@@ -61,7 +61,7 @@ Prisma를 의도적으로 뺀다: 인증(Auth)이 어차피 Supabase Auth 몫이
 휴대폰(768px 이하) 화면은 `src/app/globals.css`의 "휴대폰 UI 규칙" 토큰을 쓴다: 컨트롤 높이 `--ctl-h`(36px), 칩 `--chip-h`(32px), 주 동작 `--cta-h`(48px), html 글자 14.5px, 입력창 `--input-fs`(버튼·칩과 같은 0.8125rem)(iOS 자동 확대는 viewport maximum-scale=1로 막는다), 메뉴 설명 숨김. 새 화면·컴포넌트는 개별 크기를 새로 정하지 말고 이 토큰을 쓴다. 날짜 선택은 `src/components/date-nav.tsx`, 휴대폰 여부는 `src/lib/use-is-mobile.ts`. 근거는 docs/decisions/2026-10-29-mobile-ui.md.
 
 ## 알려진 이슈
-- 권한: master 이메일 하나(`src/lib/permissions/catalog.ts`)와 `user_permissions` 표로 메뉴·기능 접근을 나눈다. 모든 `page.tsx`는 `requireMenu`, 모든 server action은 `requirePermission`으로 서버에서 확인한다(새 페이지·액션을 만들면 반드시 넣는다). DB 규칙(RLS)은 여전히 로그인 사용자 전체 허용이다.
+- 권한: master 이메일 하나(`src/lib/permissions/catalog.ts`)와 `user_permissions` 표로 메뉴·기능 접근을 나눈다. 모든 `page.tsx`는 `requireMenu`, 모든 server action은 `requirePermission`으로 서버에서 확인한다(새 페이지·액션을 만들면 반드시 넣는다). DB 규칙(RLS): 정산·매입처·사업자·카톡 원문·시스템 설정·접근 기록 테이블은 마이그레이션 0045부터 `has_perm('메뉴:동작')`으로 DB에서도 메뉴 권한을 확인한다(새 민감 테이블을 만들면 같은 방식으로 정책을 쓴다). 주문·박스·라벨 등 현장 운영 테이블과 `businesses`(사업자번호 포함)는 여전히 로그인 사용자 전체 허용이다(여러 메뉴가 같이 읽어서 나눌 수 없다).
 - 저장 뒤 화면 갱신: server action이 `revalidatePath`를 부르면 같은 응답에 새 화면이 실려 오므로 클라이언트에서 `router.refresh()`를 또 부르지 않는다(이중 렌더).
 
 ## 작업 방식
