@@ -1,7 +1,7 @@
 // 칠판 효과음: 파일 없이 Web Audio로 만든 짧은 톤. 브라우저는 사용자가 한 번 누르기 전에는 소리를 막으므로(자동재생 제한)
 // 칠판에서 "실시간 알림 켜기"를 한 번 눌러야 한다(unlockAudio). Chrome을 --autoplay-policy=no-user-gesture-required로 띄우면 누르지 않아도 된다.
 
-export type ToneName = 'urgent' | 'cancel' | 'added' | 'changed' | 'new-order' | 'unshipped' | 'complete' | 'tick' | 'disconnected' | 'scan-ok' | 'scan-fail' | 'test';
+export type ToneName = 'urgent' | 'cancel' | 'added' | 'changed' | 'new-order' | 'unshipped' | 'complete' | 'tick' | 'disconnected' | 'scan-ok' | 'scan-dup' | 'scan-fail' | 'test';
 
 interface Step {
   hz: number; // 0이면 쉼
@@ -20,6 +20,8 @@ const TONES: Record<ToneName, { wave: OscillatorType; gain: number; steps: Step[
   tick: { wave: 'sine', gain: 0.2, steps: [{ hz: 1200, ms: 40 }] },
   disconnected: { wave: 'square', gain: 0.15, steps: [{ hz: 262, ms: 260 }, { hz: 0, ms: 80 }, { hz: 262, ms: 260 }, { hz: 0, ms: 80 }, { hz: 262, ms: 420 }] },
   'scan-ok': { wave: 'sine', gain: 0.15, steps: [{ hz: 880, ms: 120 }] },
+  // 이미 상차된 박스: 실패(낮은 한 번)와 구분되게 중간 높이의 짧은 두 번
+  'scan-dup': { wave: 'sine', gain: 0.18, steps: [{ hz: 660, ms: 110 }, { hz: 0, ms: 70 }, { hz: 660, ms: 110 }] },
   'scan-fail': { wave: 'sine', gain: 0.15, steps: [{ hz: 220, ms: 350 }] },
   test: { wave: 'sine', gain: 0.3, steps: [{ hz: 880, ms: 120 }] },
 };
