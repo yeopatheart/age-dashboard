@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -64,6 +64,17 @@ const navEntry = (menu: MenuKey | 'users') => (menu === 'users' ? { href: '/user
 
 const COLLAPSE_STORAGE_KEY = 'age-dashboard-sidebar-collapsed';
 
+// 인터넷 연결 상태. 서버 렌더에서는 항상 "연결됨"으로 두어 화면이 어긋나지 않는다.
+const subscribeOnline = (onChange: () => void) => {
+  window.addEventListener('online', onChange);
+  window.addEventListener('offline', onChange);
+  return () => {
+    window.removeEventListener('online', onChange);
+    window.removeEventListener('offline', onChange);
+  };
+};
+const getOnline = () => navigator.onLine;
+
 export function DashboardShell({
   displayName,
   allowedMenus,
@@ -83,6 +94,15 @@ export function DashboardShell({
   // 사이드바 접힘은 이 브라우저에 저장한다. 서버 렌더는 항상 펼친 상태로 그리고 하이드레이션 뒤에 저장된 값으로 바뀐다.
   const [collapsed, setCollapsed] = useLocalFlag(COLLAPSE_STORAGE_KEY);
   const toggleCollapsed = () => setCollapsed(!collapsed);
+  const online = useSyncExternalStore(subscribeOnline, getOnline, () => true);
+
+  // 모바일 메뉴 서랍은 Esc로 닫는다(열려 있을 때만 듣는다).
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSidebarOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sidebarOpen]);
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -97,6 +117,12 @@ export function DashboardShell({
 
   const visible = (menu: MenuKey | 'users') => (menu === 'users' ? isMaster : isMaster || allowedMenus.includes(menu));
   const inPath = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  // 지금 보고 있는 메뉴(가장 길게 맞는 주소). 모바일 상단 바에 제목으로 보여 주고, 접힌 그룹 머리글을 강조하는 데 쓴다.
+  const allMenus: (MenuKey | 'users')[] = [...MAIN_MENUS, ...NAV_GROUPS.flatMap((g) => g.menus)];
+  const currentEntry = allMenus
+    .map(navEntry)
+    .filter((entry) => inPath(entry.href))
+    .sort((a, b) => b.href.length - a.href.length)[0];
   const renderItem = (menu: MenuKey | 'users', nested = false) => {
     const { href, label } = navEntry(menu);
     const Icon = NAV_ITEMS.find((n) => n.menu === menu)!.icon;
@@ -104,7 +130,8 @@ export function DashboardShell({
       <Link
         key={href}
         href={href}
-        className={`sidebar-nav-item ${nested ? 'sidebar-nav-sub' : ''} ${pathname === href ? 'active' : ''}`}
+        className={`sidebar-nav-item ${nested ? 'sidebar-nav-sub' : ''} ${inPath(href) ? 'active' : ''}`}
+        aria-current={inPath(href) ? 'page' : undefined}
         onClick={() => setSidebarOpen(false)}
         title={effectiveCollapsed ? label : undefined}
       >
@@ -116,6 +143,11 @@ export function DashboardShell({
 
   return (
     <div className="app-shell">
+      {!online && (
+        <div className="offline-banner" role="status">
+          인터넷 연결이 끊겼습니다. 저장·스캔이 처리되지 않을 수 있으니 연결을 확인해 주세요.
+        </div>
+      )}
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -125,7 +157,7 @@ export function DashboardShell({
       )}
 
       {/* Sidebar */}
-      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''} ${effectiveCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''} ${effectiveCollapsed ? 'sidebar-collapsed' : ''}`} aria-label="주 메뉴">
         {/* Brand */}
         <div className="sidebar-brand">
           <div className="sidebar-logo">
@@ -141,19 +173,21 @@ export function DashboardShell({
             className="sidebar-collapse-btn"
             onClick={toggleCollapsed}
             title={effectiveCollapsed ? '펼치기' : '접기'}
+            aria-label={effectiveCollapsed ? '메뉴 펼치기' : '메뉴 접기'}
           >
             {effectiveCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
           </button>
           <button
             className="sidebar-close"
             onClick={() => setSidebarOpen(false)}
+            aria-label="메뉴 닫기"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" aria-label="메뉴">
           {MAIN_MENUS.filter(visible).map((menu) => renderItem(menu))}
           {NAV_GROUPS.map((group) => {
             const items = group.menus.filter(visible);
@@ -173,6 +207,7 @@ export function DashboardShell({
                 <button
                   type="button"
                   className="sidebar-group-head"
+                  data-has-active={items.some((menu) => inPath(navEntry(menu).href))}
                   aria-expanded={open}
                   aria-controls={`nav-group-${group.id}`}
                   onClick={() => setGroupOpen((prev) => ({ ...prev, [group.id]: !open }))}
@@ -201,7 +236,7 @@ export function DashboardShell({
               </div>
             )}
           </div>
-          <button className="sidebar-logout" onClick={handleLogout} title="로그아웃">
+          <button className="sidebar-logout" onClick={handleLogout} title="로그아웃" aria-label="로그아웃">
             <LogOut size={16} />
             {!effectiveCollapsed && <span>로그아웃</span>}
           </button>
@@ -215,12 +250,13 @@ export function DashboardShell({
           <button
             className="topbar-menu"
             onClick={() => setSidebarOpen(true)}
+            aria-label="메뉴 열기"
           >
             <Menu size={22} />
           </button>
           <div className="topbar-brand">
             <Image src="/logo-navy.png" alt="통영아재수산" width={20} height={20} unoptimized />
-            <span>통영아재수산</span>
+            <span>{currentEntry?.label ?? '통영아재수산'}</span>
           </div>
           <div className="topbar-user">
             <div className="sidebar-avatar" style={{ width: 32, height: 32, fontSize: '0.8rem' }}>
@@ -245,7 +281,7 @@ export function DashboardShell({
               </Link>
             );
           })}
-          <button className="bottom-tab" onClick={() => setSidebarOpen(true)}>
+          <button className="bottom-tab" onClick={() => setSidebarOpen(true)} aria-label="전체 메뉴 열기">
             <Menu size={22} />
             <span>더보기</span>
           </button>
@@ -323,11 +359,34 @@ export function DashboardShell({
         }
         .sidebar-close {
           display: none;
+          align-items: center;
+          justify-content: center;
           background: none;
           border: none;
           color: rgba(255,255,255,0.6);
           cursor: pointer;
           padding: 0.25rem;
+          min-width: 44px;
+          min-height: 44px;
+          margin: -0.5rem -0.5rem -0.5rem 0;
+        }
+        /* 접힌 그룹 안에 지금 페이지가 있으면 그룹 머리글을 밝게 보여 위치를 알 수 있게 한다 */
+        .sidebar-group-head[data-has-active='true'] { color: #fff; }
+        .sidebar :focus-visible, .topbar :focus-visible, .bottom-nav :focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+        .bottom-nav :focus-visible, .topbar :focus-visible { outline-color: var(--primary); }
+        .offline-banner {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          z-index: 100;
+          padding: 0.5rem 1rem;
+          padding-top: calc(0.5rem + env(safe-area-inset-top, 0px));
+          background: #b91c1c;
+          color: #fff;
+          font-size: 0.8125rem;
+          font-weight: 700;
+          text-align: center;
         }
         .sidebar-nav {
           flex: 1;
@@ -529,6 +588,12 @@ export function DashboardShell({
           cursor: pointer;
           padding: 0.25rem;
           display: flex;
+          align-items: center;
+          justify-content: center;
+          /* 아이콘은 그대로 두고 터치 영역만 44px로 키운다(바 높이가 늘지 않게 음수 여백으로 상쇄) */
+          min-width: 44px;
+          min-height: 44px;
+          margin: -0.5rem 0 -0.5rem -0.5rem;
         }
         .topbar-brand {
           display: flex;
@@ -548,6 +613,8 @@ export function DashboardShell({
              안쪽에서 이미 자기 스크롤을 관리하는 화면에서 바깥쪽이 먼저 잘라버리는(클리핑)
              사고가 나므로, 명시적으로 꺼서 가로 스크롤은 항상 안쪽 컴포넌트가 책임지게 한다. */
           overflow-x: hidden;
+          /* 이동 중 화면을 아래로 당겨 새로고침되어 입력하던 값이 날아가는 일을 막는다(안드로이드 Chrome) */
+          overscroll-behavior-y: contain;
           padding: 2.25rem 2.5rem;
         }
         /* 대시보드는 TV로 보는 표 화면이라 여백을 최소화해서 표 영역을 최대한 넓힌다. */
@@ -582,12 +649,12 @@ export function DashboardShell({
             background: none;
             border: 0;
             color: #64748b;
-            font-size: 0.6875rem;
+            font-size: 0.75rem;
             font-weight: 700;
             text-decoration: none;
           }
           .bottom-tab-on { color: var(--primary); }
-          .bottom-tab-on span { font-weight: 900; }
+          .bottom-tab-on span { font-weight: 800; }
           .sidebar {
             position: fixed;
             top: 0;
@@ -597,8 +664,12 @@ export function DashboardShell({
             min-width: var(--sidebar-width);
             transform: translateX(-100%);
           }
+          /* 닫힌 서랍은 화면 밖에 있을 뿐 아니라 Tab 포커스와 스크린리더에서도 빠지게 한다(닫히는 동안에는 끝난 뒤에 숨긴다) */
+          .sidebar { visibility: hidden; transition: transform 0.25s ease, visibility 0s linear 0.25s; }
           .sidebar.sidebar-open {
             transform: translateX(0);
+            visibility: visible;
+            transition: transform 0.25s ease, visibility 0s;
             box-shadow: var(--shadow-lg);
           }
           .sidebar-collapse-btn { display: none; }
