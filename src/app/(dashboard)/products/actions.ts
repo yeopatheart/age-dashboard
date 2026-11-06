@@ -4,7 +4,6 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { colorComboKey, isHueKey, pickUnusedColor } from '@/lib/color-palette';
 import { requirePermission } from '@/lib/permissions/access';
-import { missingTable } from '@/lib/supabase/missing-table';
 
 function revalidate() {
   revalidatePath('/products');
@@ -116,11 +115,13 @@ export async function renameProduct(id: string, newName: string): Promise<{ erro
     await supabase.from('products').update({ name: current.name }).eq('id', id);
     return { error: itemError.message, updatedItems: 0 };
   }
-  // 정산 매입내역은 (출고일, 상품명)으로 연결되므로 입력한 매입가가 새 이름을 따라가게 함께 바꾼다. 마이그레이션 0044를 적용하기 전이면 테이블이 없어 건너뛴다.
-  const { error: purchaseError } = await supabase.from('settlement_purchases').update({ product_name: trimmed }).eq('product_name', current.name);
-  if (purchaseError && missingTable(new Error(purchaseError.message)) === null) {
+  // 정산 매입내역은 (출고일, 상품명)으로 연결되므로 입력한 매입가가 새 이름을 따라가게 함께 바꾼다.
+  // 상품 관리 권한만 있는 사용자는 정산 테이블을 직접 못 쓰므로 마이그레이션 0045의 함수로 처리한다.
+  const { error: purchaseError } = await supabase.rpc('rename_purchase_product', { p_old: current.name, p_new: trimmed });
+  if (purchaseError) {
     revalidate();
-    return { error: `상품명과 과거 주문은 바뀌었지만 정산 매입내역의 이전 이름 행은 바꾸지 못했습니다(${purchaseError.message}). 정산 매입내역에서 확인해주세요.`, updatedItems: count ?? 0 };
+    const hint = /rename_purchase_product|schema cache/i.test(purchaseError.message) ? ' 마이그레이션 0045_security_hardening.sql을 먼저 적용해야 합니다.' : '';
+    return { error: `상품명과 과거 주문은 바뀌었지만 정산 매입내역의 이전 이름 행은 바꾸지 못했습니다(${purchaseError.message}).${hint} 정산 매입내역에서 확인해주세요.`, updatedItems: count ?? 0 };
   }
   revalidate();
   return { error: null, updatedItems: count ?? 0 };

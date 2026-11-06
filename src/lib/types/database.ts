@@ -523,6 +523,11 @@ export type Database = {
         Args: { p_daily_business_id: string };
         Returns: number;
       };
+      // 상품명 변경 시 정산 매입내역의 이전 이름을 함께 바꾼다(0045, products:edit 권한을 함수 안에서 확인).
+      rename_purchase_product: {
+        Args: { p_old: string; p_new: string };
+        Returns: undefined;
+      };
       // 기간 리포트 집계(0017). 반환 JSON의 모양은 src/lib/report.ts의 ReportSummary.
       report_summary: {
         Args: { p_from: string; p_to: string };
