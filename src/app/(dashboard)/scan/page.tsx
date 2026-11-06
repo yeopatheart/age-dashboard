@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { ScanClient, type ScanCard } from './scan-client';
 import { requireMenu } from '@/lib/permissions/access';
 import { todayKST } from '@/lib/order-date';
+import { packageCounts } from '@/lib/scan-share-text';
 
 // 상차 스캔 화면. 그날 발급된 박스 라벨을 업체 카드별·터미널별로 모아 "상차 몇 박스 / 전체 몇 박스"를 보여준다.
 export default async function ScanPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
@@ -13,7 +14,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
 
   const [, { data: dailies, error }, { data: businesses }, { data: terminals }] = await Promise.all([
     accessCheck,
-    supabase.from('daily_businesses').select('id, business_id, terminal_id, business_number, round, sort_order, display_name').eq('order_date', orderDate).order('sort_order'),
+    supabase.from('daily_businesses').select('id, business_id, terminal_id, business_number, round, sort_order, display_name, merge_groups').eq('order_date', orderDate).order('sort_order'),
     supabase.from('businesses').select('id, name'),
     supabase.from('terminals').select('id, name'),
   ]);
@@ -21,7 +22,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
   const dailyRows = dailies ?? [];
   const dailyIds = dailyRows.map((d) => d.id);
   const { data: labels } = dailyIds.length
-    ? await supabase.from('box_labels').select('daily_business_id, loaded_at').in('daily_business_id', dailyIds)
+    ? await supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyIds)
     : { data: [] };
 
   const businessName = new Map((businesses ?? []).map((b) => [b.id, b.name]));
@@ -37,6 +38,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
         terminal: d.terminal_id ? terminalName.get(d.terminal_id) ?? '' : '',
         loaded: own.filter((l) => l.loaded_at).length,
         total: own.length,
+        packages: packageCounts(own.map((l) => ({ seq: l.seq, loaded: !!l.loaded_at })), d.merge_groups),
       },
     ];
   });
