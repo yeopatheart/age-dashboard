@@ -27,6 +27,7 @@ export interface StoredSale {
   orderItemId: string;
   sellerId: string | null;
   price: number | null;
+  unitPrice: number | null;
   paid: boolean;
   memo: string | null;
 }
@@ -40,6 +41,7 @@ export interface SalesRow {
   unit: string;
   sellerId: string | null;
   price: number | null;
+  unitPrice: number | null; // 영수증의 단가 칸(0047). 비어 있으면 영수증 단가 칸이 빈칸
   paid: boolean;
   memo: string;
 }
@@ -69,6 +71,7 @@ export function buildSalesRows(cards: SalesSourceCard[], items: SalesSourceItem[
         unit: item.unit,
         sellerId: s?.sellerId ?? null,
         price: s?.price ?? null,
+        unitPrice: s?.unitPrice ?? null,
         paid: s?.paid ?? false,
         memo: s?.memo ?? '',
       },

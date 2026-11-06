@@ -11,6 +11,7 @@ const sale = (orderDate: string, product: string, price: number | null) => ({
   unit: '미',
   sellerId: null,
   price,
+  unitPrice: null,
   paid: false,
   memo: '',
 });
