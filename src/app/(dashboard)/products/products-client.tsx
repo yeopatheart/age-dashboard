@@ -18,6 +18,8 @@ import {
   ViaTag,
   useHiddenColumns,
   type Column,
+  DeleteFooter,
+  useNotice,
 } from '@/components/admin/admin-kit';
 
 interface Product {
@@ -61,7 +63,7 @@ export function ProductsClient({
   const [nameDraft, setNameDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useNotice();
   const [busy, setBusy] = useState(false);
   const [hidden, setHidden] = useHiddenColumns('ak-cols-products');
   // 색 선택은 누르는 즉시 저장하고 화면에도 바로 반영한다.
@@ -314,8 +316,8 @@ export function ProductsClient({
         </div>
       )}
 
-      {error && !open && <p className="ak-error">{error}</p>}
-      {notice && <p className="ak-notice">{notice}</p>}
+      {error && !open && <p className="ak-error" role="alert">{error}</p>}
+      {notice && <p className="ak-notice" role="status">{notice}</p>}
 
       <DataTable
         columns={columns}
@@ -339,20 +341,19 @@ export function ProductsClient({
         <SidePanel
           title="상품 상세"
           onClose={() => setOpenId(null)}
+          dirty={canEdit && nameDraft !== open.name}
+          readOnly={!canEdit}
           footer={
             confirmDelete ? (
-              <>
-                <span className="ak-error" style={{ flex: 1 }}>정말 삭제할까요? 이미 들어온 주문은 그대로 남습니다.</span>
-                <button className="ak-btn" onClick={() => setConfirmDelete(false)}>취소</button>
-                <button
-                  className="ak-btn ak-btn-primary"
-                  style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
-                  disabled={busy}
-                  onClick={async () => {
-                    if (await run(() => deleteProducts([open.id]))) setOpenId(null);
-                  }}
-                >삭제</button>
-              </>
+              <DeleteFooter
+                name={open.name}
+                consequence="이미 들어온 주문은 그대로 남습니다."
+                busy={busy}
+                onCancel={() => setConfirmDelete(false)}
+                onConfirm={async () => {
+                  if (await run(() => deleteProducts([open.id]))) setOpenId(null);
+                }}
+              />
             ) : (
               <>
                 {canDelete && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
@@ -419,8 +420,8 @@ export function ProductsClient({
             <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => handleColor(open, f, b)} sample={open.name} /></fieldset>
           </div>
           <p className="ak-meta">{open.created_via === 'order' ? '주문입력' : '수기입력'}으로 {open.created_at.slice(0, 10).replace(/-/g, '.')} 등록</p>
-          {error && <p className="ak-error">{error}</p>}
-          {notice && <p className="ak-notice">{notice}</p>}
+          {error && <p className="ak-error" role="alert">{error}</p>}
+          {notice && <p className="ak-notice" role="status">{notice}</p>}
         </SidePanel>
       )}
 

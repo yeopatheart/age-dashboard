@@ -2,7 +2,7 @@
 import '@/components/admin/admin.css';
 import { useMemo, useState } from 'react';
 import { RotateCcw, Settings as SettingsIcon } from 'lucide-react';
-import { AdminHeader, Toggle } from '@/components/admin/admin-kit';
+import { AdminHeader, Toggle, useNotice } from '@/components/admin/admin-kit';
 import { DEFAULT_SETTINGS, type AppSettings } from '@/lib/app-settings';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { reapplySizeSpecs, saveSettings } from './actions';
@@ -26,7 +26,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
   const [sample, setSample] = useState('2.5kg내외, 피빼기');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useNotice();
 
   const draft: AppSettings = useMemo(
     () => ({

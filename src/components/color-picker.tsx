@@ -24,6 +24,8 @@ export function ColorPicker({
               key={h.key}
               type="button"
               title={h.label}
+              aria-label={`바탕색 ${h.label}`}
+              aria-pressed={fill === h.key}
               onClick={() => onChange(h.key, border)}
               className={`cp-swatch ${fill === h.key ? 'cp-swatch-on' : ''}`}
               style={{ backgroundColor: h.fill, borderColor: h.border }}
@@ -39,6 +41,8 @@ export function ColorPicker({
               key={h.key}
               type="button"
               title={h.label}
+              aria-label={`테두리색 ${h.label}`}
+              aria-pressed={border === h.key}
               onClick={() => onChange(fill, h.key)}
               className={`cp-swatch ${border === h.key ? 'cp-swatch-on' : ''}`}
               style={{ backgroundColor: h.border, borderColor: h.border }}

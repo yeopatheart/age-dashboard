@@ -130,7 +130,7 @@ export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: Re
           </div>
         );
       })}
-      {message && <p className="ak-notice">{message}</p>}
+      {message && <p className="ak-notice" role="status">{message}</p>}
     </div>
   );
 }

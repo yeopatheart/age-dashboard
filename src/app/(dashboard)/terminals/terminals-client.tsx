@@ -16,6 +16,7 @@ import {
   ViaTag,
   useHiddenColumns,
   type Column,
+  DeleteFooter,
 } from '@/components/admin/admin-kit';
 
 interface Terminal {
@@ -156,7 +157,7 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
         <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
       </div>
 
-      {error && !open && <p className="ak-error">{error}</p>}
+      {error && !open && <p className="ak-error" role="alert">{error}</p>}
 
       <DataTable
         columns={columns}
@@ -172,24 +173,32 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
         <SidePanel
           title="터미널 상세"
           onClose={() => setOpenId(null)}
+          dirty={canEdit && nameDraft !== open.name}
+          readOnly={!canEdit}
           footer={
             confirmDelete ? (
-              <>
-                <span className="ak-error" style={{ flex: 1 }}>정말 삭제할까요?</span>
-                <button className="ak-btn" onClick={() => setConfirmDelete(false)}>취소</button>
-                <button
-                  className="ak-btn ak-btn-primary"
-                  style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
-                  disabled={busy}
-                  onClick={async () => {
-                    if (await run(() => deleteTerminal(open.id))) setOpenId(null);
-                    else setConfirmDelete(false);
-                  }}
-                >삭제</button>
-              </>
+              <DeleteFooter
+                name={open.name}
+                consequence="이 터미널을 쓰는 업체나 주문 이력이 있으면 삭제할 수 없습니다."
+                busy={busy}
+                onCancel={() => setConfirmDelete(false)}
+                onConfirm={async () => {
+                  if (await run(() => deleteTerminal(open.id))) setOpenId(null);
+                  else setConfirmDelete(false);
+                }}
+              />
             ) : (
               <>
-                {canDelete && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
+                {canDelete && (
+                  <button
+                    className="ak-btn ak-btn-danger"
+                    disabled={(businessCount[open.id] ?? 0) > 0}
+                    title={(businessCount[open.id] ?? 0) > 0 ? `연결된 업체 ${businessCount[open.id]}곳이 있어 삭제할 수 없습니다` : undefined}
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    <Trash2 size={14} /> 삭제
+                  </button>
+                )}
                 <span className="ak-spacer" />
                 <button className="ak-btn" onClick={() => setOpenId(null)}>닫기</button>
                 {canEdit && <button
@@ -203,7 +212,7 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
         >
           <div className="ak-field">
             <label>터미널 이름</label>
-            <input className="ak-input" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} />
+            <input className="ak-input" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} disabled={!canEdit} />
           </div>
           <div className="ak-setting">
             <span>
@@ -224,7 +233,7 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
             <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => setColor(open, f, b)} sample={open.name} /></fieldset>
           </div>
           <p className="ak-meta">연결된 업체 {businessCount[open.id] ?? 0}곳 · {open.created_via === 'order' ? '주문입력' : '수기입력'}으로 {open.created_at.slice(0, 10).replace(/-/g, '.')} 등록</p>
-          {error && <p className="ak-error">{error}</p>}
+          {error && <p className="ak-error" role="alert">{error}</p>}
         </SidePanel>
       )}
     </div>

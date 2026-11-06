@@ -82,7 +82,7 @@ export function SupplierPanel({
           </div>
         </fieldset>
       )}
-      {error && <p className="ak-error">{error}</p>}
+      {error && <p className="ak-error" role="alert">{error}</p>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
         <strong style={{ fontSize: '0.8125rem' }}>등록된 매입처 {suppliers.length}곳</strong>

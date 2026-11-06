@@ -331,8 +331,8 @@ export function PurchasesClient({
         </div>
       )}
 
-      {error && <p className="ak-error">{error}</p>}
-      {notice && <p className="ak-notice">{notice}</p>}
+      {error && <p className="ak-error" role="alert">{error}</p>}
+      {notice && <p className="ak-notice" role="status">{notice}</p>}
       {sellers.length === 0 && rows.length > 0 && <p className="ak-muted">등록된 사업자가 없습니다. “사업자 관리”에서 먼저 등록하면 사업자 구분을 고를 수 있습니다.</p>}
 
       <DataTable
