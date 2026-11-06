@@ -14,6 +14,8 @@ import {
   ViaTag,
   useHiddenColumns,
   type Column,
+  DeleteFooter,
+  FieldGroup,
 } from '@/components/admin/admin-kit';
 
 interface Terminal { id: string; name: string; fill_color: string | null; border_color: string | null }
@@ -73,6 +75,9 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
   }, [businesses, search, terminalFilter, viaFilter, sort]);
 
   const editing = panel && panel !== 'new' ? businesses.find((b) => b.id === panel) ?? null : null;
+  // 저장하지 않은 입력이 있는지(패널을 닫을 때 확인을 받는다)
+  const baseline: Draft = panel === 'new' ? { ...EMPTY_DRAFT, terminalId: terminals[0]?.id ?? '' } : editing ? { name: editing.name, terminalId: editing.terminal_id ?? '', notes: editing.notes ?? '', regNo: editing.business_registration_no ?? '', rep: editing.representative_name ?? '' } : EMPTY_DRAFT;
+  const dirty = !!panel && canEdit && JSON.stringify(draft) !== JSON.stringify(baseline);
 
   const openNew = () => {
     setPanel('new');
@@ -170,31 +175,31 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
         <SidePanel
           title={panel === 'new' ? '고객사 추가' : '고객사 상세'}
           onClose={() => setPanel(null)}
+          dirty={dirty}
+          readOnly={!canEdit}
           footer={
             confirmDelete ? (
-              <>
-                <span className="ak-error" style={{ flex: 1 }}>정말 삭제할까요?</span>
-                <button className="ak-btn" onClick={() => setConfirmDelete(false)}>취소</button>
-                <button
-                  className="ak-btn ak-btn-primary"
-                  style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
-                  disabled={busy}
-                  onClick={async () => {
-                    if (await run(() => deleteBusiness(panel))) setPanel(null);
-                    else setConfirmDelete(false);
-                  }}
-                >삭제</button>
-              </>
+              <DeleteFooter
+                name={editing?.name ?? ''}
+                consequence="과거 주문 기록이 있는 고객사는 삭제할 수 없습니다."
+                busy={busy}
+                onCancel={() => setConfirmDelete(false)}
+                onConfirm={async () => {
+                  if (await run(() => deleteBusiness(panel))) setPanel(null);
+                  else setConfirmDelete(false);
+                }}
+              />
             ) : (
               <>
                 {canDelete && panel !== 'new' && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
                 <span className="ak-spacer" />
-                <button className="ak-btn" onClick={() => setPanel(null)}>취소</button>
+                <button className="ak-btn" onClick={() => setPanel(null)}>닫기</button>
                 {canEdit && <button className="ak-btn ak-btn-primary" disabled={busy || !draft.name.trim()} onClick={handleSave}>저장</button>}
               </>
             )
           }
         >
+          <FieldGroup disabled={!canEdit}>
           <div className="ak-field">
             <label>고객사 이름 *</label>
             <input className="ak-input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus placeholder="예) 스시 하나" />
@@ -221,7 +226,8 @@ export function BusinessesClient({ businesses, terminals }: { businesses: Busine
           {editing && (
             <p className="ak-meta">{editing.created_via === 'order' ? '주문입력' : '수기입력'}으로 {editing.created_at.slice(0, 10).replace(/-/g, '.')} 등록</p>
           )}
-          {error && <p className="ak-error">{error}</p>}
+          </FieldGroup>
+          {error && <p className="ak-error" role="alert">{error}</p>}
         </SidePanel>
       )}
     </div>

@@ -5,7 +5,7 @@ import { deleteSeller, saveSeller, saveSellerSeal, type SellerInput } from './ac
 import { sealFileToDataUrl } from './seal-file';
 import { useCan } from '@/components/permissions-context';
 import { formatRegistrationInput, formatRegistrationNo } from '@/lib/sellers';
-import { AdminHeader, ColumnMenu, DataTable, SearchInput, SidePanel, useHiddenColumns, type Column } from '@/components/admin/admin-kit';
+import { AdminHeader, ColumnMenu, DataTable, DeleteFooter, SearchInput, SidePanel, useHiddenColumns, useNotice, type Column } from '@/components/admin/admin-kit';
 
 interface Seller {
   id: string;
@@ -45,7 +45,7 @@ export function SellersClient({ sellers, seals }: { sellers: Seller[]; seals: Re
   const [draft, setDraft] = useState<SellerInput>(EMPTY);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useNotice();
   const [busy, setBusy] = useState(false);
   const [hidden, setHidden] = useHiddenColumns('ak-cols-sellers');
   const fileInput = useRef<HTMLInputElement>(null);
@@ -125,6 +125,8 @@ export function SellersClient({ sellers, seals }: { sellers: Seller[]; seals: Re
     { key: 'memo', label: '메모', render: (s) => s.memo ?? <span className="ak-muted">-</span> },
   ];
 
+  // 저장하지 않은 입력이 있는지(패널을 닫을 때 확인을 받는다)
+  const dirty = !!panel && canEdit && JSON.stringify(draft) !== JSON.stringify(open ? draftOf(open) : EMPTY);
   const saveDisabled = busy || !draft.name.trim() || formatRegistrationInput(draft.registrationNo).replace(/\D/g, '').length !== 10;
 
   return (
@@ -143,8 +145,8 @@ export function SellersClient({ sellers, seals }: { sellers: Seller[]; seals: Re
         <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
       </div>
 
-      {error && !panel && <p className="ak-error">{error}</p>}
-      {notice && <p className="ak-notice">{notice}</p>}
+      {error && !panel && <p className="ak-error" role="alert">{error}</p>}
+      {notice && <p className="ak-notice" role="status">{notice}</p>}
 
       <DataTable
         columns={columns}
@@ -160,20 +162,19 @@ export function SellersClient({ sellers, seals }: { sellers: Seller[]; seals: Re
         <SidePanel
           title={panel === 'new' ? '사업자 등록' : '사업자 상세'}
           onClose={() => setPanel(null)}
+          dirty={dirty}
+          readOnly={!canEdit}
           footer={
             confirmDelete && open ? (
-              <>
-                <span className="ak-error" style={{ flex: 1 }}>정말 삭제할까요? 이 사업자로 구분된 판매·매입 내역은 구분이 비게 됩니다.</span>
-                <button className="ak-btn" onClick={() => setConfirmDelete(false)}>취소</button>
-                <button
-                  className="ak-btn ak-btn-primary"
-                  style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
-                  disabled={busy}
-                  onClick={async () => {
-                    if (await run(() => deleteSeller(open.id), `'${open.name}'을(를) 삭제했습니다.`)) setPanel(null);
-                  }}
-                >삭제</button>
-              </>
+              <DeleteFooter
+                name={open.name}
+                consequence="이 사업자로 구분된 판매·매입 내역은 구분이 비게 됩니다."
+                busy={busy}
+                onCancel={() => setConfirmDelete(false)}
+                onConfirm={async () => {
+                  if (await run(() => deleteSeller(open.id), `'${open.name}'을(를) 삭제했습니다.`)) setPanel(null);
+                }}
+              />
             ) : (
               <>
                 {canDelete && open && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
@@ -255,7 +256,7 @@ export function SellersClient({ sellers, seals }: { sellers: Seller[]; seals: Re
               </>
             ) : null}
           </div>
-          {error && <p className="ak-error">{error}</p>}
+          {error && <p className="ak-error" role="alert">{error}</p>}
         </SidePanel>
       )}
     </div>

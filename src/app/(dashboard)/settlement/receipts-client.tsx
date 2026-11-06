@@ -90,7 +90,7 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
         <span>합계 <strong>{formatWon(totalSum)}원</strong></span>
       </div>
 
-      {notice && <p className="ak-notice">{notice}</p>}
+      {notice && <p className="ak-notice" role="status">{notice}</p>}
 
       <DataTable
         columns={columns}
@@ -126,9 +126,9 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
           <p className="ak-meta">
             {open.receipt.orderDate} · 발행 {formatIssuedAt(open.receipt.createdAt)} · ₩ {formatWon(open.receipt.total)}
           </p>
-          {error && <p className="ak-error">{error}</p>}
+          {error && <p className="ak-error" role="alert">{error}</p>}
           {!open.receipt.snapshot ? (
-            <p className="ak-error">이 영수증은 저장된 내용을 읽을 수 없어 열 수 없습니다.</p>
+            <p className="ak-error" role="alert">이 영수증은 저장된 내용을 읽을 수 없어 열 수 없습니다.</p>
           ) : open.seal === undefined ? (
             <p className="ak-meta">직인을 불러오는 중…</p>
           ) : (

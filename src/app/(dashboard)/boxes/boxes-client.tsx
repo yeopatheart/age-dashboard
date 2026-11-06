@@ -13,6 +13,8 @@ import {
   Toggle,
   useHiddenColumns,
   type Column,
+  DeleteFooter,
+  FieldGroup,
 } from '@/components/admin/admin-kit';
 
 interface Box {
@@ -92,6 +94,8 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
       .filter((b) => (kindFilter === 'all' ? true : kindFilter === 'mulbong' ? b.is_mulbong_box : !b.is_mulbong_box));
   }, [boxes, localActive, search, activeFilter, kindFilter]);
   const editing = panel && panel !== 'new' ? boxes.find((b) => b.id === panel) ?? null : null;
+  // 저장하지 않은 입력이 있는지(패널을 닫을 때 확인을 받는다)
+  const dirty = !!panel && canEdit && JSON.stringify(form) !== JSON.stringify(editing ? toForm(editing) : EMPTY_FORM);
 
   const run = async (fn: () => Promise<{ error: string | null }>) => {
     if (busy) return false;
@@ -171,7 +175,7 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
         {canEdit && <button className="ak-btn ak-btn-primary" onClick={openNew}><Plus size={14} /> 박스 추가</button>}
       </div>
 
-      {error && !panel && <p className="ak-error">{error}</p>}
+      {error && !panel && <p className="ak-error" role="alert">{error}</p>}
 
       <DataTable
         columns={columns}
@@ -187,31 +191,31 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
         <SidePanel
           title={panel === 'new' ? '박스 추가' : '박스 상세'}
           onClose={() => setPanel(null)}
+          dirty={dirty}
+          readOnly={!canEdit}
           footer={
             confirmDelete ? (
-              <>
-                <span className="ak-error" style={{ flex: 1 }}>정말 삭제할까요?</span>
-                <button className="ak-btn" onClick={() => setConfirmDelete(false)}>취소</button>
-                <button
-                  className="ak-btn ak-btn-primary"
-                  style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
-                  disabled={busy}
-                  onClick={async () => {
-                    if (await run(() => deleteBox(panel))) setPanel(null);
-                    else setConfirmDelete(false);
-                  }}
-                >삭제</button>
-              </>
+              <DeleteFooter
+                name={editing?.name ?? ''}
+                consequence="이미 기록된 박스 할당에는 박스 이름이 그대로 남습니다."
+                busy={busy}
+                onCancel={() => setConfirmDelete(false)}
+                onConfirm={async () => {
+                  if (await run(() => deleteBox(panel))) setPanel(null);
+                  else setConfirmDelete(false);
+                }}
+              />
             ) : (
               <>
                 {canDelete && panel !== 'new' && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
                 <span className="ak-spacer" />
-                <button className="ak-btn" onClick={() => setPanel(null)}>취소</button>
+                <button className="ak-btn" onClick={() => setPanel(null)}>닫기</button>
                 {canEdit && <button className="ak-btn ak-btn-primary" disabled={busy || !form.name.trim()} onClick={handleSave}>저장</button>}
               </>
             )
           }
         >
+          <FieldGroup disabled={!canEdit}>
           <div className="ak-field">
             <label>박스 이름 *</label>
             <input className="ak-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus placeholder="예) 4호 스티로폼" />
@@ -236,7 +240,8 @@ export function BoxesClient({ boxes }: { boxes: Box[] }) {
             <label>메모</label>
             <textarea className="ak-input ak-textarea" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </div>
-          {error && <p className="ak-error">{error}</p>}
+          </FieldGroup>
+          {error && <p className="ak-error" role="alert">{error}</p>}
         </SidePanel>
       )}
     </div>

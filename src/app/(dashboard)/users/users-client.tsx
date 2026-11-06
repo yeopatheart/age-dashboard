@@ -39,8 +39,8 @@ export function UsersClient({ users, meId, setupError }: { users: UserRow[]; meI
   return (
     <div className="us-root">
       <AdminHeader icon={<ShieldCheck size={20} />} title="사용자 및 권한" sub="사용자를 등록하고 메뉴·기능별 권한을 정합니다." />
-      {setupError && <p className="ak-error">{setupError}</p>}
-      {message && <p className="ak-notice">{message}</p>}
+      {setupError && <p className="ak-error" role="alert">{setupError}</p>}
+      {message && <p className="ak-notice" role="status">{message}</p>}
 
       <div className="us-layout">
         <section className="us-list-pane" aria-label="사용자 목록">
@@ -206,7 +206,7 @@ function UserModal({ mode, user, onClose, onDone }: { mode: 'create' | 'edit'; u
             <label><KeyRound size={12} style={{ display: 'inline', verticalAlign: '-1px' }} /> {mode === 'create' ? '비밀번호 (8자 이상)' : '새 비밀번호 (바꿀 때만, 8자 이상)'}</label>
             <input className="ak-input" type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required={mode === 'create'} />
           </div>
-          {error && <p className="ak-error">{error}</p>}
+          {error && <p className="ak-error" role="alert">{error}</p>}
           {mode === 'create' && <p className="ak-muted" style={{ fontSize: '0.8125rem' }}>새 사용자는 권한이 없는 상태로 시작합니다. 등록 후 오른쪽에서 열어 줄 메뉴를 고르세요.</p>}
         </div>
         <div className="us-modal-foot">
