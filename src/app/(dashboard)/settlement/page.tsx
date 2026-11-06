@@ -8,6 +8,7 @@ import { MigrationNotice } from '@/components/migration-notice';
 import { todayKST } from '@/lib/order-date';
 import { getPeriod, type Granularity } from '@/lib/report';
 import { loadSalesRows, loadStoredPurchases, loadSupplierDirectory } from '@/lib/settlement/server';
+import { loadReceipts } from '@/lib/settlement/receipt-server';
 import { buildPurchaseRows, totalsOf } from '@/lib/settlement/purchases';
 import { buildDailySeries } from '@/lib/settlement/chart';
 import { PeriodBar } from './period-bar';
@@ -15,6 +16,7 @@ import { SettlementSection } from './settlement-section';
 import { SettlementClient } from './settlement-client';
 import { PurchasesClient } from './purchases-client';
 import { ChartClient } from './chart-client';
+import { ReceiptsClient } from './receipts-client';
 
 const isValidDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 
@@ -32,7 +34,7 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
 
   const header = <AdminHeader icon={<Receipt size={20} />} title="정산" sub="출고가 끝난 주문이 판매내역과 매입내역으로 올라옵니다. 가격, 사업자 구분, 입금 여부, 메모를 입력하세요. 입력하면 바로 저장됩니다." />;
 
-  const [, sales, sellers, inputsTable, stored, directory] = await Promise.all([
+  const [, sales, sellers, inputsTable, stored, directory, receipts] = await Promise.all([
     accessCheck,
     rowsOrMissing(loadSalesRows(supabase, period.from, period.to)),
     rowsOrMissing(fetchAll((a, b) => supabase.from('seller_businesses').select('id, name').order('name').order('id').range(a, b), '사업자 조회 실패: ')),
@@ -50,6 +52,8 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
     // 매입내역·그래프에 쓰는 값. 0044를 적용하기 전이면 두 구역만 안내를 보여 주고 판매내역은 계속 쓴다.
     rowsOrMissing(loadStoredPurchases(supabase, period.from, period.to)),
     valueOrMissing(loadSupplierDirectory(supabase)),
+    // 영수증 이력(0047). 적용 전이면 그 구역만 안내를 보여 주고 나머지는 계속 쓴다.
+    rowsOrMissing(loadReceipts(supabase, period.from, period.to)),
   ]);
 
   // 마이그레이션(0042 사업자, 0043 판매 입력값)을 적용하기 전에 배포되면 테이블이 없다. 운영 화면은 서버 오류 문구를 가려서 "에러"만 보이므로 안내를 대신 보여 준다.
@@ -94,6 +98,13 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
         </SettlementSection>
         <SettlementSection id="sales" title="판매내역">
           <SettlementClient key={key} rows={sales.rows} sellers={sellers.rows} multiDay={multiDay} from={period.from} to={period.to} />
+        </SettlementSection>
+        <SettlementSection id="receipts" title="영수증">
+          {receipts.missing ? (
+            <MigrationNotice feature="영수증" migrations={migrationsFor([receipts.missing])} />
+          ) : (
+            <ReceiptsClient key={key} receipts={receipts.rows} sellers={sellers.rows} />
+          )}
         </SettlementSection>
       </div>
     </div>

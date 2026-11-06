@@ -101,6 +101,42 @@ export function buildSnapshot(group: ReceiptGroup, seller: ReceiptSeller): Recei
   return { version: 1, orderDate: group.orderDate, customerName: group.customer, seller, lines, total: lines.reduce((sum, l) => sum + l.amount, 0) };
 }
 
+// DB(jsonb)에서 읽은 값이 ReceiptSnapshot 모양인지 확인한다. 아니면 null — 이력 화면이 "열 수 없음"으로 보여 주고 화면이 죽지 않게 한다.
+export function parseSnapshot(value: unknown): ReceiptSnapshot | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const str = (x: unknown): x is string => typeof x === 'string';
+  const optStr = (x: unknown) => x === null || typeof x === 'string';
+  const num = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+  if (v.version !== 1 || !str(v.orderDate) || !str(v.customerName) || !num(v.total) || !Array.isArray(v.lines)) return null;
+  const sellerRaw = v.seller;
+  if (typeof sellerRaw !== 'object' || sellerRaw === null) return null;
+  const seller = sellerRaw as Record<string, unknown>;
+  if (!str(seller.name) || !str(seller.registrationNo) || !optStr(seller.representative) || !optStr(seller.address) || !optStr(seller.businessType) || !optStr(seller.businessItem)) return null;
+  const lines: ReceiptLine[] = [];
+  for (const raw of v.lines) {
+    if (typeof raw !== 'object' || raw === null) return null;
+    const l = raw as Record<string, unknown>;
+    if (!str(l.product) || !num(l.quantity) || !str(l.unit) || !(l.unitPrice === null || num(l.unitPrice)) || !num(l.amount)) return null;
+    lines.push({ product: l.product, quantity: l.quantity, unit: l.unit, unitPrice: l.unitPrice, amount: l.amount });
+  }
+  return {
+    version: 1,
+    orderDate: v.orderDate,
+    customerName: v.customerName,
+    seller: {
+      name: seller.name,
+      registrationNo: seller.registrationNo,
+      representative: seller.representative as string | null,
+      address: seller.address as string | null,
+      businessType: seller.businessType as string | null,
+      businessItem: seller.businessItem as string | null,
+    },
+    lines,
+    total: v.total,
+  };
+}
+
 // ── 화면용 ────────────────────────────────────────────────────────────────────────────────
 
 // 품목 줄을 한 장당 행 수(기본 15)로 나눈다. 줄이 없어도 빈 한 장은 돌려준다.

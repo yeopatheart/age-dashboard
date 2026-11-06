@@ -130,3 +130,23 @@ export async function issueReceipts(input: { itemIds: string[]; from: string; to
     throw e;
   }
 }
+
+// 발행 이력에서 영수증 한 건을 지운다(이미 내려받거나 보낸 이미지는 그대로다). 잘못 발행한 영수증이나 시험 발행을 정리할 때 쓴다.
+export async function deleteReceipt(id: string): Promise<{ error: string | null }> {
+  await requirePermission('settlement:edit');
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('settlement_receipts').delete().eq('id', id).select('id');
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: '이미 삭제되었거나 찾을 수 없는 영수증입니다.' };
+  revalidatePath('/settlement');
+  return { error: null };
+}
+
+// 이력에서 영수증을 다시 열 때 쓰는 직인 이미지. 용량이 커서 이력 목록과 따로, 열 때만 읽는다.
+export async function loadReceiptSeal(sellerId: string): Promise<{ error: string | null; seal: string | null }> {
+  await requirePermission('settlement:view');
+  const supabase = await createClient();
+  const { data, error } = await supabase.from('seller_businesses').select('seal_image').eq('id', sellerId).maybeSingle();
+  if (error) return { error: error.message, seal: null };
+  return { error: null, seal: data?.seal_image ?? null };
+}

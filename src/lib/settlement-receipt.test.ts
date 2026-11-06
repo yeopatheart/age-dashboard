@@ -6,6 +6,7 @@ import {
   formatQuantity,
   groupForReceipts,
   pageNumberLabel,
+  parseSnapshot,
   receiptFileName,
   splitPages,
   type ReceiptSeller,
@@ -104,4 +105,23 @@ test('receiptFileName removes characters that are invalid in file names', () => 
   assert.equal(receiptFileName('2026-11-14', '신라/호텔:본점'), '영수증_2026-11-14_신라호텔본점.png');
   assert.equal(receiptFileName('2026-11-14', '엔야', 1, 3), '영수증_2026-11-14_엔야_2.png');
   assert.equal(receiptFileName('2026-11-14', '///'), '영수증_2026-11-14_고객.png');
+});
+
+test('parseSnapshot round-trips a snapshot through JSON', () => {
+  const { groups } = groupForReceipts([row({ itemId: '1', quantity: 2.5, unit: 'kg', price: 40000, unitPrice: 16000 })]);
+  const snap = buildSnapshot(groups[0], seller);
+  assert.deepEqual(parseSnapshot(JSON.parse(JSON.stringify(snap))), snap);
+});
+
+test('parseSnapshot rejects malformed values instead of throwing', () => {
+  const { groups } = groupForReceipts([row({ itemId: '1' })]);
+  const good = JSON.parse(JSON.stringify(buildSnapshot(groups[0], seller)));
+  assert.equal(parseSnapshot(null), null);
+  assert.equal(parseSnapshot('text'), null);
+  assert.equal(parseSnapshot({ ...good, version: 2 }), null);
+  assert.equal(parseSnapshot({ ...good, total: '1000' }), null);
+  assert.equal(parseSnapshot({ ...good, seller: null }), null);
+  assert.equal(parseSnapshot({ ...good, seller: { ...good.seller, name: 5 } }), null);
+  assert.equal(parseSnapshot({ ...good, lines: [{ product: '광어' }] }), null);
+  assert.equal(parseSnapshot({ ...good, lines: 'x' }), null);
 });
