@@ -4,7 +4,7 @@ import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { ensureRecommendations, getTodayModel, orderSignature, type LiveOrderItem, type RecommendationState } from '@/lib/packing/server';
 import { PackingLogClient, type PackingBusiness } from './packing-log-client';
 import { requireMenu } from '@/lib/permissions/access';
-import { fetchAll } from '@/lib/supabase/fetch-all';
+import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { todayKST } from '@/lib/order-date';
 
 export default async function PackingLogPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
@@ -31,11 +31,11 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
   // 2단계: 오늘 카드의 주문 줄과 제출 기록.
   const [{ data: items }, { data: records, error: recordError }] = dailyIds.length
     ? await Promise.all([
-        supabase
+        selectAll((from, to) => supabase
           .from('order_items')
           .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, measured_weight_kg, secondary_weight_kg, size_request, change_status, unshipped_quantity, is_mulbong, has_aerator')
           .in('daily_business_id', dailyIds)
-          .order('product_sequence'),
+          .order('product_sequence').order('id').range(from, to), '주문 줄 조회 실패: '),
         supabase.from('packing_records').select('id, daily_business_id, submitted_at, order_signature').in('daily_business_id', dailyIds),
       ])
     : [{ data: [] }, { data: [], error: null }];
@@ -64,11 +64,11 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
   const recordIds = (records ?? []).map((r) => r.id);
   const loadPacked = async () => {
     const { data: packedBoxes } = recordIds.length
-      ? await supabase.from('packing_boxes').select('id, record_id, box_id, position, box_name').in('record_id', recordIds).order('position')
+      ? await selectAll((from, to) => supabase.from('packing_boxes').select('id, record_id, box_id, position, box_name').in('record_id', recordIds).order('position').order('id').range(from, to), '박스 조회 실패: ')
       : { data: [] };
     const packedBoxIds = (packedBoxes ?? []).map((b) => b.id);
     const { data: packedItems } = packedBoxIds.length
-      ? await supabase.from('packing_box_items').select('packing_box_id, order_item_id, quantity').in('packing_box_id', packedBoxIds)
+      ? await selectAll((from, to) => supabase.from('packing_box_items').select('packing_box_id, order_item_id, quantity').in('packing_box_id', packedBoxIds).order('id').range(from, to), '박스 상품 조회 실패: ')
       : { data: [] };
     return { packedBoxes: packedBoxes ?? [], packedItems: packedItems ?? [] };
   };

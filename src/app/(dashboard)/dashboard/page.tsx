@@ -6,7 +6,7 @@ import { normalizeMergeGroups } from '@/lib/box-merge';
 import { boxStatesOf, type LabelRow } from '@/lib/overview';
 import { DashboardClient } from './dashboard-client';
 import { requireMenu } from '@/lib/permissions/access';
-import { fetchAll } from '@/lib/supabase/fetch-all';
+import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { headers } from 'next/headers';
 import { todayKST } from '@/lib/order-date';
 
@@ -54,20 +54,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // 2단계: 오늘 카드 id가 정해지면 주문 줄·박스 제출 기록·추천 기록을 한 번에 읽는다.
   const [{ data: orderItemRows }, { data: packingRecordRows }, { data: recommendationRows }, { data: labelRows }] = dailyBusinessIds.length
     ? await Promise.all([
-        supabase
+        selectAll((from, to) => supabase
           .from('order_items')
           .select('id, daily_business_id, product_sequence, product_id, product_name_raw, quantity, unit, secondary_weight_kg, measured_weight_kg, size_request, is_mulbong, has_aerator, is_packed, unshipped_quantity, unshipped_reason, change_status')
-          .in('daily_business_id', dailyBusinessIds),
+          .in('daily_business_id', dailyBusinessIds).order('id').range(from, to), '주문 줄 조회 실패: '),
         supabase.from('packing_records').select('id, daily_business_id, order_signature').in('daily_business_id', dailyBusinessIds),
         supabase.from('packing_recommendations').select('daily_business_id, order_signature, created_at').in('daily_business_id', dailyBusinessIds).order('created_at'),
-        supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyBusinessIds),
+        selectAll((from, to) => supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyBusinessIds).order('id').range(from, to), '라벨 조회 실패: '),
       ])
     : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   // 3단계: "박스" 열은 박스 할당에서 제출한 박스 수다 — 대시보드에서 따로 입력하지 않으므로 제출 기록에서 바로 센다.
   const recordIds = (packingRecordRows ?? []).map((r) => r.id);
   const { data: packingBoxRows } = recordIds.length
-    ? await supabase.from('packing_boxes').select('record_id').in('record_id', recordIds)
+    ? await selectAll((from, to) => supabase.from('packing_boxes').select('record_id').in('record_id', recordIds).order('id').range(from, to), '박스 조회 실패: ')
     : { data: [] };
   const dailyByRecordId = new Map((packingRecordRows ?? []).map((r) => [r.id, r.daily_business_id]));
   const boxCountByDaily = new Map<string, number>();

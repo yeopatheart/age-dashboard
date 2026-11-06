@@ -1,5 +1,6 @@
 // 정산 판매내역의 DB 조회(서버 전용). "출고 완료"는 대시보드와 같은 stageOfCard로 판정한다(정의가 어긋나지 않게).
 // 월 조회는 카드가 수백~천 개라 id를 CHUNK개씩 나눠 조회한다(.in()에 한꺼번에 넣으면 요청 주소가 너무 길어진다).
+import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
 import { fetchAll, mapChunks } from '@/lib/supabase/fetch-all';
