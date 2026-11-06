@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import { logLoginEvent } from './actions';
+import { loginErrorMessage } from '@/lib/login-error';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
@@ -19,22 +20,25 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
 
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-
-    setLoading(false);
-
-    if (signInError) {
-      setError('이메일 또는 비밀번호가 올바르지 않습니다.');
-      return;
+    try {
+      const supabase = createClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        setError(loginErrorMessage(signInError));
+        return;
+      }
+      // 접속 기록이 실패해도 로그인은 막지 않는다.
+      await logLoginEvent().catch(() => undefined);
+      router.push('/');
+    } catch {
+      setError(loginErrorMessage({ name: 'AuthRetryableFetchError', status: 0 }));
+    } finally {
+      setLoading(false);
     }
-
-    await logLoginEvent();
-    router.push('/');
   };
 
   return (
-    <div className="login-root">
+    <main className="login-root">
       <div className="login-card">
         {/* Logo / Brand */}
         <div className="login-brand">
@@ -79,7 +83,8 @@ export default function LoginPage() {
                 type="button"
                 className="password-toggle"
                 onClick={() => setShowPassword(!showPassword)}
-                tabIndex={-1}
+                aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 표시'}
+                aria-pressed={showPassword}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -87,7 +92,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="login-error">
+            <div className="login-error" role="alert">
               <AlertCircle size={14} />
               <span>{error}</span>
             </div>
@@ -111,6 +116,7 @@ export default function LoginPage() {
       <style>{`
         .login-root {
           min-height: 100vh;
+          min-height: 100dvh;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -178,9 +184,14 @@ export default function LoginPage() {
           background: none;
           border: none;
           cursor: pointer;
-          color: #94a3b8;
+          color: #64748b;
           display: flex;
           align-items: center;
+          justify-content: center;
+          /* 눈 아이콘은 그대로 두고 손가락이 닿는 영역만 44px로 키운다 */
+          min-width: 44px;
+          min-height: 44px;
+          margin-right: -0.75rem;
           padding: 0;
           transition: color 0.15s;
         }
@@ -193,7 +204,7 @@ export default function LoginPage() {
           background: var(--danger-bg);
           border: 1px solid #fecaca;
           border-radius: var(--radius);
-          color: var(--danger);
+          color: var(--danger-text);
           font-size: 0.8125rem;
           font-weight: 500;
         }
@@ -220,6 +231,6 @@ export default function LoginPage() {
         }
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
-    </div>
+    </main>
   );
 }
