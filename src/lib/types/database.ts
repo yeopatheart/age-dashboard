@@ -265,6 +265,8 @@ type SellerBusiness = {
   business_type: string | null;
   business_item: string | null;
   memo: string | null;
+  // 직인(도장) PNG의 data URL(0047). 용량이 커서 목록 조회는 이 열을 빼고, 영수증을 만들 때만 읽는다.
+  seal_image: string | null;
   created_at: string;
 };
 
@@ -288,9 +290,23 @@ type SettlementSale = {
   order_item_id: string;
   seller_id: string | null;
   price: number | null;
+  unit_price: number | null; // 영수증의 단가 칸(0047). 비어 있으면 빈칸
   paid: boolean;
   memo: string | null;
   updated_at: string;
+};
+
+// 발행한 영수증 이력(0047). snapshot의 모양은 src/lib/settlement/receipt.ts의 ReceiptSnapshot이다.
+type SettlementReceipt = {
+  id: string;
+  receipt_no: number;
+  order_date: string;
+  customer_name: string;
+  seller_id: string | null;
+  total: number;
+  snapshot: unknown;
+  created_by: string | null;
+  created_at: string;
 };
 
 // 매입내역의 사용자 입력값(0044). 행은 (출고일, 상품명) 하나다.
@@ -428,12 +444,22 @@ export type Database = {
           business_type?: string | null;
           business_item?: string | null;
           memo?: string | null;
+          seal_image?: string | null;
           created_at?: string;
         }
       >;
       settlement_sales: TableDef<
         SettlementSale,
-        Pick<SettlementSale, "order_item_id"> & { seller_id?: string | null; price?: number | null; paid?: boolean; memo?: string | null; updated_at?: string }
+        Pick<SettlementSale, "order_item_id"> & { seller_id?: string | null; price?: number | null; unit_price?: number | null; paid?: boolean; memo?: string | null; updated_at?: string }
+      >;
+      settlement_receipts: TableDef<
+        SettlementReceipt,
+        Pick<SettlementReceipt, "receipt_no" | "order_date" | "customer_name" | "total" | "snapshot"> & {
+          id?: string;
+          seller_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        }
       >;
       settlement_purchases: TableDef<
         SettlementPurchase,

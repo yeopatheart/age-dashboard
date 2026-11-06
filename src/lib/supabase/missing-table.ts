@@ -10,6 +10,7 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
   product_suppliers: '0042_settlement_masters.sql',
   settlement_sales: '0043_settlement_sales.sql',
   settlement_purchases: '0044_settlement_purchases.sql',
+  settlement_receipts: '0047_settlement_receipts.sql',
 };
 
 // 오류가 "테이블 없음"이면 그 테이블 이름(못 읽으면 'unknown'), 아니면 null.

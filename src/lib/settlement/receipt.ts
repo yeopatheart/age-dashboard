@@ -1,0 +1,133 @@
+// 정산 판매내역 → 영수증 만들기(순수 함수). 영수증 한 장은 고객사 × 사업자 × 출고일이다(결정: docs/decisions/2026-11-06-settlement-receipt.md).
+// 서버(발행·스냅샷 저장)와 화면(미리보기·이력)이 같이 쓴다.
+
+// 영수증 품목표의 한 장당 행 수. 넘으면 여러 장으로 나눈다(기존 Auto-Receipt와 같은 15행).
+export const RECEIPT_PAGE_ROWS = 15;
+
+// 영수증을 만들 후보 줄 — 정산 판매내역의 한 줄(SalesRow)에 입력한 단가를 붙인 것이다.
+export interface ReceiptSourceRow {
+  itemId: string;
+  orderDate: string; // 출고일 YYYY-MM-DD
+  customer: string;
+  product: string;
+  quantity: number; // 출고 수량
+  unit: string;
+  sellerId: string | null;
+  price: number | null; // 판매가: 그 줄의 총액(원). null이면 아직 입력 전
+  unitPrice: number | null; // 단가(원). 비어 있으면 영수증 단가 칸이 빈칸
+}
+
+export type ReceiptSkipReason = 'no-seller' | 'no-price';
+
+export interface SkippedRow {
+  row: ReceiptSourceRow;
+  reason: ReceiptSkipReason;
+}
+
+// 같은 고객·사업자·출고일의 줄 묶음. 사업자와 판매가가 모두 있는 줄만 들어온다.
+export interface ReceiptGroup {
+  key: string;
+  orderDate: string;
+  customer: string;
+  sellerId: string;
+  rows: (ReceiptSourceRow & { price: number })[];
+}
+
+// 선택한 줄을 영수증 단위로 묶는다. 사업자가 없거나 판매가가 비어 있는 줄은 영수증에 넣지 않고 사유와 함께 돌려준다.
+// 정렬: 출고일 → 고객명(가나다) → 처음 나온 순서. 묶음 안 줄 순서는 입력 순서를 지킨다.
+export function groupForReceipts(rows: ReceiptSourceRow[]): { groups: ReceiptGroup[]; skipped: SkippedRow[] } {
+  const skipped: SkippedRow[] = [];
+  const byKey = new Map<string, ReceiptGroup>();
+  for (const row of rows) {
+    if (row.sellerId === null) {
+      skipped.push({ row, reason: 'no-seller' });
+      continue;
+    }
+    if (row.price === null) {
+      skipped.push({ row, reason: 'no-price' });
+      continue;
+    }
+    const key = `${row.orderDate}|${row.sellerId}|${row.customer}`;
+    let group = byKey.get(key);
+    if (!group) {
+      group = { key, orderDate: row.orderDate, customer: row.customer, sellerId: row.sellerId, rows: [] };
+      byKey.set(key, group);
+    }
+    group.rows.push({ ...row, price: row.price });
+  }
+  const groups = [...byKey.values()].sort(
+    (a, b) => (a.orderDate === b.orderDate ? 0 : a.orderDate < b.orderDate ? -1 : 1) || a.customer.localeCompare(b.customer, 'ko'),
+  );
+  return { groups, skipped };
+}
+
+// ── 발행 스냅샷(settlement_receipts.snapshot에 저장하는 모양) ──────────────────────────────────
+
+// 공급자(우리 쪽 사업자) 정보. 직인 이미지는 용량 때문에 스냅샷에 넣지 않는다.
+export interface ReceiptSeller {
+  name: string;
+  registrationNo: string; // 숫자 10자리
+  representative: string | null;
+  address: string | null;
+  businessType: string | null; // 업태
+  businessItem: string | null; // 종목
+}
+
+export interface ReceiptLine {
+  product: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number | null;
+  amount: number; // 공급대가(금액) = 판매가
+}
+
+export interface ReceiptSnapshot {
+  version: 1;
+  orderDate: string;
+  customerName: string;
+  seller: ReceiptSeller;
+  lines: ReceiptLine[];
+  total: number;
+}
+
+export function buildSnapshot(group: ReceiptGroup, seller: ReceiptSeller): ReceiptSnapshot {
+  const lines: ReceiptLine[] = group.rows.map((r) => ({
+    product: r.product,
+    quantity: r.quantity,
+    unit: r.unit,
+    unitPrice: r.unitPrice,
+    amount: r.price,
+  }));
+  return { version: 1, orderDate: group.orderDate, customerName: group.customer, seller, lines, total: lines.reduce((sum, l) => sum + l.amount, 0) };
+}
+
+// ── 화면용 ────────────────────────────────────────────────────────────────────────────────
+
+// 품목 줄을 한 장당 행 수(기본 15)로 나눈다. 줄이 없어도 빈 한 장은 돌려준다.
+export function splitPages<T>(items: T[], size = RECEIPT_PAGE_ROWS): T[][] {
+  if (items.length === 0) return [[]];
+  const pages: T[][] = [];
+  for (let i = 0; i < items.length; i += size) pages.push(items.slice(i, i + size));
+  return pages;
+}
+
+// 영수증 왼쪽 위의 번호. 한 장이면 "7", 여러 장으로 나뉘면 "7-1", "7-2".
+export function pageNumberLabel(receiptNo: number, pageIndex: number, pageCount: number): string {
+  return pageCount <= 1 ? String(receiptNo) : `${receiptNo}-${pageIndex + 1}`;
+}
+
+// 수량 칸: 숫자 뒤에 단위를 붙인다(예: 5미, 2kg, 0.5kg). 소수 셋째 자리까지만 쓰고 끝의 0은 지운다.
+export function formatQuantity(quantity: number, unit: string): string {
+  return `${Number(quantity.toFixed(3))}${unit}`;
+}
+
+// 단가를 입력하면 판매가를 단가 × 수량으로 채운다(원 단위 반올림). 판매가는 그 뒤에도 직접 고칠 수 있다.
+export function amountFromUnitPrice(unitPrice: number, quantity: number): number {
+  return Math.round(unitPrice * quantity);
+}
+
+// 이미지 파일 이름: 영수증_2026-11-14_고객명.png (여러 장이면 _1, _2). 파일 이름에 못 쓰는 글자는 뺀다.
+export function receiptFileName(orderDate: string, customer: string, pageIndex = 0, pageCount = 1): string {
+  const safe = customer.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim() || '고객';
+  return `영수증_${orderDate}_${safe}${pageCount > 1 ? `_${pageIndex + 1}` : ''}.png`;
+}
