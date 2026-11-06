@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireMenu } from '@/lib/permissions/access';
-import { fetchAll } from '@/lib/supabase/fetch-all';
+import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { todayKST } from '@/lib/order-date';
 import { buildOverviewCard, type LabelRow, type OverviewCardInput } from '@/lib/overview';
 import { normalizeMergeGroups } from '@/lib/box-merge';
@@ -28,14 +28,14 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
 
   const [{ data: itemRows }, { data: recordRows }, { data: labelRows }, { data: recommendationRows }] = ids.length
     ? await Promise.all([
-        supabase.from('order_items').select('id, daily_business_id, product_name_raw, quantity, unit, unshipped_quantity, is_packed, is_mulbong, change_status').in('daily_business_id', ids),
+        selectAll((from, to) => supabase.from('order_items').select('id, daily_business_id, product_name_raw, quantity, unit, unshipped_quantity, is_packed, is_mulbong, change_status').in('daily_business_id', ids).order('id').range(from, to), '주문 줄 조회 실패: '),
         supabase.from('packing_records').select('id, daily_business_id, order_signature').in('daily_business_id', ids),
-        supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', ids),
+        selectAll((from, to) => supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', ids).order('id').range(from, to), '라벨 조회 실패: '),
         supabase.from('packing_recommendations').select('daily_business_id, order_signature, created_at').in('daily_business_id', ids).order('created_at'),
       ])
     : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
   const recordIds = (recordRows ?? []).map((r) => r.id);
-  const { data: boxRows } = recordIds.length ? await supabase.from('packing_boxes').select('record_id').in('record_id', recordIds) : { data: [] };
+  const { data: boxRows } = recordIds.length ? await selectAll((from, to) => supabase.from('packing_boxes').select('record_id').in('record_id', recordIds).order('id').range(from, to), '박스 조회 실패: ') : { data: [] };
 
   const dailyByRecord = new Map((recordRows ?? []).map((r) => [r.id, r.daily_business_id]));
   const submittedBoxes = new Map<string, number>((recordRows ?? []).map((r) => [r.daily_business_id, 0]));

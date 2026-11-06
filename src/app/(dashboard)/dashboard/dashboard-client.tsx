@@ -1021,8 +1021,14 @@ export function DashboardClient({
     if (item.changeStatus === 'cancelled') return;
     startPackedTransition(async () => {
       setOptimisticPacked({ id: item.id, packed: !item.isPacked });
-      await togglePacked(item.id, !item.isPacked);
+      const { error } = await togglePacked(item.id, !item.isPacked);
+      if (error) window.alert(error);
     });
+  };
+
+  const handleCancelItem = async (item: OrderItem) => {
+    const { error } = await cancelOrderItem(item.id);
+    if (error) window.alert(error);
   };
 
   const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; round: OrderRound }): Promise<string | null> => {
@@ -1040,10 +1046,12 @@ export function DashboardClient({
 
   const handleSaveItem = async (fields: ManualItemFields) => {
     if (editItemModal) {
-      await updateOrderItemManual(editItemModal.id, fields);
+      const { error } = await updateOrderItemManual(editItemModal.id, fields);
+      if (error) return window.alert(error);
       setEditItemModal(null);
     } else if (addItemModal) {
-      await addOrderItemManual(addItemModal.row.dailyBusinessId, fields);
+      const { error } = await addOrderItemManual(addItemModal.row.dailyBusinessId, fields);
+      if (error) return window.alert(error);
       setAddItemModal(null);
     }
   };
@@ -1160,11 +1168,13 @@ export function DashboardClient({
               : '이 상품을 주문에서 삭제하시겠습니까? 취소 상태로만 변경하려면 "×" 버튼을 이용하세요.'
           }
           onConfirm={async () => {
-            if (confirmDelete.type === 'order' && confirmDelete.dailyBusinessId) {
-              await deleteDailyBusiness(confirmDelete.dailyBusinessId);
-            } else if (confirmDelete.itemId) {
-              await deleteOrderItem(confirmDelete.itemId);
-            }
+            const result =
+              confirmDelete.type === 'order' && confirmDelete.dailyBusinessId
+                ? await deleteDailyBusiness(confirmDelete.dailyBusinessId)
+                : confirmDelete.itemId
+                  ? await deleteOrderItem(confirmDelete.itemId)
+                  : null;
+            if (result?.error) window.alert(result.error);
           }}
           onClose={() => setConfirmDelete(null)}
         />
@@ -1190,7 +1200,7 @@ export function DashboardClient({
           onEditItem={setEditItemModal}
           onAddItem={(row) => setAddItemModal({ row })}
           onUnshipped={setUnshippedModal}
-          onCancelItem={(item) => void cancelOrderItem(item.id)}
+          onCancelItem={(item) => void handleCancelItem(item)}
           onDeleteItem={(item) => setConfirmDelete({ type: 'item', itemId: item.id })}
           onDeleteOrder={(row) => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
           onReorder={handleMobileReorder}
@@ -1543,7 +1553,7 @@ export function DashboardClient({
                               )}
                               {canDelete && item.changeStatus !== 'cancelled' && (
                                 <button
-                                  onClick={async (e) => { e.stopPropagation(); await cancelOrderItem(item.id); }}
+                                  onClick={async (e) => { e.stopPropagation(); await handleCancelItem(item); }}
                                   className="w-4 h-4 rounded bg-amber-400 text-white flex items-center justify-center hover:bg-amber-500 transition-colors"
                                   title="주문 취소 (주문 자체가 없어짐)"
                                 ><X className="w-2.5 h-2.5" /></button>

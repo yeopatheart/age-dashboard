@@ -23,6 +23,11 @@ export async function fetchAll<T>(page: (from: number, to: number) => PromiseLik
   }
 }
 
+// fetchAll을 `{ data }` 모양으로 돌려준다 — 기존 `const { data } = await supabase...in(...)` 코드를 그대로 두고 1000행 잘림만 없앨 때 쓴다.
+export async function selectAll<T>(page: (from: number, to: number) => PromiseLike<PageResult<T>>, errorPrefix = ''): Promise<{ data: T[] }> {
+  return { data: await fetchAll(page, errorPrefix) };
+}
+
 // id가 수백~수천 개면 .in()에 한꺼번에 넣을 수 없다(요청 주소가 너무 길어진다). size개씩 나눠 concurrency개씩 한꺼번에 조회하고 결과를 이어 붙인다.
 export async function mapChunks<T, R>(items: T[], size: number, fn: (chunk: T[]) => Promise<R[]>, concurrency = 4): Promise<R[]> {
   const chunks: T[][] = [];

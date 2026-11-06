@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { ScanClient, type ScanCard } from './scan-client';
 import { requireMenu } from '@/lib/permissions/access';
 import { todayKST } from '@/lib/order-date';
@@ -15,14 +16,14 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
   const [, { data: dailies, error }, { data: businesses }, { data: terminals }] = await Promise.all([
     accessCheck,
     supabase.from('daily_businesses').select('id, business_id, terminal_id, business_number, round, sort_order, display_name, merge_groups').eq('order_date', orderDate).order('sort_order'),
-    supabase.from('businesses').select('id, name'),
+    fetchAll((from, to) => supabase.from('businesses').select('id, name').order('id').range(from, to), '업체 조회 실패: ').then((data) => ({ data })),
     supabase.from('terminals').select('id, name'),
   ]);
   if (error) throw new Error(`상차 현황 조회 실패: ${error.message}`);
   const dailyRows = dailies ?? [];
   const dailyIds = dailyRows.map((d) => d.id);
   const { data: labels } = dailyIds.length
-    ? await supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyIds)
+    ? await selectAll((from, to) => supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyIds).order('id').range(from, to), '라벨 조회 실패: ')
     : { data: [] };
 
   const businessName = new Map((businesses ?? []).map((b) => [b.id, b.name]));

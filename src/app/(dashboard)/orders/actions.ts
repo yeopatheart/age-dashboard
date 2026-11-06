@@ -11,11 +11,19 @@ import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedP
 import { repairFailedLine } from '@/lib/kakao-ai-repair';
 import { prepOf, type OrderRound } from '@/lib/orders';
 import { requirePermission } from '@/lib/permissions/access';
+import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
+import { isIsoDate, nonNegativeNumberError, textError } from '@/lib/validate';
 
 // parseLine이 "터미널/업체명/상품" 3분할 자체에 실패했을 때만 붙는 고정 reviewReason —
 // AI fallback은 이 줄 단위 실패 케이스만 대상으로 한다(상품 단위 사소한 오류는 그대로
 // needsReview로 사람이 확인 화면에서 고치는 기존 흐름 유지).
 const LINE_SPLIT_FAILURE_REASON = "구분자 '/'가 정확히 2개가 아니거나 빈 항목이 있음 (터미널/업체명/상품 형식과 불일치)";
+
+// Anthropic 호출은 유료다. 붙여넣는 글자 수와 AI에 맡기는 줄 수·동시 호출 수를 제한해 비용 폭주를 막는다.
+const MAX_RAW_TEXT_CHARS = 20000;
+const MAX_AI_REPAIR_LINES = 30;
+const AI_REPAIR_CONCURRENCY = 3;
+const MAX_DECISIONS = 500;
 
 // 취소 줄처럼 상품 정보가 의미 없는 제안에 쓰는 자리표시 상품.
 function blankProduct(raw: string, productName: string): ParsedProduct {
@@ -111,6 +119,7 @@ export interface SuggestedLine {
 // 신규/업데이트를 줄 단위로 제안한다. 아무것도 쓰지 않는다 — 확정은 commitOrderLines가 한다.
 export async function suggestOrderLines(rawText: string, orderDate: string, round: OrderRound): Promise<SuggestedLine[]> {
   await requirePermission('orders:edit');
+  if (rawText.length > MAX_RAW_TEXT_CHARS) throw new Error(`한 번에 붙여넣을 수 있는 글자 수(${MAX_RAW_TEXT_CHARS.toLocaleString()}자)를 넘었습니다. 나눠서 입력해주세요.`);
   const supabase = await createClient();
   const parsedLines = parseKakaoMessage(rawText);
 
@@ -120,7 +129,7 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
   if (dateError) throw new Error(dateError);
   const [{ data: allBusinesses }, { data: registeredTerminals }, { data: dailyBusinesses }] = await Promise.all([
 
-    supabase.from('businesses').select('id, name, terminal_id'),
+    fetchAll((from, to) => supabase.from('businesses').select('id, name, terminal_id').order('id').range(from, to), '업체 조회 실패: ').then((data) => ({ data })),
     supabase.from('terminals').select('id, name'),
     supabase.from('daily_businesses').select('id, business_id, terminal_id').eq('order_date', orderDate).eq('round', round),
   ]);
@@ -137,13 +146,21 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
     const terminalNames = (registeredTerminals ?? []).map((t) => t.name);
     const businessNames = businessList.map((b) => b.name);
 
-    resolvedLines = await Promise.all(
-      parsedLines.map(async (line) => {
-        if (!needsAiRepair(line)) return { line, source: 'regex' as const };
-        const repaired = await repairFailedLine(line.raw, { terminalNames, businessNames });
-        return repaired ? { line: repaired, source: 'ai' as const } : { line, source: 'regex' as const };
-      }),
-    );
+    // 상한을 넘는 줄은 AI에 맡기지 않고 정규식 결과(확인 필요)로 둔다. 동시 호출 수도 제한한다.
+    const aiTargets = parsedLines.map((line, index) => ({ line, index })).filter(({ line }) => needsAiRepair(line)).slice(0, MAX_AI_REPAIR_LINES);
+    const repairedByIndex = new Map<number, ParsedBusinessLine>();
+    for (let i = 0; i < aiTargets.length; i += AI_REPAIR_CONCURRENCY) {
+      await Promise.all(
+        aiTargets.slice(i, i + AI_REPAIR_CONCURRENCY).map(async ({ line, index }) => {
+          const repaired = await repairFailedLine(line.raw, { terminalNames, businessNames });
+          if (repaired) repairedByIndex.set(index, repaired);
+        }),
+      );
+    }
+    resolvedLines = parsedLines.map((line, index) => {
+      const repaired = repairedByIndex.get(index);
+      return repaired ? { line: repaired, source: 'ai' as const } : { line, source: 'regex' as const };
+    });
   } else {
     resolvedLines = parsedLines.map((line) => ({ line, source: 'regex' as const }));
   }
@@ -156,10 +173,10 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
   const dailyBusinessIds = dailyRows.map((d) => d.id);
   const { data: existingItems } =
     dailyBusinessIds.length > 0
-      ? await supabase
+      ? await selectAll((from, to) => supabase
           .from('order_items')
           .select('id, daily_business_id, product_name_raw, quantity, unit, secondary_weight_kg, size_request, is_mulbong, has_aerator, mulbong_box_count, has_ice_pack, from_stock, change_status')
-          .in('daily_business_id', dailyBusinessIds)
+          .in('daily_business_id', dailyBusinessIds).order('id').range(from, to), '주문 줄 조회 실패: ')
       : { data: [] };
 
   type ExistingItem = NonNullable<typeof existingItems>[number];
@@ -310,9 +327,9 @@ export interface LineDecision {
 // 상품 목록에 없는 이름은 주문입력 출처로 자동 등록하고, 기존 상품이 쓰는 색과 겹치지 않는 색을 배정한다.
 async function registerNewProducts(supabase: Awaited<ReturnType<typeof createClient>>, names: string[]) {
   if (names.length === 0) return;
-  const { data: existing } = await supabase.from('products').select('name, fill_color, border_color');
-  const known = new Set((existing ?? []).map((p) => p.name));
-  const used = new Set((existing ?? []).filter((p) => p.fill_color || p.border_color).map((p) => colorComboKey(p.fill_color, p.border_color)));
+  const existing = await fetchAll((from, to) => supabase.from('products').select('name, fill_color, border_color').order('id').range(from, to), '상품 조회 실패: ');
+  const known = new Set(existing.map((p) => p.name));
+  const used = new Set(existing.filter((p) => p.fill_color || p.border_color).map((p) => colorComboKey(p.fill_color, p.border_color)));
 
   const rows = names
     .filter((n) => !known.has(n))
@@ -321,7 +338,9 @@ async function registerNewProducts(supabase: Awaited<ReturnType<typeof createCli
       used.add(colorComboKey(color.fill_color, color.border_color));
       return { name, created_via: 'order' as const, ...color };
     });
-  if (rows.length > 0) await supabase.from('products').upsert(rows, { onConflict: 'name', ignoreDuplicates: true });
+  if (rows.length === 0) return;
+  const { error } = await supabase.from('products').upsert(rows, { onConflict: 'name', ignoreDuplicates: true });
+  if (error) throw new Error(`상품 자동 등록 실패: ${error.message}`);
 }
 
 // 사람이 확인 화면에서 확정한 대로 실제로 반영한다. 업체번호/상품순서는 여기서 처음이자
@@ -331,6 +350,19 @@ async function registerNewProducts(supabase: Awaited<ReturnType<typeof createCli
 // 터미널 → 업체 → 오늘 카드 → 상품 순으로 단계별로 모아서 한 번에 처리한다.
 export async function commitOrderLines(orderDate: string, round: OrderRound, decisions: LineDecision[], rawText?: string) {
   await requirePermission('orders:edit');
+  // 확인 화면을 거치지 않고 직접 호출해도 이상한 값이 DB에 들어가지 않도록 서버에서 한 번 더 검사한다.
+  if (!isIsoDate(orderDate)) throw new Error('날짜 형식이 올바르지 않습니다.');
+  if (decisions.length > MAX_DECISIONS) throw new Error(`한 번에 반영할 수 있는 줄 수(${MAX_DECISIONS}줄)를 넘었습니다.`);
+  if (rawText !== undefined && rawText.length > MAX_RAW_TEXT_CHARS) throw new Error('붙여넣은 글자 수가 너무 많습니다.');
+  for (const d of decisions) {
+    if (d.kind === 'no_change' || d.kind === 'cancel_line') continue;
+    const invalid =
+      textError(d.businessNameRaw, '업체명', 60) ??
+      textError(d.product.productName, '상품명', 100) ??
+      nonNegativeNumberError(d.product.quantity, '수량') ??
+      (d.terminalName ? textError(d.terminalName, '터미널', 30) : null);
+    if (invalid) throw new Error(invalid);
+  }
   const supabase = await createClient();
   const [{ data: claims }, logCount, settings] = await Promise.all([
     supabase.auth.getClaims(),
@@ -347,7 +379,8 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
   // 상품은 "추가됨"(new)으로 구분한다 — 대시보드에서 오전 최초 주문과 이후 추가분을 한눈에 가른다.
   const isFirstInputOfDay = (logCount?.count ?? 0) === 0;
   if (rawText) {
-    await supabase.from('kakao_message_log').insert({ order_date: orderDate, round, raw_text: rawText, created_by: userId });
+    const { error } = await supabase.from('kakao_message_log').insert({ order_date: orderDate, round, raw_text: rawText, created_by: userId });
+    if (error) throw new Error(`메시지 기록 저장 실패: ${error.message}`);
   }
 
   const active = decisions.filter((d) => d.kind !== 'no_change');
@@ -364,14 +397,16 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
   const terminalNames = [...new Set(lines.map((d) => d.terminalName).filter(Boolean))];
   const terminalIdByName = new Map<string, string>();
   if (terminalNames.length > 0) {
-    const { data: existing } = await supabase.from('terminals').select('id, name').in('name', terminalNames);
+    const { data: existing, error: terminalLookupError } = await supabase.from('terminals').select('id, name').in('name', terminalNames);
+    if (terminalLookupError) throw new Error(`터미널 조회 실패: ${terminalLookupError.message}`);
     for (const t of existing ?? []) terminalIdByName.set(t.name, t.id);
     const missing = terminalNames.filter((n) => !terminalIdByName.has(n));
     if (missing.length > 0) {
-      const { data: created } = await supabase
+      const { data: created, error: terminalError } = await supabase
         .from('terminals')
         .insert(missing.map((name) => ({ name, created_via: 'order' as const })))
         .select('id, name');
+      if (terminalError) throw new Error(`터미널 등록 실패: ${terminalError.message}`);
       for (const t of created ?? []) terminalIdByName.set(t.name, t.id);
     }
   }
@@ -381,11 +416,12 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
   const unmatchedNames = [...new Set(unmatched.map((d) => d.businessNameRaw))];
   const businessIdByName = new Map<string, string>();
   if (unmatchedNames.length > 0) {
-    const { data: existing } = await supabase.from('businesses').select('id, name').in('name', unmatchedNames);
+    const { data: existing, error: businessLookupError } = await supabase.from('businesses').select('id, name').in('name', unmatchedNames);
+    if (businessLookupError) throw new Error(`업체 조회 실패: ${businessLookupError.message}`);
     for (const b of existing ?? []) businessIdByName.set(b.name, b.id);
     const missing = unmatchedNames.filter((n) => !businessIdByName.has(n));
     if (missing.length > 0) {
-      const { data: created } = await supabase
+      const { data: created, error: businessError } = await supabase
         .from('businesses')
         .insert(
           missing.map((name) => ({
@@ -395,6 +431,7 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
           })),
         )
         .select('id, name');
+      if (businessError) throw new Error(`업체 등록 실패: ${businessError.message}`);
       for (const b of created ?? []) businessIdByName.set(b.name, b.id);
     }
   }
@@ -428,11 +465,13 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
     const rowsToCreate: { order_date: string; business_id: string; business_number: number; round: OrderRound; terminal_id: string | null }[] = [];
     for (const card of cardKeys) {
       if (dailyIdByKey.has(card.key)) continue;
-      const { data: businessNumber } = await supabase.rpc('assign_business_number', { p_order_date: orderDate });
-      rowsToCreate.push({ order_date: orderDate, business_id: card.businessId, business_number: businessNumber ?? 0, round, terminal_id: card.terminalId });
+      const { data: businessNumber, error: numberError } = await supabase.rpc('assign_business_number', { p_order_date: orderDate });
+      if (numberError || businessNumber === null) throw new Error(`업체 번호 발급 실패: ${numberError?.message ?? '응답 없음'}`);
+      rowsToCreate.push({ order_date: orderDate, business_id: card.businessId, business_number: businessNumber, round, terminal_id: card.terminalId });
     }
     if (rowsToCreate.length > 0) {
-      const { data: created } = await supabase.from('daily_businesses').insert(rowsToCreate).select('id, business_id, terminal_id');
+      const { data: created, error: dailyError } = await supabase.from('daily_businesses').insert(rowsToCreate).select('id, business_id, terminal_id');
+      if (dailyError) throw new Error(`주문 카드 생성 실패: ${dailyError.message}`);
       for (const d of created ?? []) dailyIdByKey.set(dailyKey(d.business_id, d.terminal_id), d.id);
     }
   }
@@ -496,10 +535,11 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
     [...newByDaily].map(async ([dailyBusinessId, products]) => {
       const rows = [];
       for (const product of products) {
-        const { data: sequence } = await supabase.rpc('assign_product_sequence', { p_daily_business_id: dailyBusinessId });
+        const { data: sequence, error: sequenceError } = await supabase.rpc('assign_product_sequence', { p_daily_business_id: dailyBusinessId });
+        if (sequenceError || sequence === null) throw new Error(`상품 순번 발급 실패: ${sequenceError?.message ?? '응답 없음'}`);
         rows.push({
           daily_business_id: dailyBusinessId,
-          product_sequence: sequence ?? 0,
+          product_sequence: sequence,
           product_name_raw: product.productName,
           quantity: product.quantity,
           unit: product.unit,
@@ -525,7 +565,11 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
     const { error } = await supabase.from('order_items').insert(newRows);
     if (error) throw new Error(`상품 저장 실패: ${error.message}`);
   }
-  await Promise.all([...updates, productRegistration]);
+  const results = await Promise.all([...updates, productRegistration]);
+  for (const result of results) {
+    const error = (result as { error?: { message: string } | null } | null | undefined)?.error;
+    if (error) throw new Error(`주문 반영 중 일부 저장 실패: ${error.message}`);
+  }
 
   revalidatePath('/dashboard');
   revalidatePath('/terminals');

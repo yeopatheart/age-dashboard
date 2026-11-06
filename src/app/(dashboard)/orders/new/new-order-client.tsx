@@ -1,6 +1,5 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Sparkles, Loader2, AlertTriangle, History, ChevronDown, ChevronUp, BookOpen, X, Pencil } from 'lucide-react';
 import { MarkdownView } from '@/components/markdown-view';
 import { roundLabel, type OrderRound } from '@/lib/orders';
@@ -48,7 +47,6 @@ export function NewOrderClient({
 }) {
   const canEdit = useCan()('orders:edit');
   const isMobile = useIsMobile(); // 휴대폰에서는 입력 가이드 버튼이 없으므로 안내 문구도 뺀다
-  const router = useRouter();
   // 설정에서 과거 날짜 편집을 켜면 입력할 날짜를 바꿀 수 있다(기본은 오늘, 미래는 항상 막는다).
   const [orderDate, setOrderDate] = useState(today);
   // 1차/2차 — 같은 고객사도 차수가 다르면 별개 카드로 들어가므로, 한 번 붙여넣은 메시지 전체가 한 차수에 속한다.
@@ -173,7 +171,6 @@ export function NewOrderClient({
       setSuggestions(null);
       setRawText('');
       await loadHistory(orderDate);
-      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : '확정에 실패했습니다.');
     } finally {

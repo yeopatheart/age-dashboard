@@ -1,3 +1,4 @@
+import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 
 // 로컬 개발 환경에 키가 없어도 앱이 죽지 않고 AI fallback만 조용히 꺼지게 한다 —

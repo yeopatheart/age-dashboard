@@ -5,15 +5,44 @@ import { createClient } from '@/lib/supabase/server';
 import { findOrCreateBusiness, findOrCreateDailyBusiness } from '@/lib/business-lookup';
 import type { ChangeStatus, OrderRound, Prep } from '@/lib/orders';
 import { requirePermission } from '@/lib/permissions/access';
+import { editableDateError, todayKST } from '@/lib/order-date';
+import { loadAppSettings } from '@/lib/settings-server';
+import { isIsoDate, nonNegativeNumberError, positiveNumberError, textError } from '@/lib/validate';
+import type { Database } from '@/lib/types/database';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
-export async function togglePacked(orderItemId: string, nextPacked: boolean) {
+type Supabase = SupabaseClient<Database>;
+
+// 화면의 readOnly(과거 날짜 + 설정 꺼짐)와 같은 규칙을 서버에서도 강제한다. 오늘이면 설정을 읽지 않는다.
+async function dateError(supabase: Supabase, orderDate: string): Promise<string | null> {
+  if (orderDate === todayKST()) return null;
+  return editableDateError(orderDate, (await loadAppSettings(supabase)).allowPastOrderEdit);
+}
+
+async function dailyDateError(supabase: Supabase, dailyBusinessId: string): Promise<string | null> {
+  const { data } = await supabase.from('daily_businesses').select('order_date').eq('id', dailyBusinessId).maybeSingle();
+  if (!data) return '주문을 찾지 못했습니다.';
+  return dateError(supabase, data.order_date);
+}
+
+async function itemDateError(supabase: Supabase, orderItemId: string): Promise<string | null> {
+  const { data } = await supabase.from('order_items').select('daily_business_id').eq('id', orderItemId).maybeSingle();
+  if (!data) return '상품을 찾지 못했습니다.';
+  return dailyDateError(supabase, data.daily_business_id);
+}
+
+export async function togglePacked(orderItemId: string, nextPacked: boolean): Promise<{ error: string | null }> {
   await requirePermission('dashboard:edit');
   const supabase = await createClient();
-  await supabase
+  const guard = await itemDateError(supabase, orderItemId);
+  if (guard) return { error: guard };
+  const { error } = await supabase
     .from('order_items')
     .update({ is_packed: nextPacked, packed_at: nextPacked ? new Date().toISOString() : null })
     .eq('id', orderItemId);
+  if (error) return { error: error.message };
   revalidatePath('/dashboard');
+  return { error: null };
 }
 
 // ── 매트릭스 대시보드의 수동 편집 액션 ──────────────────────────────────────────
@@ -25,7 +54,12 @@ export async function createManualOrder(
   terminalId: string | null,
 ): Promise<{ error: string | null }> {
   await requirePermission('dashboard:edit');
+  if (!isIsoDate(orderDate)) return { error: '날짜 형식이 올바르지 않습니다.' };
+  const nameInvalid = textError(businessName, '업체명', 60);
+  if (nameInvalid) return { error: nameInvalid };
   const supabase = await createClient();
+  const guard = await dateError(supabase, orderDate);
+  if (guard) return { error: guard };
   const businessId = await findOrCreateBusiness(supabase, businessName, terminalId);
   if (!businessId) return { error: '업체를 생성하지 못했습니다.' };
 
@@ -56,6 +90,8 @@ export async function renameDailyBusiness(dailyBusinessId: string, name: string)
   const trimmed = name.trim();
   if (trimmed.length > 60) return { error: '고객명은 60자까지 입력할 수 있습니다.' };
   const supabase = await createClient();
+  const guard = await dailyDateError(supabase, dailyBusinessId);
+  if (guard) return { error: guard };
   const { data: daily } = await supabase.from('daily_businesses').select('business_id').eq('id', dailyBusinessId).maybeSingle();
   if (!daily) return { error: '주문을 찾지 못했습니다.' };
   const { data: business } = await supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle();
@@ -70,7 +106,11 @@ export async function renameDailyBusiness(dailyBusinessId: string, name: string)
 
 export async function updateOrder(dailyBusinessId: string, businessName: string, terminalId: string | null): Promise<{ error: string | null }> {
   await requirePermission('dashboard:edit');
+  const nameInvalid = textError(businessName, '업체명', 60);
+  if (nameInvalid) return { error: nameInvalid };
   const supabase = await createClient();
+  const guard = await dailyDateError(supabase, dailyBusinessId);
+  if (guard) return { error: guard };
   const { data: daily } = await supabase
     .from('daily_businesses')
     .select('business_id')
@@ -81,18 +121,23 @@ export async function updateOrder(dailyBusinessId: string, businessName: string,
   if (terminalError) {
     return { error: terminalError.code === '23505' ? '같은 차수에 이 터미널의 같은 업체 주문이 이미 있습니다.' : terminalError.message };
   }
-  await supabase.from('businesses').update({ name: businessName }).eq('id', daily.business_id);
+  const { error: nameError } = await supabase.from('businesses').update({ name: businessName.trim() }).eq('id', daily.business_id);
+  if (nameError) return { error: nameError.code === '23505' ? '같은 이름의 업체가 이미 있습니다.' : nameError.message };
   revalidatePath('/dashboard');
   revalidatePath('/packing-log');
   return { error: null };
 }
 
 // order_items는 daily_businesses에 on delete cascade로 걸려있어(0003) 함께 삭제된다.
-export async function deleteDailyBusiness(dailyBusinessId: string) {
+export async function deleteDailyBusiness(dailyBusinessId: string): Promise<{ error: string | null }> {
   await requirePermission('dashboard:delete');
   const supabase = await createClient();
-  await supabase.from('daily_businesses').delete().eq('id', dailyBusinessId);
+  const guard = await dailyDateError(supabase, dailyBusinessId);
+  if (guard) return { error: guard };
+  const { error } = await supabase.from('daily_businesses').delete().eq('id', dailyBusinessId);
+  if (error) return { error: error.message };
   revalidatePath('/dashboard');
+  return { error: null };
 }
 
 export interface ManualItemFields {
@@ -106,17 +151,33 @@ export interface ManualItemFields {
   prep: Prep;
 }
 
-export async function addOrderItemManual(dailyBusinessId: string, fields: ManualItemFields) {
+// 수량을 비워 저장하는 "수량 미정"(수량 0, 단위 없음, isUndecidedQuantity)은 정상 입력이라 수량·단위 검사를 건너뛴다.
+function manualItemError(fields: ManualItemFields): string | null {
+  const undecided = fields.quantity === 0 && fields.unit === '';
+  return (
+    textError(fields.productName, '상품명', 100) ??
+    (undecided ? null : textError(fields.unit, '단위', 10) ?? positiveNumberError(fields.quantity, '수량')) ??
+    (fields.secondaryWeightKg === null ? null : nonNegativeNumberError(fields.secondaryWeightKg, '무게')) ??
+    (fields.sizeRequest !== null && fields.sizeRequest.length > 100 ? '사이즈 요청은 100자까지 입력할 수 있습니다.' : null)
+  );
+}
+
+export async function addOrderItemManual(dailyBusinessId: string, fields: ManualItemFields): Promise<{ error: string | null }> {
   await requirePermission('dashboard:edit');
+  const invalid = manualItemError(fields);
+  if (invalid) return { error: invalid };
   const supabase = await createClient();
+  const guard = await dailyDateError(supabase, dailyBusinessId);
+  if (guard) return { error: guard };
   const { data: claims } = await supabase.auth.getClaims();
   const userId = claims?.claims.sub ?? null;
 
-  const { data: sequence } = await supabase.rpc('assign_product_sequence', {
+  const { data: sequence, error: sequenceError } = await supabase.rpc('assign_product_sequence', {
     p_daily_business_id: dailyBusinessId,
   });
+  if (sequenceError) return { error: sequenceError.message };
 
-  await supabase.from('order_items').insert({
+  const { error } = await supabase.from('order_items').insert({
     daily_business_id: dailyBusinessId,
     product_sequence: sequence ?? 0,
     product_name_raw: fields.productName,
@@ -129,13 +190,19 @@ export async function addOrderItemManual(dailyBusinessId: string, fields: Manual
     change_status: fields.changeStatus,
     created_by: userId,
   });
+  if (error) return { error: error.message };
   revalidatePath('/dashboard');
+  return { error: null };
 }
 
-export async function updateOrderItemManual(orderItemId: string, fields: ManualItemFields) {
+export async function updateOrderItemManual(orderItemId: string, fields: ManualItemFields): Promise<{ error: string | null }> {
   await requirePermission('dashboard:edit');
+  const invalid = manualItemError(fields);
+  if (invalid) return { error: invalid };
   const supabase = await createClient();
-  await supabase
+  const guard = await itemDateError(supabase, orderItemId);
+  if (guard) return { error: guard };
+  const { error } = await supabase
     .from('order_items')
     .update({
       product_name_raw: fields.productName,
@@ -148,9 +215,12 @@ export async function updateOrderItemManual(orderItemId: string, fields: ManualI
       change_status: fields.changeStatus,
     })
     .eq('id', orderItemId);
+  if (error) return { error: error.message };
   // 주문 수량을 미출고 수량보다 줄이면 미출고 수량도 주문 수량에 맞춘다.
-  await supabase.from('order_items').update({ unshipped_quantity: fields.quantity }).eq('id', orderItemId).gt('unshipped_quantity', fields.quantity);
+  const { error: unshippedError } = await supabase.from('order_items').update({ unshipped_quantity: fields.quantity }).eq('id', orderItemId).gt('unshipped_quantity', fields.quantity);
+  if (unshippedError) return { error: unshippedError.message };
   revalidatePath('/dashboard');
+  return { error: null };
 }
 
 // 미출고: 주문은 유효하지만 현장에서 출고하지 못한 수량과 사유를 기록한다(취소와 별개). 0이면 해제.
@@ -171,18 +241,26 @@ export async function setItemUnshipped(orderItemId: string, quantity: number, re
   return { error: null };
 }
 
-export async function cancelOrderItem(orderItemId: string) {
+export async function cancelOrderItem(orderItemId: string): Promise<{ error: string | null }> {
   await requirePermission('dashboard:delete');
   const supabase = await createClient();
-  await supabase.from('order_items').update({ change_status: 'cancelled' }).eq('id', orderItemId);
+  const guard = await itemDateError(supabase, orderItemId);
+  if (guard) return { error: guard };
+  const { error } = await supabase.from('order_items').update({ change_status: 'cancelled' }).eq('id', orderItemId);
+  if (error) return { error: error.message };
   revalidatePath('/dashboard');
+  return { error: null };
 }
 
-export async function deleteOrderItem(orderItemId: string) {
+export async function deleteOrderItem(orderItemId: string): Promise<{ error: string | null }> {
   await requirePermission('dashboard:delete');
   const supabase = await createClient();
-  await supabase.from('order_items').delete().eq('id', orderItemId);
+  const guard = await itemDateError(supabase, orderItemId);
+  if (guard) return { error: guard };
+  const { error } = await supabase.from('order_items').delete().eq('id', orderItemId);
+  if (error) return { error: error.message };
   revalidatePath('/dashboard');
+  return { error: null };
 }
 
 // 대시보드 주문표에서 상품명을 강조할 상품을 날짜별로 켜고 끈다. 보기 설정이라 과거 날짜 편집 설정과 무관하게 항상 쓸 수 있다.
