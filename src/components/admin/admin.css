@@ -109,3 +109,16 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-section-sales { order: 1; }
   .ak-section-purchases { order: 2; }
 }
+
+/* 정산 기간 바: [일 주 월] 묶음과 [‹ 날짜 › 오늘] 묶음. 휴대폰에서는 묶음마다 한 줄로 두어 이전·다음이 날짜 양옆에 붙게 한다. */
+.ak-period-seg { display: inline-flex; gap: 4px; }
+.ak-period-nav { display: inline-flex; align-items: center; gap: 0.6rem; }
+.ak-period-label { min-width: 9rem; text-align: center; white-space: nowrap; }
+@media (max-width: 768px) {
+  .ak-period-seg { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ak-period-seg .ak-btn { justify-content: center; height: var(--chip-h); }
+  .ak-period-nav { flex: 1 1 100%; gap: 0.4rem; }
+  .ak-period-nav .ak-btn { height: var(--chip-h); padding: 0 0.75rem; }
+  .ak-period-nav .ak-period-icon { padding: 0; width: var(--chip-h); justify-content: center; }
+  .ak-period-label { flex: 1; min-width: 0; font-size: 0.875rem; }
+}
