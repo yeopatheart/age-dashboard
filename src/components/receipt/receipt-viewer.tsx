@@ -10,6 +10,13 @@ import { canCopyImage, canShareImage, copyImage, downloadBlob, receiptToPng, sha
 // 이 브라우저가 이미지 복사를 지원하는지. 서버 렌더에서는 항상 false라 화면이 어긋나지 않는다(하이드레이션 경고 방지).
 const subscribeNothing = () => () => {};
 
+// 브라우저가 던지는 영문 오류 문구 대신 사용자가 할 수 있는 조치를 알려 준다. 한글 문구는 그대로 쓴다.
+function friendlyError(e: unknown, fallback: string): string {
+  if (e instanceof DOMException && e.name === 'NotAllowedError') return '브라우저가 이 동작을 허용하지 않았습니다. 주소창의 사이트 권한(클립보드·공유)을 확인해 주세요.';
+  if (e instanceof Error && /[가-힣]/.test(e.message)) return e.message;
+  return fallback;
+}
+
 type PageImage = { state: 'pending' } | { state: 'ready'; blob: Blob } | { state: 'error'; message: string };
 
 export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: ReceiptSnapshot; receiptNo: number; sealImage: string | null }) {
@@ -19,6 +26,7 @@ export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: Re
   const [scale, setScale] = useState(1);
   const [heights, setHeights] = useState<number[]>([]);
   const [images, setImages] = useState<PageImage[]>(() => pages.map(() => ({ state: 'pending' })));
+  const [attempt, setAttempt] = useState(0); // 이미지 만들기에 실패했을 때 "다시 만들기"로 올린다
   const [message, setMessage] = useState<string | null>(null);
   const copySupported = useSyncExternalStore(subscribeNothing, canCopyImage, () => false);
 
@@ -50,7 +58,7 @@ export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: Re
           setImages((prev) => prev.map((img, j) => (j === i ? { state: 'ready', blob } : img)));
         } catch (e) {
           if (cancelled) return;
-          const messageText = e instanceof Error ? e.message : '이미지를 만들지 못했습니다.';
+          const messageText = friendlyError(e, '이미지를 만들지 못했습니다. 다시 만들어 주세요.');
           setImages((prev) => prev.map((img, j) => (j === i ? { state: 'error', message: messageText } : img)));
         }
       }
@@ -58,7 +66,7 @@ export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: Re
     return () => {
       cancelled = true;
     };
-  }, [pages, sealImage]);
+  }, [pages, sealImage, attempt]);
 
   const fileName = (i: number) => receiptFileName(snapshot.orderDate, snapshot.customerName, i, pages.length);
   const run = async (fn: () => Promise<string | void>) => {
@@ -67,7 +75,7 @@ export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: Re
       const done = await fn();
       if (done) setMessage(done);
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : '실패했습니다. 다시 시도해주세요.');
+      setMessage(friendlyError(e, '실패했습니다. 다시 시도해주세요.'));
     }
   };
 
@@ -75,6 +83,7 @@ export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: Re
 
   return (
     <div ref={frameRef} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <p className="ak-meta">카카오톡으로 보내기 — 휴대폰: “카톡·공유”를 누르고 카카오톡을 고르세요. PC: “이미지 복사” 후 카카오톡 대화창에서 붙여넣기(Ctrl+V, Mac은 ⌘+V)하세요.</p>
       {pages.length > 1 && (
         <button
           type="button"
@@ -125,7 +134,21 @@ export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: Re
                 </button>
               )}
               {image?.state === 'pending' && <span className="ak-meta">이미지 준비 중…</span>}
-              {image?.state === 'error' && <span className="ak-error">{image.message}</span>}
+              {image?.state === 'error' && (
+                <>
+                  <span className="ak-error">{image.message}</span>
+                  <button
+                    type="button"
+                    className="ak-btn"
+                    onClick={() => {
+                      setImages((prev) => prev.map((img, j) => (j === i ? { state: 'pending' } : img)));
+                      setAttempt((n) => n + 1);
+                    }}
+                  >
+                    다시 만들기
+                  </button>
+                </>
+              )}
             </div>
           </div>
         );

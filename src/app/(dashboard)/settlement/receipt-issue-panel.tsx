@@ -129,10 +129,11 @@ export function ReceiptIssuePanel({
               {(['no-seller', 'no-price'] as const).map((reason) => {
                 const list = preview.skipped.filter((s) => s.reason === reason);
                 if (list.length === 0) return null;
-                const names = [...new Set(list.map((s) => s.row.customer))];
+                // 어느 고객의 어느 품목인지까지 보여 준다(고객 이름만으로는 표에서 그 줄을 찾기 어렵다).
+                const items = list.map((s) => `${s.row.customer} ${s.row.product}`);
                 return (
                   <span key={reason}>
-                    {SKIP_LABEL[reason]} {list.length}줄 — {names.slice(0, 4).join(', ')}{names.length > 4 ? ` 외 ${names.length - 4}곳` : ''}
+                    {SKIP_LABEL[reason]} {list.length}줄 — {items.slice(0, 3).join(', ')}{items.length > 3 ? ` 외 ${items.length - 3}줄` : ''}
                   </span>
                 );
               })}

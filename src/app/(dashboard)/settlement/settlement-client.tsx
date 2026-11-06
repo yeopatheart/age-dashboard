@@ -1,8 +1,9 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { saveSales, type SalesPatch } from './actions';
 import { useCan } from '@/components/permissions-context';
-import { DataTable, type Column } from '@/components/admin/admin-kit';
+import { DataTable, SearchInput, type Column } from '@/components/admin/admin-kit';
+import { useIsMobile } from '@/lib/use-is-mobile';
 import { formatWon, formatWonInput, parseWon } from '@/lib/money';
 import { amountFromUnitPrice, canAutoFillPrice, type IssuedReceiptKey } from '@/lib/settlement/receipt';
 import type { SalesRow } from '@/lib/settlement/sales';
@@ -31,6 +32,7 @@ export function SettlementClient({
   issued: IssuedReceiptKey[]; // 이 기간에 이미 발행한 영수증(중복 발행 경고에 쓴다)
 }) {
   const canEdit = useCan()('settlement:edit');
+  const isMobile = useIsMobile();
   // 저장 결과를 기다리지 않고 화면에 바로 보이는 값(실패하면 되돌린다). 기간을 옮기면 화면 상태가 새로 시작된다.
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [drafts, setDrafts] = useState<Drafts>({}); // 입력 중인 판매가·메모(칸을 벗어날 때 저장한다)
@@ -39,15 +41,25 @@ export function SettlementClient({
   const [bulkSeller, setBulkSeller] = useState('');
   const [bulkPaid, setBulkPaid] = useState('');
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [bulkOpen, setBulkOpen] = useState(false); // 휴대폰에서 일괄 변경(사업자·입금) 영역을 펼쳤는지
+  const [justSaved, setJustSaved] = useState(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [saving, setSaving] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const view = (r: SalesRow): SalesRow => ({ ...r, ...edits[r.itemId] });
   const numbered = useMemo(() => rows.map((r, i) => ({ ...r, no: i + 1 })), [rows]);
-  const pageCount = Math.max(1, Math.ceil(numbered.length / PAGE_SIZE));
+  // 고객명·품목 검색(100줄 안에서 고객을 찾는 데 쓴다). 합계·건수 요약은 검색과 무관하게 조회된 전체 기준이다.
+  const filteredRows = useMemo(() => {
+    const k = search.trim().toLowerCase();
+    return k ? numbered.filter((r) => r.customer.toLowerCase().includes(k) || r.product.toLowerCase().includes(k)) : numbered;
+  }, [numbered, search]);
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
-  const pageRows = numbered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const pageRows = filteredRows.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const sellerName = new Map(sellers.map((s) => [s.id, s.name]));
 
   const viewed = numbered.map(view);
@@ -72,6 +84,12 @@ export function SettlementClient({
     // 권한이 없거나 연결이 끊기면 서버 액션이 오류를 던진다. 그때도 저장 중 표시와 화면 값을 되돌린다.
     const result = await saveSales({ itemIds: ids, ...patch }).catch(() => ({ error: '저장하지 못했습니다. 권한이나 연결을 확인한 뒤 다시 시도해주세요.' }));
     setSaving((n) => n - 1);
+    if (!result.error) {
+      // 저장이 끝났음을 잠깐 보여 준다(자동 저장이라 버튼이 없어서 저장됐는지 알 수 없다).
+      setJustSaved(true);
+      clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setJustSaved(false), 1800);
+    }
     if (result.error) {
       setEdits((prev) => {
         const next = { ...prev };
@@ -114,20 +132,39 @@ export function SettlementClient({
     });
   };
 
+  // 안내 문구는 몇 초 뒤 저절로 사라진다(오류는 다음 동작 때까지 남긴다).
+  const flash = (message: string) => {
+    setNotice(message);
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 5000);
+  };
+  // 고객 이름을 누르면 그 고객의 같은 출고일 줄을 전체 선택·해제한다(영수증은 고객 × 사업자 × 출고일 단위로 만들어진다).
+  const toggleCustomer = (row: SalesRow) => {
+    const ids = numbered.filter((r) => r.customer === row.customer && r.orderDate === row.orderDate).map((r) => r.itemId);
+    const all = ids.every((id) => selected.has(id));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (all) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  };
+
   const applySeller = async () => {
     if (bulkSeller === '') return;
     const ids = [...selected];
     if (await commit(ids, { sellerId: bulkSeller === NO_SELLER ? null : bulkSeller })) {
-      setNotice(`${ids.length}건의 사업자 구분을 ${bulkSeller === NO_SELLER ? '미지정으로' : `'${sellerName.get(bulkSeller)}'(으)로`} 바꿨습니다.`);
-      setSelected(new Set());
+      // 바꾼 뒤에도 선택을 유지한다 — 이어서 같은 줄로 영수증을 만들 수 있다.
+      flash(`${ids.length}건의 사업자 구분을 ${bulkSeller === NO_SELLER ? '미지정으로' : `'${sellerName.get(bulkSeller)}'(으)로`} 바꿨습니다.`);
     }
   };
   const applyPaid = async () => {
     if (bulkPaid === '') return;
     const ids = [...selected];
     if (await commit(ids, { paid: bulkPaid === 'Y' })) {
-      setNotice(`${ids.length}건의 입금 여부를 ${bulkPaid}로 바꿨습니다.`);
-      setSelected(new Set());
+      flash(`${ids.length}건의 입금 여부를 ${bulkPaid}로 바꿨습니다.`);
     }
   };
 
@@ -155,7 +192,20 @@ export function SettlementClient({
         );
       },
     },
-    { key: 'customer', label: '고객명', hideable: false, render: (r) => <strong>{r.customer}</strong> },
+    {
+      key: 'customer',
+      label: '고객명',
+      hideable: false,
+      className: 'ak-sticky-col', // 휴대폰에서 옆으로 밀어도 고객명이 왼쪽에 붙어 있다
+      render: (r) =>
+        canEdit ? (
+          <button type="button" className="ak-link-btn" onClick={() => toggleCustomer(r)} title="이 고객의 이 출고일 줄을 모두 선택·해제">
+            <strong>{r.customer}</strong>
+          </button>
+        ) : (
+          <strong>{r.customer}</strong>
+        ),
+    },
     { key: 'product', label: '품목', hideable: false, render: (r) => r.product },
     { key: 'qty', label: '수량', hideable: false, className: 'ak-fit', render: (r) => `${formatWon(r.quantity)}${r.unit}` },
     {
@@ -167,8 +217,9 @@ export function SettlementClient({
         return (
           <input
             className="ak-input"
-            style={{ width: '7.5rem', height: '2.1rem', textAlign: 'right' }}
+            style={{ width: '7.5rem', height: 'var(--ctl-h)', textAlign: 'right' }}
             inputMode="numeric"
+            enterKeyHint="next"
             placeholder="단가→판매가 자동"
             disabled={!canEdit}
             aria-label={`${r.customer} ${r.product} 단가`}
@@ -187,7 +238,7 @@ export function SettlementClient({
               } else if (canAutoFillPrice(r.price, r.unitPrice, r.quantity)) {
                 void commit([r.itemId], { unitPrice: next, price: amountFromUnitPrice(next, r.quantity) });
               } else {
-                void commit([r.itemId], { unitPrice: next }).then((ok) => ok && setNotice('이미 입력한 판매가는 그대로 두었습니다. 금액을 바꾸려면 판매가를 직접 고쳐주세요.'));
+                void commit([r.itemId], { unitPrice: next }).then((ok) => ok && flash('이미 입력한 판매가는 그대로 두었습니다. 금액을 바꾸려면 판매가를 직접 고쳐주세요.'));
               }
             }}
             onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && e.currentTarget.blur()}
@@ -204,8 +255,9 @@ export function SettlementClient({
         return (
           <input
             className="ak-input"
-            style={{ width: '9.5rem', height: '2.1rem', textAlign: 'right' }}
+            style={{ width: '9.5rem', height: 'var(--ctl-h)', textAlign: 'right' }}
             inputMode="numeric"
+            enterKeyHint="next"
             placeholder="0"
             disabled={!canEdit}
             aria-label={`${r.customer} ${r.product} 판매가`}
@@ -254,7 +306,8 @@ export function SettlementClient({
         return (
           <input
             className="ak-input"
-            style={{ width: '14rem', height: '2.1rem' }}
+            style={{ width: '14rem', height: 'var(--ctl-h)' }}
+            enterKeyHint="done"
             maxLength={500}
             disabled={!canEdit}
             aria-label={`${r.customer} ${r.product} 메모`}
@@ -272,25 +325,34 @@ export function SettlementClient({
       },
     },
   ];
+  // 휴대폰에서는 고객명을 맨 앞(왼쪽 고정)에 두고, 번호 열은 뺀다. 사업자 구분은 일괄 지정을 주로 쓰므로 뒤로 보낸다.
+  const MOBILE_ORDER = ['customer', 'date', 'product', 'qty', 'unitPrice', 'price', 'seller', 'paid', 'memo'];
+  const shownColumns = isMobile
+    ? MOBILE_ORDER.flatMap((key) => columns.filter((c) => c.key === key))
+    : columns;
 
   return (
     <>
       <div className="ak-toolbar">
-        <span className="ak-count">{rows.length}건</span>
+        <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(0); }} placeholder="고객명·품목 검색" />
+        <span className="ak-count">{filteredRows.length}건{filteredRows.length !== rows.length ? ` / 전체 ${rows.length}건` : ''}</span>
         <span>판매가 합계 <strong>{formatWon(totalPrice)}원</strong></span>
         <span className="ak-sub">입금 Y {paidCount}건 · 판매가 미입력 {rows.length - priced.length}건</span>
         <span className="ak-spacer" />
-        {saving > 0 && <span className="ak-sub">저장 중…</span>}
-        {canEdit && rows.length > pageRows.length && (
-          <button className="ak-btn" onClick={() => setSelected(new Set(rows.map((r) => r.itemId)))}>조회된 전체 {rows.length}건 선택</button>
+        <span className="ak-sub" role="status" aria-live="polite">{saving > 0 ? '저장 중…' : justSaved ? '저장됨 ✓' : canEdit ? '자동 저장' : ''}</span>
+        {canEdit && filteredRows.length > pageRows.length && (
+          <button className="ak-btn" onClick={() => setSelected(new Set(filteredRows.map((r) => r.itemId)))}>조회된 전체 {filteredRows.length}건 선택</button>
         )}
       </div>
 
       {canEdit && selected.size > 0 && (
-        <div className="ak-bulk">
+        <div className="ak-bulk ak-bulk-fixed">
           <div className="ak-bulk-head">
             <strong>{selected.size}건 선택됨</strong>
             <button className="ak-btn" onClick={() => setSelected(new Set())}>선택 해제</button>
+            <button className="ak-btn ak-btn-primary" onClick={() => setReceiptOpen(true)} title="선택한 줄을 고객사 × 사업자 × 출고일로 묶어 영수증 이미지를 만듭니다">영수증 만들기</button>
+            <button type="button" className="ak-btn ak-bulk-toggle" aria-expanded={bulkOpen} onClick={() => setBulkOpen((v) => !v)}>일괄 변경 {bulkOpen ? '▴' : '▾'}</button>
+            <div className={`ak-bulk-extra ${bulkOpen ? 'is-open' : ''}`}>
             <select className="ak-select" value={bulkSeller} onChange={(e) => setBulkSeller(e.target.value)} title="선택한 줄에 한꺼번에 적용할 사업자 구분">
               <option value="">사업자 구분 선택</option>
               <option value={NO_SELLER}>미지정으로 되돌리기</option>
@@ -303,18 +365,19 @@ export function SettlementClient({
               <option value="N">N (미입금)</option>
             </select>
             <button className="ak-btn ak-btn-primary" onClick={applyPaid} disabled={saving > 0 || bulkPaid === ''}>입금 여부 적용</button>
-            <button className="ak-btn ak-btn-primary" onClick={() => setReceiptOpen(true)} title="선택한 줄을 고객사 × 사업자 × 출고일로 묶어 영수증 이미지를 만듭니다">영수증 만들기</button>
+            </div>
           </div>
         </div>
       )}
 
       {canEdit && rows.length > 0 && <p className="ak-meta">단가를 입력하면 판매가가 비어 있을 때 단가 × 수량으로 자동 입력됩니다. 이미 입력한 판매가는 바꾸지 않습니다.</p>}
-      {error && <p className="ak-error">{error}</p>}
-      {notice && <p className="ak-notice">{notice}</p>}
+      {/* 휴대폰에서는 화면 위쪽에 고정해 표 아래쪽 줄을 입력하다가도 저장 실패·결과 안내가 보이게 한다 */}
+      {error && <p className="ak-error ak-flash" role="alert">{error}</p>}
+      {notice && <p className="ak-notice ak-flash" role="status">{notice}</p>}
       {sellers.length === 0 && rows.length > 0 && <p className="ak-muted">등록된 사업자가 없습니다. “사업자 관리”에서 먼저 등록하면 사업자 구분을 고를 수 있습니다.</p>}
 
       <DataTable
-        columns={columns}
+        columns={shownColumns}
         hidden={EMPTY_HIDDEN}
         rows={pageRows}
         rowKey={(r) => r.itemId}
@@ -323,6 +386,9 @@ export function SettlementClient({
         onToggleAll={canEdit ? toggleAllOnPage : undefined}
         emptyText="이 기간에 출고가 끝난 주문이 없습니다."
       />
+
+      {/* 휴대폰에서 하단에 고정된 일괄 바가 표 마지막 줄을 가리지 않게 하는 여백 */}
+      {canEdit && selected.size > 0 && <div className="ak-bulk-spacer" aria-hidden />}
 
       {receiptOpen && (
         <ReceiptIssuePanel
