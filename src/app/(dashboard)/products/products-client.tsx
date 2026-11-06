@@ -56,6 +56,7 @@ export function ProductsClient({
   const [suppliersOpen, setSuppliersOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulk, setBulk] = useState<{ fill: string | null; border: string | null }>({ fill: null, border: null });
   const [openId, setOpenId] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
@@ -153,12 +154,15 @@ export function ProductsClient({
       else next.add(id);
       return next;
     });
+  // 일괄 작업은 지금 화면에 보이는 선택만 대상으로 한다(검색·필터를 바꿔 안 보이게 된 선택이 몰래 삭제·변경되지 않게).
+  const selectedIds = useMemo(() => filtered.filter((p) => selected.has(p.id)).map((p) => p.id), [filtered, selected]);
+  const hiddenSelected = selected.size - selectedIds.length;
   const toggleAll = () => {
     const all = filtered.length > 0 && filtered.every((p) => selected.has(p.id));
     setSelected(all ? new Set() : new Set(filtered.map((p) => p.id)));
   };
   const applyBulk = async () => {
-    const ids = [...selected];
+    const ids = selectedIds;
     const ok = await run(() => setProductColors(ids, bulk.fill, bulk.border), `${ids.length}개 상품에 색을 적용했습니다.`);
     if (ok) {
       setLocal((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, { fill: bulk.fill, border: bulk.border }])) }));
@@ -279,36 +283,49 @@ export function ProductsClient({
         <ColumnMenu columns={columns} hidden={hidden} onChange={setHidden} />
       </div>
 
-      {canEdit && selected.size > 0 && (
+      {canEdit && selectedIds.length > 0 && (
         <div className="ak-bulk">
           <div className="ak-bulk-head">
-            <strong>{selected.size}개 선택됨</strong>
-            <button className="ak-btn" onClick={() => setSelected(new Set())}>선택 해제</button>
+            <strong>{selectedIds.length}개 선택됨</strong>
+            {hiddenSelected > 0 && <span className="ak-meta">(화면에 안 보이는 선택 {hiddenSelected}개는 제외됩니다)</span>}
+            <button className="ak-btn" onClick={() => { setSelected(new Set()); setConfirmBulkDelete(false); }}>선택 해제</button>
             <button className="ak-btn ak-btn-primary" onClick={applyBulk} disabled={busy}>선택한 상품에 색 적용</button>
-            <button className="ak-btn" onClick={() => handleMulbong([...selected], true)} disabled={busy}>물봉 포장 지정</button>
-            <button className="ak-btn" onClick={() => handleMulbong([...selected], false)} disabled={busy}>물봉 해제</button>
+            <button className="ak-btn" onClick={() => handleMulbong(selectedIds, true)} disabled={busy}>물봉 포장 지정</button>
+            <button className="ak-btn" onClick={() => handleMulbong(selectedIds, false)} disabled={busy}>물봉 해제</button>
             {suppliersReady && (
               <>
               <select className="ak-select" value={bulkSupplierId} onChange={(e) => setBulkSupplierId(e.target.value)} title="선택한 상품에 추가·제거할 매입처">
                 <option value="">매입처 선택</option>
                 {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
-              <button className="ak-btn" onClick={() => handleSupplier([...selected], bulkSupplierId, 'add')} disabled={busy || !bulkSupplierId}>매입처 추가</button>
-              <button className="ak-btn" onClick={() => handleSupplier([...selected], bulkSupplierId, 'remove')} disabled={busy || !bulkSupplierId}>매입처 제거</button>
+              <button className="ak-btn" onClick={() => handleSupplier(selectedIds, bulkSupplierId, 'add')} disabled={busy || !bulkSupplierId}>매입처 추가</button>
+              <button className="ak-btn" onClick={() => handleSupplier(selectedIds, bulkSupplierId, 'remove')} disabled={busy || !bulkSupplierId}>매입처 제거</button>
               </>
             )}
             <span className="ak-spacer" />
-            {canDelete && <button
-              className="ak-btn ak-btn-danger"
-              disabled={busy}
-              onClick={() => run(async () => {
-                const r = await deleteProducts([...selected]);
-                setSelected(new Set());
-                return r;
-              })}
-            >
-              <Trash2 size={14} /> 삭제
-            </button>}
+            {canDelete && (confirmBulkDelete ? (
+              <>
+                <span className="ak-error">선택한 {selectedIds.length}개를 삭제할까요? 이미 들어온 주문은 그대로 남습니다.</span>
+                <button className="ak-btn" onClick={() => setConfirmBulkDelete(false)} disabled={busy}>취소</button>
+                <button
+                  className="ak-btn ak-btn-primary"
+                  style={{ background: 'var(--danger)', borderColor: 'var(--danger)' }}
+                  disabled={busy}
+                  onClick={() => run(async () => {
+                    const r = await deleteProducts(selectedIds);
+                    setSelected(new Set());
+                    setConfirmBulkDelete(false);
+                    return r;
+                  })}
+                >
+                  {selectedIds.length}개 삭제
+                </button>
+              </>
+            ) : (
+              <button className="ak-btn ak-btn-danger" disabled={busy} onClick={() => setConfirmBulkDelete(true)}>
+                <Trash2 size={14} /> 삭제
+              </button>
+            ))}
           </div>
           <ColorPicker fill={bulk.fill} border={bulk.border} onChange={(f, b) => setBulk({ fill: f, border: b })} sample="일괄 적용 미리보기" />
         </div>

@@ -4,7 +4,7 @@ import { saveSales, type SalesPatch } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { DataTable, type Column } from '@/components/admin/admin-kit';
 import { formatWon, formatWonInput, parseWon } from '@/lib/money';
-import { amountFromUnitPrice } from '@/lib/settlement/receipt';
+import { amountFromUnitPrice, canAutoFillPrice, type IssuedReceiptKey } from '@/lib/settlement/receipt';
 import type { SalesRow } from '@/lib/settlement/sales';
 import { ReceiptIssuePanel } from './receipt-issue-panel';
 
@@ -21,12 +21,14 @@ export function SettlementClient({
   multiDay,
   from,
   to,
+  issued,
 }: {
   rows: SalesRow[];
   sellers: { id: string; name: string }[];
   multiDay: boolean;
   from: string; // 조회 기간(영수증 발행 때 서버가 같은 기간의 판매내역을 다시 읽는다)
   to: string;
+  issued: IssuedReceiptKey[]; // 이 기간에 이미 발행한 영수증(중복 발행 경고에 쓴다)
 }) {
   const canEdit = useCan()('settlement:edit');
   // 저장 결과를 기다리지 않고 화면에 바로 보이는 값(실패하면 되돌린다). 기간을 옮기면 화면 상태가 새로 시작된다.
@@ -167,7 +169,7 @@ export function SettlementClient({
             className="ak-input"
             style={{ width: '7.5rem', height: '2.1rem', textAlign: 'right' }}
             inputMode="numeric"
-            placeholder="영수증 단가"
+            placeholder="단가→판매가 자동"
             disabled={!canEdit}
             aria-label={`${r.customer} ${r.product} 단가`}
             value={drafts[r.itemId]?.unitPrice ?? formatWon(r.unitPrice)}
@@ -178,8 +180,15 @@ export function SettlementClient({
               clearDraft(r.itemId, 'unitPrice');
               const next = parseWon(draft);
               if (next === r.unitPrice) return;
-              // 단가를 입력하면 판매가를 단가 × 수량(원 단위 반올림)으로 채운다. 판매가는 그 뒤에도 직접 고칠 수 있다. 단가를 지우면 판매가는 그대로 둔다.
-              void commit([r.itemId], next === null ? { unitPrice: null } : { unitPrice: next, price: amountFromUnitPrice(next, r.quantity) });
+              // 단가를 입력하면 판매가를 단가 × 수량(원 단위 반올림)으로 채운다. 단, 판매가가 비어 있거나 이전 단가로 자동 계산된 값일 때만이다 —
+              // 사용자가 따로 적은 판매가(할인가 등)는 덮어쓰지 않는다. 단가를 지우면 판매가는 그대로 둔다.
+              if (next === null) {
+                void commit([r.itemId], { unitPrice: null });
+              } else if (canAutoFillPrice(r.price, r.unitPrice, r.quantity)) {
+                void commit([r.itemId], { unitPrice: next, price: amountFromUnitPrice(next, r.quantity) });
+              } else {
+                void commit([r.itemId], { unitPrice: next }).then((ok) => ok && setNotice('이미 입력한 판매가는 그대로 두었습니다. 금액을 바꾸려면 판매가를 직접 고쳐주세요.'));
+              }
             }}
             onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && e.currentTarget.blur()}
           />
@@ -299,6 +308,7 @@ export function SettlementClient({
         </div>
       )}
 
+      {canEdit && rows.length > 0 && <p className="ak-meta">단가를 입력하면 판매가가 비어 있을 때 단가 × 수량으로 자동 입력됩니다. 이미 입력한 판매가는 바꾸지 않습니다.</p>}
       {error && <p className="ak-error">{error}</p>}
       {notice && <p className="ak-notice">{notice}</p>}
       {sellers.length === 0 && rows.length > 0 && <p className="ak-muted">등록된 사업자가 없습니다. “사업자 관리”에서 먼저 등록하면 사업자 구분을 고를 수 있습니다.</p>}
@@ -320,6 +330,7 @@ export function SettlementClient({
           sellers={sellers}
           from={from}
           to={to}
+          issued={issued}
           saving={saving > 0}
           onClose={() => setReceiptOpen(false)}
         />

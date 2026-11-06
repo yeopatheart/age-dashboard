@@ -53,6 +53,14 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
     void playTone(tone === 'ok' ? 'scan-ok' : 'scan-fail');
   }, []);
 
+  const reportFailure = useCallback(() => {
+    const time = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const next: Banner = { tone: 'bad', title: '전송 실패 — 처리되지 않았습니다', detail: '신호를 확인하고 같은 라벨을 다시 비춰 주세요' };
+    setBanner(next);
+    setRecent((prev) => [{ time, text: next.title, tone: next.tone }, ...prev].slice(0, 8));
+    beep(next.tone);
+  }, [beep]);
+
   const handleResult = useCallback(
     (result: ScanResult) => {
       const time = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
@@ -79,16 +87,27 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       const code = raw.replace(/\s+/g, '');
       if (!code || busy.current) return;
       const now = Date.now();
-      if (last.current && last.current.code === code && now - last.current.at < DUPLICATE_IGNORE_MS) return;
-      last.current = { code, at: now };
+      if (last.current && last.current.code === code) {
+        const stillInView = now - last.current.at < DUPLICATE_IGNORE_MS;
+        // 무시하는 동안에도 시각을 갱신한다 — 같은 박스를 계속 비추고 있어도 2.5초 뒤 서버로 다시 가서 초록 "상차됨" 배너가
+        // 노란 "이미 상차된 박스"로 바뀌는 일이 없고, 바코드가 시야에서 사라진 뒤에만 다시 읽는다.
+        last.current.at = now;
+        if (stillInView) return;
+      } else {
+        last.current = { code, at: now };
+      }
       busy.current = true;
       try {
         handleResult(await scanBarcode(code));
+      } catch {
+        // 신호가 약한 적재칸 등에서 전송이 실패한 경우. 처리되지 않았다는 것을 분명히 알리고, 같은 박스를 바로 다시 스캔할 수 있게 한다.
+        last.current = null;
+        reportFailure();
       } finally {
         busy.current = false;
       }
     },
-    [handleResult],
+    [handleResult, reportFailure],
   );
 
   const stopCamera = useCallback(() => {

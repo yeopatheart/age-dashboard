@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   amountFromUnitPrice,
   buildSnapshot,
+  canAutoFillPrice,
+  findDuplicateReceipts,
   formatQuantity,
   groupForReceipts,
   pageNumberLabel,
@@ -124,4 +126,29 @@ test('parseSnapshot rejects malformed values instead of throwing', () => {
   assert.equal(parseSnapshot({ ...good, seller: { ...good.seller, name: 5 } }), null);
   assert.equal(parseSnapshot({ ...good, lines: [{ product: '광어' }] }), null);
   assert.equal(parseSnapshot({ ...good, lines: 'x' }), null);
+});
+
+test('canAutoFillPrice only fills an empty or auto-computed sale price', () => {
+  assert.equal(canAutoFillPrice(null, null, 5), true); // 판매가 비어 있음
+  assert.equal(canAutoFillPrice(25000, 5000, 5), true); // 이전 단가 × 수량으로 자동 계산된 값
+  assert.equal(canAutoFillPrice(20000, 5000, 5), false); // 사용자가 따로 적은 할인가
+  assert.equal(canAutoFillPrice(25000, null, 5), false); // 단가 없이 직접 적은 판매가
+  assert.equal(canAutoFillPrice(0, null, 5), false); // 0원도 직접 적은 값이다
+});
+
+test('findDuplicateReceipts matches by date, customer and seller', () => {
+  const { groups } = groupForReceipts([
+    row({ itemId: '1' }),
+    row({ itemId: '2', customer: '신라호텔' }),
+    row({ itemId: '3', sellerId: 'seller-b' }),
+  ]);
+  const issued = [
+    { orderDate: '2026-11-14', customerName: '엔야', sellerId: 'seller-a', receiptNo: 3 },
+    { orderDate: '2026-11-14', customerName: '엔야', sellerId: 'seller-a', receiptNo: 1 },
+    { orderDate: '2026-11-13', customerName: '신라호텔', sellerId: 'seller-a', receiptNo: 9 }, // 다른 날짜
+  ];
+  const found = findDuplicateReceipts(groups, issued);
+  const enya = groups.find((g) => g.customer === '엔야' && g.sellerId === 'seller-a')!;
+  assert.deepEqual(found.get(enya.key), [1, 3]);
+  assert.equal(found.size, 1);
 });

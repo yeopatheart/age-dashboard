@@ -78,6 +78,8 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
     setAllowPast(DEFAULT_SETTINGS.allowPastOrderEdit);
   };
   const reapply = async () => {
+    // 과거 주문까지 모두 다시 계산하므로 되돌릴 수 없다는 점을 먼저 알리고 확인받는다.
+    if (!window.confirm('저장된 모든 주문의 요구사항(사이즈 등) 해석을 현재 저장된 설정으로 다시 계산합니다. 과거 주문의 표시가 바뀔 수 있고 되돌릴 수 없습니다. 계속할까요?')) return;
     setBusy(true);
     setError(null);
     setNotice(null);

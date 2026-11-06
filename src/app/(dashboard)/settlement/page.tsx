@@ -97,7 +97,15 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
           )}
         </SettlementSection>
         <SettlementSection id="sales" title="판매내역">
-          <SettlementClient key={key} rows={sales.rows} sellers={sellers.rows} multiDay={multiDay} from={period.from} to={period.to} />
+          <SettlementClient
+            key={key}
+            rows={sales.rows}
+            sellers={sellers.rows}
+            multiDay={multiDay}
+            from={period.from}
+            to={period.to}
+            issued={receipts.missing ? [] : receipts.rows.map((r) => ({ orderDate: r.orderDate, customerName: r.customerName, sellerId: r.sellerId, receiptNo: r.receiptNo }))}
+          />
         </SettlementSection>
         <SettlementSection id="receipts" title="영수증">
           {receipts.missing ? (
