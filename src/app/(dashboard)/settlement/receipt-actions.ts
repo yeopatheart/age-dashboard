@@ -28,12 +28,11 @@ export interface SkippedLine {
 export interface IssueResult {
   error: string | null;
   receipts: IssuedReceipt[];
-  seals: Record<string, string | null>; // 사업자 id → 직인 PNG data URL(미리보기·이미지에 쓴다)
   skipped: SkippedLine[];
   notFound: number; // 선택했지만 서버가 판매내역 줄로 확인하지 못한 줄 수(그 사이 주문이 바뀐 경우)
 }
 
-const fail = (error: string): IssueResult => ({ error, receipts: [], seals: {}, skipped: [], notFound: 0 });
+const fail = (error: string): IssueResult => ({ error, receipts: [], skipped: [], notFound: 0 });
 
 const daysBetween = (from: string, to: string) => (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
 
@@ -69,18 +68,16 @@ export async function issueReceipts(input: { itemIds: string[]; from: string; to
       return { ...fail('발행할 수 있는 줄이 없습니다. 선택한 줄의 사업자 구분과 판매가를 입력해주세요.'), skipped: skippedLines, notFound };
     }
 
-    // 공급자 정보와 직인
+    // 공급자 정보(직인은 영수증 이미지를 그릴 때 영수증 메뉴가 따로 읽는다)
     const sellerIds = [...new Set(groups.map((g) => g.sellerId))];
     const { data: sellerRows, error: sellerError } = await supabase
       .from('seller_businesses')
-      .select('id, name, registration_no, representative_name, address, business_type, business_item, seal_image')
+      .select('id, name, registration_no, representative_name, address, business_type, business_item')
       .in('id', sellerIds);
     if (sellerError) throw new Error(sellerError.message);
     const sellers = new Map<string, ReceiptSeller>();
-    const seals: Record<string, string | null> = {};
     for (const s of sellerRows ?? []) {
       sellers.set(s.id, { name: s.name, registrationNo: s.registration_no, representative: s.representative_name, address: s.address, businessType: s.business_type, businessItem: s.business_item });
-      seals[s.id] = s.seal_image;
     }
     const issuable = groups.filter((g) => sellers.has(g.sellerId));
     if (issuable.length === 0) return { ...fail('사업자를 찾지 못했습니다. 화면을 새로고침한 뒤 다시 시도해주세요.'), skipped: skippedLines, notFound };
@@ -124,7 +121,7 @@ export async function issueReceipts(input: { itemIds: string[]; from: string; to
     }));
     revalidatePath('/settlement');
     revalidatePath('/receipts');
-    return { error: null, receipts, seals, skipped: skippedLines, notFound };
+    return { error: null, receipts, skipped: skippedLines, notFound };
   } catch (e) {
     // 운영 환경은 서버 오류 문구를 가리므로, 원인을 알 수 있는 경우는 결과로 돌려준다.
     if (missingTable(e) !== null) return fail(`마이그레이션 ${migrationsFor(['settlement_receipts']).join(', ')}을 먼저 적용해주세요.`);

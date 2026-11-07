@@ -1,10 +1,9 @@
 'use client';
-// 선택한 판매내역 줄로 영수증을 만드는 패널. 1) 어떤 영수증이 몇 장 만들어지는지 확인 → 2) 발행(스냅샷 저장) → 3) 영수증별 미리보기·이미지 저장·공유·복사.
+// 선택한 판매내역 줄로 영수증을 만드는 패널. 1) 어떤 영수증이 몇 장 만들어지는지 확인 → 2) 발행(스냅샷 저장) → 3) 발행 결과 안내(이미지 보기·보내기는 영수증 메뉴).
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useCan } from '@/components/permissions-context';
 import { SidePanel } from '@/components/admin/admin-kit';
-import { ReceiptViewer } from '@/components/receipt/receipt-viewer';
 import { formatWon } from '@/lib/money';
 import { findDuplicateReceipts, groupForReceipts, type IssuedReceiptKey, type ReceiptSkipReason, type ReceiptSourceRow } from '@/lib/settlement/receipt';
 import type { SalesRow } from '@/lib/settlement/sales';
@@ -49,7 +48,6 @@ export function ReceiptIssuePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<IssueResult | null>(null);
-  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   const issue = async () => {
     setBusy(true);
@@ -59,7 +57,6 @@ export function ReceiptIssuePanel({
       if (res.error) setError(res.error);
       else {
         setResult(res);
-        setOpenIndex(res.receipts.length === 1 ? 0 : null);
       }
     } catch {
       setError('영수증을 만들지 못했습니다. 권한이나 연결을 확인한 뒤 다시 시도해주세요.');
@@ -79,7 +76,10 @@ export function ReceiptIssuePanel({
         result ? (
           <>
             <span className="ak-spacer" />
-            <button className="ak-btn ak-btn-primary" onClick={onClose}>닫기</button>
+            <button className="ak-btn" onClick={onClose}>닫기</button>
+            {canViewReceipts && result.receipts.length > 0 && (
+              <Link className="ak-btn ak-btn-primary" href={`/receipts?d=${result.receipts[0].snapshot.orderDate}`}>영수증 메뉴에서 보내기</Link>
+            )}
           </>
         ) : (
           <>
@@ -98,7 +98,7 @@ export function ReceiptIssuePanel({
     >
       {!result && (
         <>
-          <p className="ak-meta">선택한 {rows.length}줄을 고객사 × 사업자 × 출고일로 묶어 영수증을 만듭니다. 발행하면 이력에 저장되고 이미지로 내려받거나 카카오톡으로 보낼 수 있습니다.</p>
+          <p className="ak-meta">선택한 {rows.length}줄을 고객사 × 사업자 × 출고일로 묶어 영수증을 만듭니다. 발행하면 이력에 저장되고, 영수증 메뉴에서 카카오톡 등으로 보낼 수 있습니다.</p>
           {preview.groups.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
               {preview.groups.map((g) => (
@@ -154,27 +154,21 @@ export function ReceiptIssuePanel({
               {result.notFound > 0 ? ' (그 사이 주문이 바뀐 줄이 있습니다. 화면을 새로고침해 확인해주세요)' : ''}.
             </p>
           )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {result.receipts.map((r, i) => (
-              <div key={r.id || `${r.snapshot.orderDate}-${r.receiptNo}`} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                <div className="ak-setting" style={{ cursor: 'pointer' }} onClick={() => setOpenIndex(openIndex === i ? null : i)}>
-                  <span>
-                    <strong>NO. {r.receiptNo} · {r.snapshot.customerName}</strong>
-                    <small>{r.snapshot.orderDate} · {r.snapshot.seller.name} · {r.snapshot.lines.length}줄 · ₩ {formatWon(r.snapshot.total)}</small>
-                  </span>
-                  <button type="button" className="ak-btn" onClick={(e) => { e.stopPropagation(); setOpenIndex(openIndex === i ? null : i); }}>
-                    {openIndex === i ? '접기' : '이미지 보기'}
-                  </button>
-                </div>
-                {/* 열린 영수증만 이미지를 만든다(여러 장을 한꺼번에 만들면 느리고 메모리를 많이 쓴다) */}
-                {openIndex === i && <ReceiptViewer snapshot={r.snapshot} receiptNo={r.receiptNo} sealImage={result.seals[r.sellerId] ?? null} />}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            {result.receipts.map((r) => (
+              <div key={r.id || `${r.snapshot.orderDate}-${r.receiptNo}`} className="ak-setting">
+                <span>
+                  <strong>NO. {r.receiptNo} · {r.snapshot.customerName}</strong>
+                  <small>{r.snapshot.orderDate} · {r.snapshot.seller.name} · {r.snapshot.lines.length}줄</small>
+                </span>
+                <strong>₩ {formatWon(r.snapshot.total)}</strong>
               </div>
             ))}
           </div>
-          {canViewReceipts && result.receipts.length > 0 && (
-            <p className="ak-meta">
-              발행한 영수증은 <Link href={`/receipts?g=day&d=${result.receipts[0].snapshot.orderDate}`} style={{ textDecoration: 'underline' }}>영수증 메뉴</Link>에서 다시 열어 보고 공유할 수 있습니다.
-            </p>
+          {canViewReceipts ? (
+            <p className="ak-meta">영수증 이미지는 영수증 메뉴에서 보고 카카오톡 등으로 보낼 수 있습니다.</p>
+          ) : (
+            <p className="ak-meta">영수증 이미지를 보내려면 영수증 메뉴 보기 권한이 필요합니다. 관리자에게 요청하세요.</p>
           )}
         </>
       )}
