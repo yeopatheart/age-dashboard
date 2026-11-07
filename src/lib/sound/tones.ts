@@ -64,9 +64,21 @@ export function subscribeAudioState(cb: () => void): () => void {
 }
 
 // 톤이 끝나면 풀리는 Promise를 돌려준다(음성을 톤 뒤에 이어 붙일 때 쓴다). 소리를 못 내는 환경이면 바로 풀린다.
-export function playTone(name: ToneName, volume = 1): Promise<void> {
+// 브라우저가 오디오를 멈춰 둔(suspended) 상태라면 한 번 되살려 본다 — 이 페이지에서 사용자가 이미 한 번이라도 눌렀다면
+// 크롬·사파리는 조작 없이도 resume을 허용한다. 되살리지 못하면(아직 한 번도 안 눌렀다면) 예전처럼 조용히 넘어가고,
+// 화면의 "소리가 꺼져 있습니다 — 눌러서 켜기" 안내가 그 상태를 알린다.
+export async function playTone(name: ToneName, volume = 1): Promise<void> {
   const c = getAudioContext();
-  if (!c || c.state !== 'running') return Promise.resolve();
+  if (!c) return;
+  const running = () => c.state === 'running'; // resume 뒤에 상태를 다시 읽는다(앞의 검사로 타입이 좁혀지지 않게 함수로 읽는다)
+  if (!running()) {
+    try {
+      await c.resume();
+    } catch {
+      // 막히면 running이 되지 않는다
+    }
+    if (!running()) return;
+  }
   const def = TONES[name];
   const peak = Math.max(0, Math.min(1, volume)) * def.gain;
   let t = c.currentTime + 0.02;
@@ -89,5 +101,5 @@ export function playTone(name: ToneName, volume = 1): Promise<void> {
     t += dur;
   }
   const total = t - c.currentTime;
-  return new Promise((resolve) => setTimeout(resolve, total * 1000 + 40));
+  await new Promise<void>((resolve) => setTimeout(resolve, total * 1000 + 40));
 }

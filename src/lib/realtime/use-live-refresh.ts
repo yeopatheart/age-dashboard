@@ -17,6 +17,8 @@ const SAFETY_REFRESH_MS = 5 * 60_000; // 실시간 신호가 조용히 끊겨도
 // 구독에는 새 권한 설정이 필요 없다: RLS는 로그인 사용자 전체 허용이고, 두 테이블을 발행에 넣는 마이그레이션 0041만 있으면 된다.
 // 연결이 끊겼다 돌아오면 놓친 변경(Realtime은 다시 보내주지 않는다)을 위해 한 번 더 새로 받아온다.
 // 신호가 조용히 멈춘 경우를 위해 5분마다 안전 새로고침도 한다.
+// 탭이 뒤로 가거나 PC가 절전하면 브라우저가 페이지(타이머·실시간 연결)를 멈춘다. 그래서 다시 보이거나 깨어나거나 인터넷이 돌아오면
+// 즉시 새로 받아 멈춰 있던 동안의 변경을 따라잡고(그 변경은 소리로도 알려진다), 죽은 실시간 연결은 새로 연다. 2026-11-07 현장에서 "갱신이 멈췄다"고 한 증상이다.
 export function useLiveRefresh(enabled: boolean): LiveInfo {
   const router = useRouter();
   const [status, setStatus] = useState<Exclude<LiveStatus, 'off'>>('connecting');
@@ -37,24 +39,41 @@ export function useLiveRefresh(enabled: boolean): LiveInfo {
       timer = setTimeout(refreshNow, 400);
     };
     const safety = setInterval(refreshNow, SAFETY_REFRESH_MS);
-    const channel = supabase
-      .channel('board-orders')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refreshSoon)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_businesses' }, refreshSoon)
-      .subscribe((s) => {
-        if (cancelled) return;
-        if (s === 'SUBSCRIBED') {
-          setStatus('live');
-          refreshSoon(); // 화면을 받은 뒤 구독이 붙기 전까지의 변경을 메운다(재연결 때도 같다)
-        } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
-          setStatus('down');
-        }
-      });
+    const connect = () =>
+      supabase
+        .channel('board-orders')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refreshSoon)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_businesses' }, refreshSoon)
+        .subscribe((s) => {
+          if (cancelled) return;
+          if (s === 'SUBSCRIBED') {
+            setStatus('live');
+            refreshSoon(); // 화면을 받은 뒤 구독이 붙기 전까지의 변경을 메운다(재연결 때도 같다)
+          } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
+            setStatus('down');
+          }
+        });
+    let channel = connect();
+    const wake = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (String(channel.state) !== 'joined') {
+        void supabase.removeChannel(channel);
+        setStatus('connecting');
+        channel = connect();
+      }
+      refreshSoon();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+    window.addEventListener('online', wake);
     return () => {
       cancelled = true;
       clearTimeout(timer);
       clearInterval(safety);
-      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('focus', wake);
+      window.removeEventListener('online', wake);
+      void supabase.removeChannel(channel);
     };
   }, [enabled, router]);
 

@@ -76,6 +76,33 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
     live.current = { soundOn, settings };
   });
 
+  // 칠판이 켜져 있는 동안 화면이 꺼지거나 PC가 절전하지 않게 한다(절전하면 브라우저가 페이지를 멈춰 소리·갱신이 모두 멈춘다).
+  // 탭이 다시 보일 때마다 다시 요청한다(숨겨지면 브라우저가 자동으로 풀어 버린다). 지원하지 않는 브라우저에서는 조용히 넘어간다.
+  useEffect(() => {
+    if (!mode || !('wakeLock' in navigator)) return;
+    let sentinel: WakeLockSentinel | null = null;
+    let cancelled = false;
+    const request = async () => {
+      try {
+        const lock = await navigator.wakeLock.request('screen');
+        if (cancelled) void lock.release().catch(() => {});
+        else sentinel = lock;
+      } catch {
+        // 배터리 절약 모드 등으로 거절될 수 있다 — 그래도 칠판은 동작한다
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void request();
+    };
+    void request();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      void sentinel?.release().catch(() => {});
+    };
+  }, [mode]);
+
   // 실시간 알림이 켜져 있으면 음성 컨텍스트를 미리 만들어 둔다(자동재생이 허용된 환경이면 바로 running이 된다).
   useEffect(() => {
     if (soundOn) getAudioContext();
@@ -156,11 +183,10 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
       )}
 
       {mode && (
-        <div className={`fixed bottom-3 right-3 z-40 flex items-center gap-2 rounded-full shadow border pl-4 pr-1 h-10 text-sm font-bold ${stale || status === 'down' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white/95 border-slate-200 text-slate-600'}`}>
+        <div title="이 탭이 뒤로 가거나 PC가 절전하면 브라우저가 페이지를 멈춰 소리·갱신이 멈출 수 있습니다. 칠판은 별도 창으로 띄워 두세요." className={`fixed bottom-3 right-3 z-40 flex items-center gap-2 rounded-full shadow border pl-4 pr-1 h-10 text-sm font-bold ${stale || status === 'down' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white/95 border-slate-200 text-slate-600'}`}>
           <span className={`inline-block h-2.5 w-2.5 rounded-full ${status === 'live' && !stale ? 'bg-emerald-500' : status === 'down' || stale ? 'bg-red-500' : 'bg-amber-400'}`} />
           <span>{status === 'live' ? '실시간' : status === 'down' ? '끊김' : '연결 중'}</span>
           <span className="font-medium">· {lastRefreshAt ? `갱신 ${new Date(lastRefreshAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}` : '갱신 대기'}{stale ? ' (오래됨)' : ''}</span>
-          <span className="font-medium">· 보기 전용</span>
           <button type="button" onClick={toggleMuted} aria-pressed={!muted} className="px-3 h-8 rounded-full hover:bg-slate-100">소리 {soundOn ? '켬' : '끔'}</button>
           <Link href="/dashboard/sound-test" className="px-3 h-8 inline-flex items-center rounded-full hover:bg-slate-100">설정</Link>
           <button type="button" onClick={requestOff} className={`px-3 h-8 rounded-full ${confirmOff ? 'bg-red-600 text-white' : 'hover:bg-slate-100'}`}>{confirmOff ? '정말 끄기?' : '끄기'}</button>

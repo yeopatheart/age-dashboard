@@ -747,9 +747,8 @@ export function DashboardClient({
   // 수정 권한이 없는 계정도 조회 전용이다. 삭제·취소는 별도 권한(dashboard:delete)이다.
   const can = useCan();
   const canDelete = can('dashboard:delete');
-  // 칠판 모드를 켠 기기는 보기 전용이다 — 벽걸이 TV 마우스를 건드려 포장 상태가 바뀌는 일을 막는다(칠판 칩에 "보기 전용"으로 표시된다).
-  const [boardMode] = useLocalFlag('board-mode');
-  const readOnly = (isPast && !allowPast) || !can('dashboard:edit') || boardMode;
+  // 칠판 모드(실시간 알림)를 켜도 수정은 막지 않는다 — 형이 입력하는 PC에서도 소리 알림을 켜고 쓴다(2026-11-07 현장 확인).
+  const readOnly = (isPast && !allowPast) || !can('dashboard:edit');
   const [toastNode, showToast] = useToast();
 
   // 칠판 창의 `&sound=off`(그 창만 소리 끔)는 모니터·날짜를 바꿔도 유지한다.
