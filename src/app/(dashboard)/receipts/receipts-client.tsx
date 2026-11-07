@@ -3,13 +3,12 @@
 // 카드를 누르면 크게 보고, 잘못 발행한 것은 카드의 삭제로 이력에서 지운다(영수증 삭제 권한).
 // 보내기 이미지는 카드가 화면에 보일 때 한 장씩 차례로 미리 만들어 둔다 — 눌린 뒤에 만들면 오래 걸려 모바일 공유 시트(사용자 동작 직후에만 열림)가 막힐 수 있고,
 // 하루치를 한꺼번에 만들면 느리다.
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SearchInput, SidePanel } from '@/components/admin/admin-kit';
 import { useCan } from '@/components/permissions-context';
 import { ReceiptSheet, RECEIPT_WIDTH_PX } from '@/components/receipt/receipt-sheet';
 import { canCopyImage, canShareImage, copyImage, downloadBlob, receiptToPng, shareImage } from '@/components/receipt/receipt-image';
 import { formatWon } from '@/lib/money';
-import { cleanShareText } from '@/lib/share-text';
 import { pageNumberLabel, receiptFileName, splitPages } from '@/lib/settlement/receipt';
 import type { ReceiptRecord } from '@/lib/settlement/receipt-server';
 import { deleteReceipt, loadReceiptSeal } from '../settlement/receipt-actions';
@@ -21,8 +20,6 @@ interface CardSpec {
   pageIndex: number;
   pageCount: number;
 }
-
-const subscribeNothing = () => () => {};
 
 // 브라우저가 던지는 영문 오류 문구 대신 사용자가 할 수 있는 조치를 알려 준다.
 function friendlyError(e: unknown, fallback: string): string {
@@ -41,7 +38,6 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
   const [preview, setPreview] = useState<CardSpec | null>(null);
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [shareText, setShareText] = useState(''); // 보낼 때 함께 보낼 글(비우면 이미지만)
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const nodes = useRef(new Map<string, HTMLElement>());
@@ -49,7 +45,6 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
   const [tick, setTick] = useState(0); // 이미지 하나를 만들고 나면 올려서 다음 카드로 이어 가게 한다
   const mounted = useRef(true);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const canShare = useSyncExternalStore(subscribeNothing, () => typeof navigator.share === 'function', () => false);
 
   useEffect(() => {
     mounted.current = true;
@@ -150,7 +145,7 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
     setBusyKey(spec.key);
     try {
       if (canShareImage(image.blob, name)) {
-        if ((await shareImage(image.blob, name, shareText)) === 'shared') flash(`${receipt.customerName} 영수증을 공유 시트로 보냈습니다.`);
+        if ((await shareImage(image.blob, name)) === 'shared') flash(`${receipt.customerName} 영수증을 공유 시트로 보냈습니다.`);
       } else if (canCopyImage()) {
         await copyImage(image.blob);
         flash(`${receipt.customerName} 영수증 이미지를 복사했습니다. 카카오톡 채팅창에 붙여넣기(Ctrl+V, Mac은 ⌘+V)하세요.`);
@@ -190,12 +185,6 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
         <span className="ak-count">{filtered.length}장</span>
         <span>합계 <strong>{formatWon(totalSum)}원</strong></span>
       </div>
-      {canShare && (
-        <label className="rc-message">
-          <span className="ak-meta">보낼 때 함께 보낼 메시지 (비워 두면 이미지만 보냅니다)</span>
-          <input className="ak-input" value={shareText} onChange={(e) => setShareText(e.target.value)} onBlur={() => setShareText((t) => cleanShareText(t))} maxLength={200} placeholder="예: 11/7일 영수증입니다" />
-        </label>
-      )}
 
       {notice && <p className="ak-notice" role="status">{notice}</p>}
       {error && <p className="ak-error" role="alert">{error}</p>}
@@ -245,7 +234,6 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
       )}
 
       <style>{`
-        .rc-message { display: flex; flex-direction: column; gap: 0.3rem; max-width: 32rem; }
         .rc-grid-wrap { container-type: inline-size; min-width: 0; }
         .rc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; align-items: start; }
         @container (min-width: 420px) { .rc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
