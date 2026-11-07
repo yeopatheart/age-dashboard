@@ -192,4 +192,8 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-page, .ak-split { gap: var(--block-gap); }
   .ak-section-body { gap: var(--block-gap); }
   .ak-section-head { padding: 0.1rem 0.1rem 0.4rem; }
+  /* 정산 표(판매내역·매입내역)의 선택칸(사업자 구분·입금)은 고객명과 같은 크기로 줄인다. 형이 주로 보는 화면이라 큰 글씨보다 한 화면에 보이는 정보가 우선이다.
+     입력칸(판매가·메모 등)은 16px를 유지한다: 16px 미만이면 iOS가 입력할 때 화면을 확대한다. 선택칸도 iOS에서는 눌렀을 때 확대될 수 있다(핀치로 되돌린다). 되돌리려면 아래 --input-fs 줄을 지운다. */
+  .ak-table-wrap.ak-limit select { --input-fs: 0.9375rem; height: var(--chip-h); padding: 0 1.9rem 0 0.75rem; background-position: right 0.55rem center; }
+  .ak-table-wrap.ak-limit .ak-select-seller { min-width: 6.5rem; }
 }
