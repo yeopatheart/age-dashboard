@@ -37,8 +37,14 @@ export function primeVoice(): void {
 }
 
 // 읽기가 끝나면 풀리는 Promise. 음성을 못 내는 환경이거나 8초가 지나면(엔진이 멈추는 경우) 바로 풀린다.
+// 크롬은 오래 켜 둔 페이지에서 음성 엔진이 멈추는 알려진 문제가 있다: 멈춘 발화가 대기열 맨 앞에 남아서 그 뒤의 모든 읽기가
+// 영원히 소리 없이 쌓인다(처음엔 나다가 갑자기 안 나는 증상). 그래서 재생은 playCues가 한 번에 하나씩만 시키므로, 읽기를 시작할 때
+// 아직 "말하는 중/대기 중"이면 멈춘 잔여물로 보고 비운 뒤(cancel) 다시 깨워서(resume) 시작하고, 8초가 지나도 안 끝나면 같은 방식으로 비운다.
 export function speak(text: string, options: VoiceOptions): Promise<void> {
   if (!supported()) return Promise.resolve();
+  const synth = window.speechSynthesis;
+  if (synth.speaking || synth.pending) synth.cancel();
+  synth.resume();
   return new Promise((resolve) => {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'ko-KR';
@@ -49,7 +55,11 @@ export function speak(text: string, options: VoiceOptions): Promise<void> {
     if (voice) u.voice = voice;
     u.onend = () => resolve();
     u.onerror = () => resolve();
-    window.speechSynthesis.speak(u);
-    setTimeout(resolve, 8000);
+    synth.speak(u);
+    setTimeout(() => {
+      // 8초가 지나도 안 끝났으면 엔진이 멈춘 것이다. 멈춘 발화를 비워 다음 읽기가 막히지 않게 한다.
+      if (synth.speaking || synth.pending) synth.cancel();
+      resolve();
+    }, 8000);
   });
 }
