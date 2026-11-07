@@ -5,6 +5,7 @@ import '@fontsource/noto-serif-kr/400.css';
 import '@fontsource/noto-serif-kr/700.css';
 import { toBlob } from 'html-to-image';
 import { parseUnicodeRange, rangesCover, textCodepoints } from '@/lib/receipt-font-subset';
+import { cleanShareText } from '@/lib/share-text';
 
 const FONT_FAMILIES = ['Noto Serif KR', 'Noto Sans KR'];
 const FONT_WEIGHTS = ['400', '700'];
@@ -130,7 +131,7 @@ export function canShareImage(blob: Blob, fileName: string): boolean {
 // 공유 시트를 연다(카카오톡을 고르면 채팅방에 이미지로 올라간다). 사용자가 닫으면 'cancelled'.
 // message가 비어 있으면 이미지만 보낸다(제목·본문을 아예 싣지 않는다). 있으면 본문(text)으로 함께 보낸다.
 export async function shareImage(blob: Blob, fileName: string, message: string): Promise<'shared' | 'cancelled'> {
-  const text = message.trim();
+  const text = cleanShareText(message);
   try {
     await navigator.share({ files: [new File([blob], fileName, { type: 'image/png' })], ...(text ? { text } : {}) });
     return 'shared';

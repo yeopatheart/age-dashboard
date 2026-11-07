@@ -5,7 +5,7 @@ import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { BoxDots } from '@/components/box-dots';
 import { useAutoRefresh } from '@/lib/realtime/use-live-refresh';
 import { DateNav } from '@/components/date-nav';
-import { STAGES, STAGE_LABEL, stageDetail, totalsOf, type OverviewCard, type Stage } from '@/lib/overview';
+import { STAGES, STAGE_COLOR, STAGE_LABEL, stageDetail, totalsOf, type OverviewCard, type Stage } from '@/lib/overview';
 
 type Scope = 'all' | 'main' | 'separate';
 const SCOPES: { key: Scope; label: string }[] = [
@@ -108,17 +108,24 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
           <section className="ov-card">
             <div className="ov-head">
               <h2>고객별 진행</h2>
-              <div className="ov-chips" role="group" aria-label="목록 필터">
-                <button type="button" className={filter === 'open' ? 'ov-chip-on' : ''} onClick={() => setFilter('open')}>
-                  진행 중 <b>{totals.customers - totals.byStage.done}</b>
+            </div>
+            <div className="ov-chips" role="group" aria-label="고객 목록 필터">
+              <button type="button" aria-pressed={filter === 'open'} className={filter === 'open' ? 'ov-chip-on' : ''} onClick={() => setFilter('open')}>
+                진행 중 <b>{totals.customers - totals.byStage.done}</b>
+              </button>
+              <button type="button" aria-pressed={filter === 'all'} className={filter === 'all' ? 'ov-chip-on' : ''} onClick={() => setFilter('all')}>
+                전체 <b>{totals.customers}</b>
+              </button>
+              <span className="ov-chip-sep" aria-hidden />
+              {STAGES.map((s) => (
+                <button key={s} type="button" aria-pressed={filter === s} className={`ov-chip-stage ov-chip-${s} ${filter === s ? 'ov-chip-stage-on' : ''} ${totals.byStage[s] === 0 ? 'ov-chip-zero' : ''}`} onClick={() => setFilter(filter === s ? 'open' : s)}>
+                  <span className={`ov-dot ov-seg-${s}`} />
+                  {STAGE_LABEL[s]} <b>{totals.byStage[s]}</b>
                 </button>
-                <button type="button" className={filter === 'all' ? 'ov-chip-on' : ''} onClick={() => setFilter('all')}>
-                  전체 <b>{totals.customers}</b>
-                </button>
-              </div>
+              ))}
             </div>
             {typeof filter === 'string' && filter !== 'open' && filter !== 'all' && (
-              <p className="ov-filter-note">{STAGE_LABEL[filter]} 단계만 보는 중 · 같은 칸을 다시 누르면 해제됩니다</p>
+              <p className="ov-filter-note">{STAGE_LABEL[filter]} 단계의 고객 {shown.length}곳 · 같은 칩을 다시 누르면 해제됩니다</p>
             )}
             <p className="ov-legend" aria-hidden>
               박스 번호별 <BoxDots states={['none']} /> 라벨 미출력 <BoxDots states={['printed']} /> 출력 <BoxDots states={['loaded']} /> 상차
@@ -157,7 +164,7 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
       )}
 
       <style>{`
-        .ov-root { --c-boxing: #f59e0b; --c-labeling: #8b5cf6; --c-packing: #3b82f6; --c-packed: #14b8a6; --c-loading: #0ea5e9; --c-done: #16a34a; display: flex; flex-direction: column; gap: 0.9rem; padding: 1rem 1.2rem 2rem; max-width: 72rem; margin: 0 auto; width: 100%; min-width: 0; }
+        .ov-root { ${STAGES.map((st) => `--c-${st}: ${STAGE_COLOR[st].solid};`).join(' ')} display: flex; flex-direction: column; gap: 0.9rem; padding: 1rem 1.2rem 2rem; max-width: 72rem; margin: 0 auto; width: 100%; min-width: 0; }
         .ov-bar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
         .ov-title { font-size: 1.25rem; font-weight: 800; margin-right: 0.3rem; }
         .ov-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: #fff; }
@@ -193,10 +200,15 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
         .ov-term-name { flex: none; width: 6rem; font-size: 0.8125rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .ov-term-num { flex: none; width: 3.2rem; text-align: right; font-size: 0.8125rem; font-weight: 700; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
         .ov-term-num b { color: var(--foreground); }
-        .ov-chips { display: flex; gap: 0.4rem; }
+        .ov-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
         .ov-chips button { height: var(--chip-h); padding: 0 0.8rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; color: var(--foreground); cursor: pointer; white-space: nowrap; }
         .ov-chips b { margin-left: 0.2rem; font-weight: 800; }
         .ov-chips .ov-chip-on { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .ov-chips .ov-chip-sep { flex: none; width: 1px; align-self: stretch; margin: 0.25rem 0.1rem; background: var(--border); }
+        .ov-chips .ov-chip-stage { display: inline-flex; align-items: center; gap: 0.35rem; }
+        .ov-chips .ov-chip-stage .ov-dot { flex: none; width: 9px; height: 9px; }
+        .ov-chips .ov-chip-zero:not(.ov-chip-stage-on) { opacity: 0.55; }
+        ${STAGES.map((st) => `.ov-chips .ov-chip-${st}.ov-chip-stage-on { background: ${STAGE_COLOR[st].tint}; border-color: ${STAGE_COLOR[st].solid}; box-shadow: 0 0 0 1px ${STAGE_COLOR[st].solid}; color: ${st === 'done' ? '#15803d' : STAGE_COLOR[st].text}; }`).join('\n        ')}
         .ov-filter-note { font-size: 0.75rem; font-weight: 700; color: var(--primary); }
         .ov-legend { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); line-height: 1.5; }
         .ov-legend .bd-root { margin-left: 0.3rem; }
@@ -210,8 +222,7 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
         .ov-name em { flex: none; font-style: normal; font-size: 0.75rem; font-weight: 800; color: #b45309; background: #fef3c7; border-radius: 999px; padding: 0.05rem 0.5rem; }
         .ov-term { flex: none; font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); }
         .ov-stage { flex: none; font-size: 0.75rem; font-weight: 800; border-radius: 999px; padding: 0.15rem 0.65rem; line-height: 1.5; white-space: nowrap; }
-        .ov-stage-boxing { background: #fffbeb; color: #92400e; } .ov-stage-labeling { background: #f5f3ff; color: #6d28d9; } .ov-stage-packing { background: #eff6ff; color: #1d4ed8; }
-        .ov-stage-packed { background: #f0fdfa; color: #0f766e; } .ov-stage-loading { background: #f0f9ff; color: #0369a1; } .ov-stage-done { background: #dcfce7; color: #15803d; }
+        ${STAGES.map((st) => `.ov-stage-${st} { background: ${STAGE_COLOR[st].tint}; color: ${STAGE_COLOR[st].text}; box-shadow: inset 0 0 0 1px ${STAGE_COLOR[st].border}; }`).join('\n        ')}
         .ov-row-sub { display: flex; align-items: center; gap: 0.6rem; min-width: 0; padding-left: 2.2rem; font-size: 0.75rem; line-height: 1.5; }
         .ov-detail { font-weight: 700; color: var(--muted-foreground); white-space: nowrap; }
         .ov-merge { font-weight: 800; color: #166534; background: #f0fdf4; border: 1px solid #86efac; border-radius: 999px; padding: 0 0.5rem; white-space: nowrap; }
@@ -221,6 +232,7 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
           .ov-title { display: none; }
           .ov-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
           .ov-row-sub { padding-left: 0; flex-wrap: wrap; }
+          .ov-chips .ov-chip-sep { display: none; }
         }
       `}</style>
     </div>

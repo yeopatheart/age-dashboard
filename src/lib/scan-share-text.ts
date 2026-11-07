@@ -1,5 +1,6 @@
 // 상차 스캔 화면의 "상차 완료 목록" 텍스트(퀵 기사님께 보낼 글). 순수 함수라 서버·클라이언트가 같이 쓴다.
 import { mergeGroupOf, normalizeMergeGroups } from '@/lib/box-merge';
+import { cleanShareText } from '@/lib/share-text';
 
 export interface PackageCount {
   loaded: number;
@@ -59,10 +60,10 @@ export function buildLoadedListText(orderDate: string, cards: ShareCard[], termi
   }
   if (done.length === 0) return null;
 
-  return [
+  return cleanShareText([
     `${dateText(orderDate)} ${terminal || NO_TERMINAL} 상차 완료`,
     ...done,
     `합계 ${loadedSum}박스`,
     ...(pending.length ? [`⚠ 미상차: ${pending.join(' / ')}`] : []),
-  ].join('\n');
+  ].join('\n'));
 }
