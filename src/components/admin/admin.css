@@ -117,7 +117,7 @@ select.ak-input { padding-right: 2.25rem; }
 .ak-table-wrap.ak-limit { max-height: calc(var(--ak-head-h) + var(--ak-rows) * var(--ak-row-h) + 2px); overscroll-behavior: auto; }
 @media (max-width: 768px) { :root { --ak-rows: 6; } }
 
-/* 정산: 판매내역·영수증·매입내역·그래프를 한 화면에 쌓는다. DOM 순서(판매내역 → 영수증 → 매입내역 → 그래프)가 PC·휴대폰 공통의 위아래 순서다.
+/* 정산: 판매내역·매입내역·그래프를 한 화면에 쌓는다(영수증 목록은 별도 메뉴). DOM 순서(판매내역 → 매입내역 → 그래프)가 PC·휴대폰 공통의 위아래 순서다.
    아주 넓은 화면(2400px 이상)에서만 판매내역(왼쪽)·매입내역(오른쪽)을 나란히 둔다. */
 /* 스크롤 영역(.main-content)의 위 여백(2.25rem)만큼 올려서, 스크롤하면 화면 맨 위에 붙게 한다.
    휴대폰은 기간 바가 두 줄(약 100px)이라 붙여 두면 화면을 너무 가려서 고정하지 않는다. */
@@ -136,8 +136,7 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ak-section-sales { order: 1; }
   .ak-section-purchases { order: 2; }
-  .ak-section-receipts { grid-column: 1 / -1; order: 3; }
-  .ak-section-chart { grid-column: 1 / -1; order: 4; }
+  .ak-section-chart { grid-column: 1 / -1; order: 3; }
 }
 
 /* 정산 기간 바: [일 주 월] 묶음과 [‹ 날짜 › 오늘] 묶음. 휴대폰에서는 한 줄에 모두 둔다. */
