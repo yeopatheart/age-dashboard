@@ -291,6 +291,9 @@ type SettlementSale = {
   seller_id: string | null;
   price: number | null;
   unit_price: number | null; // 영수증의 단가 칸(0047). 비어 있으면 빈칸
+  product_override: string | null; // 정산에서 고친 품목명·수량·단위(0048). null이면 주문 목록 값을 쓴다
+  quantity_override: number | null;
+  unit_override: string | null;
   paid: boolean;
   memo: string | null;
   updated_at: string;
@@ -450,7 +453,7 @@ export type Database = {
       >;
       settlement_sales: TableDef<
         SettlementSale,
-        Pick<SettlementSale, "order_item_id"> & { seller_id?: string | null; price?: number | null; unit_price?: number | null; paid?: boolean; memo?: string | null; updated_at?: string }
+        Pick<SettlementSale, "order_item_id"> & { seller_id?: string | null; price?: number | null; unit_price?: number | null; product_override?: string | null; quantity_override?: number | null; unit_override?: string | null; paid?: boolean; memo?: string | null; updated_at?: string }
       >;
       settlement_receipts: TableDef<
         SettlementReceipt,

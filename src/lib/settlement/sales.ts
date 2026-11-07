@@ -2,6 +2,7 @@
 // 사용자가 입력한 값(사업자·판매가·입금·메모)만 settlement_sales에서 붙인다. 설계는 docs/prd/settlement.md.
 import { isUndecidedQuantity, type ChangeStatus } from '@/lib/orders';
 import type { Stage } from '@/lib/overview';
+import { resolveSalesEdit } from './sales-edit';
 
 export interface SalesSourceCard {
   id: string;
@@ -28,6 +29,9 @@ export interface StoredSale {
   sellerId: string | null;
   price: number | null;
   unitPrice: number | null;
+  productOverride: string | null; // 정산에서 고친 품목명·수량·단위(없으면 주문 목록 값)
+  quantityOverride: number | null;
+  unitOverride: string | null;
   paid: boolean;
   memo: string | null;
 }
@@ -36,9 +40,11 @@ export interface SalesRow {
   itemId: string;
   orderDate: string;
   customer: string;
-  product: string;
-  quantity: number; // 출고 수량 = 주문 수량 − 미출고 수량
+  product: string; // 정산에서 고쳤으면 고친 값, 아니면 주문 목록 값
+  quantity: number; // 출고 수량 = 주문 수량 − 미출고 수량(고쳤으면 고친 값)
   unit: string;
+  original: { product: string; quantity: number; unit: string }; // 주문 목록 원본("원래대로"와 안내에 쓴다)
+  edited: boolean; // 품목·수량·단위 중 하나라도 정산에서 고쳤는지
   sellerId: string | null;
   price: number | null;
   unitPrice: number | null; // 영수증의 단가 칸(0047). 비어 있으면 영수증 단가 칸이 빈칸
@@ -59,6 +65,7 @@ export function buildSalesRows(cards: SalesSourceCard[], items: SalesSourceItem[
     const quantity = item.quantity - item.unshippedQuantity;
     if (quantity <= 0) continue;
     const s = storedByItem.get(item.id);
+    const original = { product: item.productName, quantity, unit: item.unit };
     rows.push({
       sortOrder: card.sortOrder,
       sequence: item.productSequence,
@@ -66,9 +73,8 @@ export function buildSalesRows(cards: SalesSourceCard[], items: SalesSourceItem[
         itemId: item.id,
         orderDate: card.orderDate,
         customer: card.name,
-        product: item.productName,
-        quantity,
-        unit: item.unit,
+        ...resolveSalesEdit(original, s),
+        original,
         sellerId: s?.sellerId ?? null,
         price: s?.price ?? null,
         unitPrice: s?.unitPrice ?? null,
