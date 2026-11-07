@@ -43,14 +43,14 @@ export const STAGE_LABEL: Record<Stage, string> = {
 };
 
 // 단계별 색. 대시보드와 모바일 주문 목록이 같이 쓴다. 이웃한 단계(포장 중↔상차 중, 포장 완료↔출고 완료)가 비슷해 보이지 않게
-// 색상 계열을 모두 다르게 잡았다(노랑·보라·파랑·회색·분홍·초록). 출고 완료는 속을 채운 초록 배지라 나머지(연한 배경)와도 구분된다.
+// 색상 계열을 모두 다르게 잡았다(회색·노랑·빨강·보라·파랑·초록, 2026-11-07 사용자 지정 순서). 출고 완료는 속을 채운 초록 배지라 나머지(연한 배경)와도 구분된다.
 export const STAGE_COLOR: Record<Stage, { solid: string; tint: string; border: string; text: string }> = {
-  boxing: { solid: '#f59e0b', tint: '#fffbeb', border: '#fcd34d', text: '#92400e' },
-  labeling: { solid: '#8b5cf6', tint: '#f5f3ff', border: '#c4b5fd', text: '#6d28d9' },
-  packing: { solid: '#2563eb', tint: '#eff6ff', border: '#93c5fd', text: '#1d4ed8' },
-  packed: { solid: '#64748b', tint: '#f1f5f9', border: '#cbd5e1', text: '#334155' },
-  loading: { solid: '#ec4899', tint: '#fdf2f8', border: '#f9a8d4', text: '#be185d' },
-  done: { solid: '#16a34a', tint: '#16a34a', border: '#16a34a', text: '#ffffff' },
+  boxing: { solid: '#64748b', tint: '#f1f5f9', border: '#cbd5e1', text: '#334155' }, // 회색
+  labeling: { solid: '#f59e0b', tint: '#fffbeb', border: '#fcd34d', text: '#92400e' }, // 노랑
+  packing: { solid: '#ef4444', tint: '#fef2f2', border: '#fca5a5', text: '#b91c1c' }, // 빨강
+  packed: { solid: '#8b5cf6', tint: '#f5f3ff', border: '#c4b5fd', text: '#6d28d9' }, // 보라
+  loading: { solid: '#2563eb', tint: '#eff6ff', border: '#93c5fd', text: '#1d4ed8' }, // 파랑
+  done: { solid: '#16a34a', tint: '#16a34a', border: '#16a34a', text: '#ffffff' }, // 초록(속이 찬 배지)
 };
 
 export function stageOf(boxes: number | null, states: BoxState[], packed: boolean, parcel = false): Stage {
