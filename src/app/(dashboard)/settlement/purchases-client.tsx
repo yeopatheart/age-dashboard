@@ -340,6 +340,7 @@ export function PurchasesClient({
         hidden={EMPTY_HIDDEN}
         rows={pageRows}
         rowKey={(r) => r.key}
+        limitRows
         selected={canEdit ? selected : undefined}
         onToggleRow={canEdit ? toggleRow : undefined}
         onToggleAll={canEdit ? toggleAllOnPage : undefined}

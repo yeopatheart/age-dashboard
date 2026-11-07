@@ -83,7 +83,7 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
       {header}
       <PeriodBar granularity={granularity} anchor={anchor} today={today} periodLabel={period.label} />
       <div className="ak-split">
-        <SettlementSection id="sales" title="판매내역">
+        <SettlementSection id="sales" title="판매내역" openOnMobile>
           <SettlementClient
             key={key}
             rows={sales.rows}

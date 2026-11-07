@@ -97,6 +97,7 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
         hidden={EMPTY_HIDDEN}
         rows={filtered}
         rowKey={(r) => r.id}
+        limitRows
         onRowClick={openReceipt}
         activeKey={open?.receipt.id ?? null}
         emptyText={receipts.length === 0 ? '이 기간에 발행한 영수증이 없습니다. 판매내역에서 줄을 선택해 “영수증 만들기”로 발행하세요.' : '조건에 맞는 영수증이 없습니다.'}

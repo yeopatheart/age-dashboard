@@ -110,6 +110,13 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-panel-foot .ak-btn { min-height: 40px; }
 }
 
+/* 표 최대 행 수: DataTable limitRows. 행이 많아도 화면이 길어지지 않게 표 높이를 (머리글 + 행 수 × 행 높이)로 제한하고, 넘으면 머리글을 고정한 채 표 안에서 스크롤한다.
+   PC 12행 / 휴대폰 6행. 숫자를 바꾸려면 아래 --ak-rows만 고친다. 세로 스크롤이 끝에 닿으면 페이지가 이어서 스크롤된다(overscroll-behavior: auto). */
+:root { --ak-rows: 12; --ak-head-h: 2.5rem; --ak-row-h: 3rem; }
+.ak-table-wrap.ak-limit .ak-table th, .ak-table-wrap.ak-limit .ak-table td { white-space: nowrap; } /* 행 높이가 일정해야 "12행"이 12행이다. 좁으면 표 안에서 옆으로 민다 */
+.ak-table-wrap.ak-limit { max-height: calc(var(--ak-head-h) + var(--ak-rows) * var(--ak-row-h) + 2px); overscroll-behavior: auto; }
+@media (max-width: 768px) { :root { --ak-rows: 6; } }
+
 /* 정산: 판매내역·영수증·매입내역·그래프를 한 화면에 쌓는다. DOM 순서(판매내역 → 영수증 → 매입내역 → 그래프)가 PC·휴대폰 공통의 위아래 순서다.
    아주 넓은 화면(2400px 이상)에서만 판매내역(왼쪽)·매입내역(오른쪽)을 나란히 둔다. */
 /* 스크롤 영역(.main-content)의 위 여백(2.25rem)만큼 올려서, 스크롤하면 화면 맨 위에 붙게 한다.
