@@ -1,0 +1,49 @@
+import { FileText } from 'lucide-react';
+import { createClient } from '@/lib/supabase/server';
+import { requireMenu } from '@/lib/permissions/access';
+import { fetchAll } from '@/lib/supabase/fetch-all';
+import { migrationsFor, rowsOrMissing } from '@/lib/supabase/missing-table';
+import { AdminHeader } from '@/components/admin/admin-kit';
+import { MigrationNotice } from '@/components/migration-notice';
+import { todayKST } from '@/lib/order-date';
+import { parsePeriodParams } from '@/lib/settlement/url';
+import { loadReceipts } from '@/lib/settlement/receipt-server';
+import { PeriodBar } from '../settlement/period-bar';
+import { ReceiptsClient } from '../settlement/receipts-client';
+
+// 영수증: 정산 판매내역에서 발행한 영수증의 목록·보기·공유·삭제. 영수증 만들기는 정산 화면(판매내역에서 줄을 골라 만든다)에서 한다.
+// ?g=day|week|month(기본 day), ?d=YYYY-MM-DD(기준일)는 정산과 같은 방식이다. 출고일이 그 기간인 영수증을 보여 준다.
+export default async function ReceiptsPage({ searchParams }: { searchParams: Promise<{ g?: string; d?: string }> }) {
+  const accessCheck = requireMenu('receipts');
+  const { g, d } = await searchParams;
+  const today = todayKST();
+  const { granularity, anchor, period } = parsePeriodParams(g, d, today);
+  const supabase = await createClient();
+
+  const header = <AdminHeader icon={<FileText size={20} />} title="영수증" sub="정산 판매내역에서 발행한 영수증입니다. 영수증을 만들려면 정산 화면에서 판매내역 줄을 골라 “영수증 만들기”를 누르세요." />;
+
+  const [, receipts, sellers] = await Promise.all([
+    accessCheck,
+    rowsOrMissing(loadReceipts(supabase, period.from, period.to)),
+    rowsOrMissing(fetchAll((a, b) => supabase.from('seller_businesses').select('id, name').order('name').order('id').range(a, b), '사업자 조회 실패: ')),
+  ]);
+
+  const missing = [receipts.missing, sellers.missing].filter((x): x is string => !!x);
+  if (missing.length > 0) {
+    return (
+      <div className="ak-page">
+        {header}
+        <MigrationNotice feature="영수증" migrations={migrationsFor(missing)} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="ak-page">
+      {header}
+      <PeriodBar granularity={granularity} anchor={anchor} today={today} periodLabel={period.label} basePath="/receipts" />
+      {/* 기간을 옮기면 열어 둔 영수증·검색을 새로 시작한다(key) */}
+      <ReceiptsClient key={`${granularity}-${anchor}`} receipts={receipts.rows} sellers={sellers.rows} />
+    </div>
+  );
+}

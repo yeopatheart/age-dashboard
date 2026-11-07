@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   Landmark,
   Receipt,
+  FileText,
   ChevronDown,
   Database,
   SlidersHorizontal,
@@ -41,6 +42,7 @@ const NAV_ITEMS: { menu: MenuKey | 'users'; icon: typeof Sparkles }[] = [
   { menu: 'dashboard', icon: LayoutList },
   { menu: 'scan', icon: ScanLine },
   { menu: 'settlement', icon: Receipt },
+  { menu: 'receipts', icon: FileText },
   { menu: 'reports', icon: BarChart3 },
   { menu: 'businesses', icon: Building2 },
   { menu: 'sellers', icon: Landmark },
@@ -55,7 +57,7 @@ const NAV_ITEMS: { menu: MenuKey | 'users'; icon: typeof Sparkles }[] = [
 const BOTTOM_TABS: MenuKey[] = ['overview', 'dashboard', 'orders', 'scan'];
 const BOTTOM_TAB_LABELS: Partial<Record<MenuKey, string>> = { overview: '대시보드', dashboard: '주문 목록', orders: '주문 입력', scan: '상차 스캔' };
 // 자주 쓰는 메뉴는 항상 보이고, 관리·설정 메뉴는 그룹으로 묶어 접고 펼친다. 그룹 안의 메뉴는 사용자 권한으로 거르며, 보일 메뉴가 없는 그룹은 통째로 숨긴다.
-const MAIN_MENUS: (MenuKey | 'users')[] = ['overview', 'orders', 'packing', 'dashboard', 'scan', 'settlement', 'reports'];
+const MAIN_MENUS: (MenuKey | 'users')[] = ['overview', 'orders', 'packing', 'dashboard', 'scan', 'settlement', 'receipts', 'reports'];
 const NAV_GROUPS: { id: string; label: string; icon: typeof Sparkles; menus: (MenuKey | 'users')[] }[] = [
   { id: 'manage', label: '관리', icon: Database, menus: ['businesses', 'sellers', 'terminals', 'products', 'boxes'] },
   { id: 'config', label: '설정', icon: SlidersHorizontal, menus: ['labels', 'settings', 'users'] },
