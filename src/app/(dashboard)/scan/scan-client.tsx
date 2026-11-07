@@ -26,6 +26,8 @@ interface Banner {
   labelId?: string; // 방금 처리한 박스(되돌리기용)
   seq?: number; // 몇 번째 결과인지(연속으로 같은 색이 나와도 새 스캔임을 알아보게 배너를 다시 그린다)
   count?: number; // 이번 접속에서 상차한 박스 수(성공했을 때만)
+  progress?: { loaded: number; total: number }; // 이 업체의 상차 현황(박스를 찾았을 때만)
+  done?: boolean; // 방금 이 업체의 마지막 박스까지 상차됨
 }
 
 // 초록 조준선(화면 폭·높이에 대한 비율). 카메라는 이 안쪽만 잘라서 읽는다 — 조준선 밖에 보이는 바코드는 읽지 않는다.
@@ -72,11 +74,11 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       let next: Banner;
       if (result.status === 'loaded') {
         const b = result.box;
-        next = { tone: 'ok', title: `${b.business} ${b.boxNo}번`, detail: `${b.terminal || '터미널 없음'} · 이 업체 ${b.loadedCount}/${b.totalCount}박스${b.mergedSeqs.length ? ` · 합포장 ${b.mergedSeqs.join('·')}번 함께 상차` : ''}`, labelId: b.labelId };
+        next = { tone: 'ok', title: `${b.business} ${b.boxNo}번`, detail: `${b.terminal || '터미널 없음'}${b.mergedSeqs.length ? ` · 합포장 ${b.mergedSeqs.join('·')}번 함께 상차` : ''}`, labelId: b.labelId, progress: { loaded: b.loadedCount, total: b.totalCount }, done: b.loadedCount >= b.totalCount };
       } else if (result.status === 'duplicate') {
         const b = result.box;
         const at = b.loadedAt ? new Date(b.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
-        next = { tone: 'dup', title: '이미 상차된 박스', detail: `${b.business} ${b.boxNo}번${at ? ` · ${at}에 처리됨` : ''}`, labelId: b.labelId };
+        next = { tone: 'dup', title: '이미 상차된 박스', detail: `${b.business} ${b.boxNo}번${at ? ` · ${at}에 처리됨` : ''}`, labelId: b.labelId, progress: { loaded: b.loadedCount, total: b.totalCount } };
       } else {
         next = { tone: 'bad', title: result.status === 'invalid' ? '우리 라벨이 아닙니다' : '출력된 적 없는 바코드', detail: result.code };
       }
@@ -261,6 +263,16 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
           {cameraOn ? (
             <>
               <div className="sc-guide" style={{ left: `${GUIDE.left * 100}%`, right: `${GUIDE.right * 100}%`, top: `${GUIDE.top * 100}%`, bottom: `${GUIDE.bottom * 100}%` }} />
+              <div className="sc-hint">라벨의 바코드를 초록 네모 안에 맞추세요</div>
+              {/* 스캔 결과를 영상 위에 크게 잠깐 보여 준다(라벨을 비추는 동안 아래 안내까지 시선을 옮기지 않아도 되게). 몇 초 뒤 저절로 사라지고, 자세한 결과와 되돌리기는 아래 안내에 남는다. */}
+              {banner?.seq !== undefined && (
+                <div key={banner.seq} className={`sc-flash sc-${banner.tone} ${banner.done ? 'sc-ok-done' : ''}`} aria-hidden="true">
+                  {banner.tone === 'bad' ? <XCircle size={44} /> : banner.tone === 'dup' ? <AlertTriangle size={44} /> : <CheckCircle2 size={44} />}
+                  <div className="sc-title">{banner.title}</div>
+                  {banner.progress && <div className="sc-progress"><strong>{banner.progress.loaded}/{banner.progress.total}</strong></div>}
+                  {banner.done && <div className="sc-detail">이 업체 상차 완료</div>}
+                </div>
+              )}
               <button className="sc-stop" onClick={stopCamera} aria-label="카메라 끄기"><X size={18} /></button>
             </>
           ) : (
@@ -273,9 +285,15 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         {cameraError && <p className="ak-error">{cameraError}</p>}
 
         {banner && (
-          <div key={banner.seq} className={`sc-banner sc-${banner.tone} sc-pop`} aria-live="polite" role="status">
-            {banner.tone === 'bad' ? <XCircle size={40} /> : banner.tone === 'dup' ? <AlertTriangle size={40} /> : <CheckCircle2 size={40} />}
+          <div key={banner.seq} className={`sc-banner sc-${banner.tone} ${banner.done ? 'sc-ok-done' : ''} ${cameraOn ? 'sc-compact' : ''} sc-pop`} aria-live="polite" role="status">
+            {banner.tone === 'bad' ? <XCircle size={cameraOn ? 28 : 40} /> : banner.tone === 'dup' ? <AlertTriangle size={cameraOn ? 28 : 40} /> : <CheckCircle2 size={cameraOn ? 28 : 40} />}
             <div className="sc-title">{banner.title}</div>
+            {banner.progress && (
+              <div className="sc-progress">
+                <strong>{banner.progress.loaded}/{banner.progress.total}</strong>
+                <span>{banner.done ? '이 업체 상차 완료' : '이 업체 상차 현황'}</span>
+              </div>
+            )}
             <div className="sc-detail">{banner.detail}</div>
             {banner.count !== undefined && <div className="sc-count">이번 접속 {banner.count}번째 상차</div>}
             {banner.labelId && canUndo && (
@@ -355,6 +373,20 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         @keyframes sc-pop { 0% { transform: scale(0.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
         .sc-count { font-size: 0.8125rem; font-weight: 700; opacity: 0.85; }
         .sc-ok { background: #dcfce7; border-color: #22c55e; color: #14532d; }
+        .sc-ok-done { background: #bbf7d0; border-color: #15803d; }
+        .sc-progress { display: flex; align-items: baseline; justify-content: center; gap: 0.5rem; }
+        .sc-progress strong { font-size: 2.4rem; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+        .sc-progress span { font-size: 0.9375rem; font-weight: 800; }
+        .sc-compact { padding: 0.7rem 0.8rem; gap: 0.3rem; }
+        .sc-compact .sc-title { font-size: 1.3rem; }
+        .sc-compact .sc-progress strong { font-size: 1.8rem; }
+        .sc-compact .sc-detail { font-size: 0.875rem; }
+        .sc-hint { position: absolute; top: 0.6rem; left: 0.6rem; right: 3.6rem; padding: 0.35rem 0.7rem; border-radius: 999px; background: rgba(15, 23, 42, 0.65); color: #fff; font-size: 0.8125rem; font-weight: 700; text-align: center; pointer-events: none; word-break: keep-all; }
+        .sc-flash { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.8rem; text-align: center; border: 4px solid transparent; pointer-events: none; animation: sc-flash 2.4s ease-out forwards; }
+        .sc-flash .sc-title { font-size: 1.5rem; }
+        .sc-flash.sc-ok, .sc-flash.sc-dup, .sc-flash.sc-bad { opacity: 0.96; }
+        @keyframes sc-flash { 0%, 70% { opacity: 0.96; } 100% { opacity: 0; visibility: hidden; } }
+        @media (prefers-reduced-motion: reduce) { .sc-flash { animation-duration: 2.4s !important; } }
         .sc-dup { background: #fef9c3; border-color: #eab308; color: #713f12; }
         .sc-bad { background: #fee2e2; border-color: #ef4444; color: #7f1d1d; }
         .sc-title { font-size: 1.7rem; font-weight: 900; line-height: 1.25; word-break: keep-all; }
