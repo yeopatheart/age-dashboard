@@ -110,8 +110,8 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-panel-foot .ak-btn { min-height: 40px; }
 }
 
-/* 정산: 그래프·매입내역·판매내역을 한 화면에 쌓고, 넓은 화면에서는 판매내역(왼쪽)·매입내역(오른쪽)을 나란히 둔다.
-   DOM 순서(그래프 → 매입내역 → 판매내역)가 좁은 화면·휴대폰의 위아래 순서다. 판매내역은 수천 줄이 될 수 있어 맨 뒤에 둔다. */
+/* 정산: 판매내역·영수증·매입내역·그래프를 한 화면에 쌓는다. DOM 순서(판매내역 → 영수증 → 매입내역 → 그래프)가 PC·휴대폰 공통의 위아래 순서다.
+   아주 넓은 화면(2400px 이상)에서만 판매내역(왼쪽)·매입내역(오른쪽)을 나란히 둔다. */
 /* 스크롤 영역(.main-content)의 위 여백(2.25rem)만큼 올려서, 스크롤하면 화면 맨 위에 붙게 한다.
    휴대폰은 기간 바가 두 줄(약 100px)이라 붙여 두면 화면을 너무 가려서 고정하지 않는다. */
 .ak-sticky { position: sticky; top: -2.25rem; z-index: 5; }
@@ -127,23 +127,25 @@ select.ak-input { padding-right: 2.25rem; }
 .ak-section-body { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
 @media (min-width: 2400px) { /* 표가 열 폭에 거의 들어가는 폭(매입내역 표가 약 1260px). 이보다 좁으면 한 열로 쌓는다 */
   .ak-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ak-section-chart { grid-column: 1 / -1; }
   .ak-section-sales { order: 1; }
   .ak-section-purchases { order: 2; }
   .ak-section-receipts { grid-column: 1 / -1; order: 3; }
+  .ak-section-chart { grid-column: 1 / -1; order: 4; }
 }
 
-/* 정산 기간 바: [일 주 월] 묶음과 [‹ 날짜 › 오늘] 묶음. 휴대폰에서는 묶음마다 한 줄로 두어 이전·다음이 날짜 양옆에 붙게 한다. */
+/* 정산 기간 바: [일 주 월] 묶음과 [‹ 날짜 › 오늘] 묶음. 휴대폰에서는 한 줄에 모두 둔다. */
 .ak-period-seg { display: inline-flex; gap: 4px; }
 .ak-period-nav { display: inline-flex; align-items: center; gap: 0.6rem; }
 .ak-period-label { min-width: 9rem; text-align: center; white-space: nowrap; }
-@media (max-width: 768px) {
-  .ak-period-seg { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .ak-period-seg .ak-btn { justify-content: center; height: var(--chip-h); }
-  .ak-period-nav { flex: 1 1 100%; gap: 0.4rem; }
+@media (max-width: 768px) { /* 휴대폰: 한 줄 — [일 주 월] 뒤에 [‹ 날짜 ›]. "오늘"은 숨긴다(날짜 칸이 좁아져서) */
+  .ak-toolbar.ak-period-bar { gap: 0.4rem; flex-wrap: nowrap; }
+  .ak-period-seg { flex: 0 0 auto; }
+  .ak-period-seg .ak-btn { justify-content: center; height: var(--chip-h); padding: 0 0.7rem; }
+  .ak-period-nav { flex: 1 1 auto; min-width: 0; gap: 0.25rem; }
   .ak-period-nav .ak-btn { height: var(--chip-h); padding: 0 0.75rem; }
-  .ak-period-nav .ak-period-icon { padding: 0; width: var(--chip-h); justify-content: center; }
-  .ak-period-label { flex: 1; min-width: 0; font-size: 0.875rem; }
+  .ak-period-nav .ak-period-icon { padding: 0; width: var(--chip-h); flex: 0 0 auto; justify-content: center; }
+  .ak-period-today { display: none; }
+  .ak-period-label { flex: 1; min-width: 0; font-size: 0.9375rem; }
 }
 
 /* ─── 정산 판매내역 휴대폰 ──────────────────────────────────────────────────────
@@ -151,15 +153,14 @@ select.ak-input { padding-right: 2.25rem; }
      사업자·입금 일괄 변경은 "일괄 변경"을 눌러 펼친다. 넓은 화면에서는 예전처럼 한 줄에 모두 보인다.
    · 고객명 열은 옆으로 밀어도 왼쪽에 붙어 있다(체크박스 열 옆).
    · 저장 실패·결과 안내는 화면 위쪽에 고정한다.
-   · 구역 순서: 판매내역 → 영수증 → 매입내역 → 그래프(동생이 가장 많이 쓰는 순서). */
+   · 구역 순서는 PC와 같다(위 .ak-split 참고). */
 .ak-link-btn { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .ak-link-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .ak-bulk-extra { display: contents; }
 .ak-bulk-toggle { display: none; }
-.ak-bulk-spacer { display: none; }
 @media (max-width: 768px) {
   .ak-bulk-fixed { position: fixed; left: 0.5rem; right: 0.5rem; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); z-index: 40; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28); }
-  .ak-bulk-spacer { display: block; height: 9rem; }
+  .main-content:has(.ak-bulk-fixed) { padding-bottom: calc(64px + 8rem); } /* 고정 바가 마지막 줄을 가리지 않게 페이지 맨 아래에만 여백 */
   .ak-bulk-toggle { display: inline-flex; }
   .ak-bulk-extra { display: none; flex-direction: column; gap: 0.5rem; flex: 1 1 100%; }
   .ak-bulk-extra.is-open { display: flex; }
@@ -169,8 +170,16 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-table th.ak-sticky-col { background: #f8fafc; z-index: 3; }
   .ak-table th.ak-check, .ak-table td.ak-check { position: sticky; left: 0; z-index: 1; background: #fff; }
   .ak-table th.ak-check { background: #f8fafc; z-index: 3; }
-  .ak-split .ak-section-sales { order: 1; }
-  .ak-split .ak-section-receipts { order: 2; }
-  .ak-split .ak-section-purchases { order: 3; }
-  .ak-split .ak-section-chart { order: 4; }
+}
+
+/* 휴대폰 글자 단계·간격 적용 (토큰 설명은 globals.css). 위의 기본 규칙보다 뒤에 있어야 한다. */
+@media (max-width: 768px) {
+  .ak-meta, .ak-sub, .ak-count, .ak-table th { font-size: 0.8125rem; }
+  .ak-table { font-size: 0.9375rem; }
+  .ak-section-title { font-size: 1.0625rem; }
+  .ak-table .ak-select, .ak-table .ak-input { font-weight: 500; }
+  .ak-toolbar { padding: var(--card-pad); gap: 0.5rem; }
+  .ak-page, .ak-split { gap: var(--block-gap); }
+  .ak-section-body { gap: var(--block-gap); }
+  .ak-section-head { padding: 0.1rem 0.1rem 0.4rem; }
 }

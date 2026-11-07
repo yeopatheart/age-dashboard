@@ -23,7 +23,7 @@ export function PeriodBar({
   const nextDisabled = getPeriod(granularity, nextAnchor).from > today; // 아직 오지 않은 기간으로는 못 간다
 
   return (
-    <div className="ak-toolbar ak-sticky">
+    <div className="ak-toolbar ak-sticky ak-period-bar">
       <div className="ak-period-seg">
         {GRANULARITIES.map((g) => (
           <Link key={g} href={settlementUrl(g, anchor)} className={`ak-btn ${g === granularity ? 'ak-btn-primary' : ''}`}>{GRANULARITY_LABEL[g]}</Link>
@@ -37,7 +37,7 @@ export function PeriodBar({
         ) : (
           <Link href={settlementUrl(granularity, nextAnchor)} className="ak-btn ak-period-icon" aria-label={`다음 ${GRANULARITY_LABEL[granularity]}`}><ChevronRight size={14} /></Link>
         )}
-        <Link href={settlementTodayUrl()} className="ak-btn">오늘</Link>
+        <Link href={settlementTodayUrl()} className="ak-btn ak-period-today">오늘</Link>
       </div>
     </div>
   );
