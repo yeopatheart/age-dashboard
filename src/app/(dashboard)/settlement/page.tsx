@@ -82,20 +82,6 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
       {header}
       <PeriodBar granularity={granularity} anchor={anchor} today={today} periodLabel={period.label} />
       <div className="ak-split">
-        <SettlementSection id="chart" title="그래프">
-          {purchaseRows && directory.value ? (
-            <ChartClient key={key} series={buildDailySeries(purchaseRows, period.from, period.to)} totals={totalsOf(purchaseRows)} periodLabel={period.label} />
-          ) : (
-            purchaseNotice('그래프')
-          )}
-        </SettlementSection>
-        <SettlementSection id="purchases" title="매입내역">
-          {purchaseRows && directory.value ? (
-            <PurchasesClient key={key} rows={purchaseRows} sellers={sellers.rows} suppliers={directory.value.suppliers} supplierIdsByProduct={supplierIdsByProduct} multiDay={multiDay} />
-          ) : (
-            purchaseNotice('매입내역')
-          )}
-        </SettlementSection>
         <SettlementSection id="sales" title="판매내역">
           <SettlementClient
             key={key}
@@ -112,6 +98,20 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
             <MigrationNotice feature="영수증" migrations={migrationsFor([receipts.missing])} />
           ) : (
             <ReceiptsClient key={key} receipts={receipts.rows} sellers={sellers.rows} />
+          )}
+        </SettlementSection>
+        <SettlementSection id="purchases" title="매입내역">
+          {purchaseRows && directory.value ? (
+            <PurchasesClient key={key} rows={purchaseRows} sellers={sellers.rows} suppliers={directory.value.suppliers} supplierIdsByProduct={supplierIdsByProduct} multiDay={multiDay} />
+          ) : (
+            purchaseNotice('매입내역')
+          )}
+        </SettlementSection>
+        <SettlementSection id="chart" title="그래프">
+          {purchaseRows && directory.value ? (
+            <ChartClient key={key} series={buildDailySeries(purchaseRows, period.from, period.to)} totals={totalsOf(purchaseRows)} periodLabel={period.label} />
+          ) : (
+            purchaseNotice('그래프')
           )}
         </SettlementSection>
       </div>

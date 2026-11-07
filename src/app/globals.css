@@ -259,6 +259,13 @@ body {
   .ak-tag { white-space: nowrap; }
 }
 
+/* 휴대폰 글자 단계와 간격 (2026-11-07, 정산 화면 실측으로 정리). 글자는 5단계만 쓴다(입력칸 16px은 위 --input-fs):
+   보조 0.8125rem(11.8px) · 버튼·칩 0.8125rem · 본문·표 0.9375rem(13.6px) · 구역 제목 1.0625rem(15.4px) · 페이지 제목 1.1875rem(17.2px).
+   예전에는 보조 0.75rem·본문 0.875rem·버튼 0.8125rem·입력 16px이 한 화면에 섞여 들쭉날쭉했다.
+   간격은 화면 폭에 비례해 12~20px 사이에서 변한다: 페이지 좌우 --page-pad, 카드·구역 사이 --block-gap, 카드 안쪽 --card-pad. */
+:root { --page-pad: clamp(0.75rem, 4.5vw, 1.25rem); --block-gap: clamp(0.6rem, 3vw, 0.9rem); --card-pad: clamp(0.5rem, 2.8vw, 0.75rem); }
+/* 글자·간격 규칙 본문은 admin.css 맨 아래(기본 규칙보다 뒤에 와야 덮는다). */
+
 /* 휴대폰 입력·선택칸 글자: 16px(--input-fs). iOS Safari는 입력 글자가 16px 미만이면 포커스할 때 화면을 확대하므로 16px로 맞추고,
    viewport의 maximum-scale 제한은 두지 않는다(핀치 확대 허용). 버튼·칩 글자는 그대로 0.8125rem이다. 2026-11-06 결정: docs/decisions/2026-10-29-mobile-ui.md. */
 :root { --input-fs: 16px; } /* 입력칸만 16px — iOS가 확대하지 않는 최소 크기이고 야외에서도 읽기 쉽다 */

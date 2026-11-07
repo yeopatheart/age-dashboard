@@ -388,7 +388,6 @@ export function SettlementClient({
       />
 
       {/* 휴대폰에서 하단에 고정된 일괄 바가 표 마지막 줄을 가리지 않게 하는 여백 */}
-      {canEdit && selected.size > 0 && <div className="ak-bulk-spacer" aria-hidden />}
 
       {receiptOpen && (
         <ReceiptIssuePanel

@@ -28,6 +28,7 @@ export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: Re
   const [images, setImages] = useState<PageImage[]>(() => pages.map(() => ({ state: 'pending' })));
   const [attempt, setAttempt] = useState(0); // 이미지 만들기에 실패했을 때 "다시 만들기"로 올린다
   const [message, setMessage] = useState<string | null>(null);
+  const [shareText, setShareText] = useState(''); // 카톡·공유로 보낼 때 함께 보낼 글(비우면 이미지만)
   const copySupported = useSyncExternalStore(subscribeNothing, canCopyImage, () => false);
 
   // 화면 폭에 맞춰 영수증을 줄여서 보여 준다(이미지는 줄이지 않은 원래 크기로 찍는다).
@@ -84,6 +85,12 @@ export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: Re
   return (
     <div ref={frameRef} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <p className="ak-meta">카카오톡으로 보내기 — 휴대폰: “카톡·공유”를 누르고 카카오톡을 고르세요. PC: “이미지 복사” 후 카카오톡 대화창에서 붙여넣기(Ctrl+V, Mac은 ⌘+V)하세요.</p>
+      {images.some((img, i) => img.state === 'ready' && canShareImage(img.blob, fileName(i))) && (
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+          <span className="ak-meta">카톡·공유로 보낼 때 함께 보낼 메시지 (비워 두면 이미지만 보냅니다)</span>
+          <input className="ak-input" value={shareText} onChange={(e) => setShareText(e.target.value)} maxLength={200} placeholder="예: 11월 정산 영수증입니다" />
+        </label>
+      )}
       {pages.length > 1 && (
         <button
           type="button"
@@ -124,7 +131,7 @@ export function ReceiptViewer({ snapshot, receiptNo, sealImage }: { snapshot: Re
                 <Download size={14} /> 이미지 저장
               </button>
               {ready && canShareImage(ready, fileName(i)) && (
-                <button type="button" className="ak-btn" onClick={() => void run(async () => ((await shareImage(ready, fileName(i))) === 'shared' ? '공유 시트로 보냈습니다.' : undefined))}>
+                <button type="button" className="ak-btn" onClick={() => void run(async () => ((await shareImage(ready, fileName(i), shareText)) === 'shared' ? '공유 시트로 보냈습니다.' : undefined))}>
                   <Share2 size={14} /> 카톡·공유
                 </button>
               )}
