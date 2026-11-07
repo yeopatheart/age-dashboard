@@ -11,6 +11,7 @@ import { loadSalesRows, loadStoredPurchases, loadSupplierDirectory } from '@/lib
 import { loadReceipts } from '@/lib/settlement/receipt-server';
 import { buildPurchaseRows, totalsOf } from '@/lib/settlement/purchases';
 import { buildDailySeries } from '@/lib/settlement/chart';
+import { buildProductGroups, buildSellerGroups } from '@/lib/settlement/chart-groups';
 import { PeriodBar } from './period-bar';
 import { SettlementSection } from './settlement-section';
 import { SettlementClient } from './settlement-client';
@@ -109,7 +110,7 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
         </SettlementSection>
         <SettlementSection id="chart" title="그래프">
           {purchaseRows && directory.value ? (
-            <ChartClient key={key} series={buildDailySeries(purchaseRows, period.from, period.to)} totals={totalsOf(purchaseRows)} periodLabel={period.label} />
+            <ChartClient key={key} series={buildDailySeries(purchaseRows, period.from, period.to)} totals={totalsOf(purchaseRows)} periodLabel={period.label} byProduct={buildProductGroups(purchaseRows)} bySeller={buildSellerGroups(sales.rows, purchaseRows, sellers.rows)} />
           ) : (
             purchaseNotice('그래프')
           )}

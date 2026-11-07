@@ -5,7 +5,7 @@ import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } 
 import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, GripVertical, ListChecks, PackageX, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { getProductCustomers, getProductSummary, prepLabelOf, isCardComplete, isUndecidedQuantity, roundLabel, type OrderItem, type OrderRound, type OrderRow } from '@/lib/orders';
 import { BoxDots } from '@/components/box-dots';
-import { STAGE_LABEL, stageDetail, stageOf, type Stage } from '@/lib/overview';
+import { STAGES, STAGE_COLOR, STAGE_LABEL, stageDetail, stageOf, type Stage } from '@/lib/overview';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
 
 // 휴대폰(768px 이하)용 대시보드. PC의 "고객 × 상품" 표를 가로로 밀어 보는 대신, 고객 한 곳이 카드 하나다.
@@ -493,12 +493,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-stage-meta { flex: none; display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; line-height: 1.5; }
         .dm-stage-detail { color: var(--muted-foreground); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
         .dm-stage { flex: none; font-size: 0.75rem; font-weight: 800; line-height: 1.4; border-radius: 999px; padding: 0.15rem 0.65rem; border: 1px solid; white-space: nowrap; }
-        .dm-stage-boxing { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
-        .dm-stage-labeling { background: #f5f3ff; border-color: #c4b5fd; color: #6d28d9; }
-        .dm-stage-packing { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
-        .dm-stage-packed { background: #f0fdfa; border-color: #5eead4; color: #0f766e; }
-        .dm-stage-loading { background: #f0f9ff; border-color: #7dd3fc; color: #0369a1; }
-        .dm-stage-done { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
+        ${STAGES.map((st) => `.dm-stage-${st} { background: ${STAGE_COLOR[st].tint}; border-color: ${STAGE_COLOR[st].border}; color: ${STAGE_COLOR[st].text}; }`).join('\n        ')}
         .dm-tag-merge { background: #f0fdf4; border-color: #86efac; color: #166534; }
         .dm-tag-red { background: #fff1f2; border-color: #fda4af; color: #be123c; }
         .dm-memo { margin: 0; font-size: 0.75rem; font-weight: 700; color: #92400e; }

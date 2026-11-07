@@ -7,6 +7,7 @@ import { AlertTriangle, Camera, CheckCircle2, Check, Copy, Keyboard, ScanLine, S
 import { scanBarcode, undoScan, type ScanResult } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { playTone, unlockAudio } from '@/lib/sound/tones';
+import { cleanShareText } from '@/lib/share-text';
 import { buildLoadedListText, NO_TERMINAL, type PackageCount } from '@/lib/scan-share-text';
 
 export interface ScanCard {
@@ -228,16 +229,16 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
   const [copiedTerminal, setCopiedTerminal] = useState<string | null>(null);
   const copyList = async (terminal: string, text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(cleanShareText(text));
       setCopiedTerminal(terminal);
       window.setTimeout(() => setCopiedTerminal((cur) => (cur === terminal ? null : cur)), 2500);
     } catch {
-      window.prompt('아래 글을 복사해서 붙여넣으세요.', text);
+      window.prompt('아래 글을 복사해서 붙여넣으세요.', cleanShareText(text));
     }
   };
   const shareList = async (terminal: string, text: string) => {
     try {
-      await navigator.share({ text });
+      await navigator.share({ text: cleanShareText(text) });
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return; // 공유 창을 닫은 것이다
       await copyList(terminal, text);

@@ -1,18 +1,38 @@
 'use client';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, type DotItemDotProps, type LabelProps, type TooltipContentProps } from 'recharts';
 import { axisFormatter, niceScale, type DayPoint } from '@/lib/settlement/chart';
+import type { GroupPoint } from '@/lib/settlement/chart-groups';
 import type { PurchaseTotals } from '@/lib/settlement/purchases';
 import { formatWon } from '@/lib/money';
+import { GroupChart } from './group-chart';
+import { Key, Legend, SERIES, won } from './chart-shared';
 
 // 정산 그래프. 주·월 조회는 일별 추이를 선 그래프로, 일 조회는 하루의 판매가·매입가·수익을 나란히 비교하는 막대로 보여 준다.
 // 색은 항목마다 고정이다(판매가=1번, 매입가=2번, 수익=3번 슬롯). 상태색(초록·빨강)은 쓰지 않는다 — 수익이 적자여도 "상태"가 아니라 숫자다.
 // 규격(선 2px, 막대 24px 이하·4px 둥근 끝, 2px 표면 링, 실선 헤어라인 격자)과 십자선·툴팁·표로 보기는 dataviz 지침을 따른다.
-const SERIES = [
-  { key: 'sales', name: '판매가', color: 'var(--series-1)' },
-  { key: 'purchase', name: '매입가', color: 'var(--series-2)' },
-  { key: 'profit', name: '수익', color: 'var(--series-3)' },
-] as const;
+
+type ChartView = 'all' | 'product' | 'seller';
+const VIEWS: { key: ChartView; name: string }[] = [
+  { key: 'all', name: '전체' },
+  { key: 'product', name: '품목별' },
+  { key: 'seller', name: '사업자별' },
+];
+// 기간을 옮기면 그래프가 새로 만들어지지만(page.tsx의 key), 보던 보기(전체·품목별·사업자별)는 그대로 유지한다.
+// 페이지를 새로 불러오면 '전체'로 돌아간다. 브라우저 저장소에 두면 새로 불러올 때 서버 화면('전체')과 어긋나 화면이 동작하지 않는 문제가 있어(hydration) 메모리에만 둔다.
+const viewMemory = new Map<string, ChartView>();
+const viewListeners = new Set<() => void>();
+const readView = (): ChartView => viewMemory.get('view') ?? 'all';
+function writeView(v: ChartView): void {
+  viewMemory.set('view', v);
+  viewListeners.forEach((l) => l());
+}
+const subscribeView = (cb: () => void) => {
+  viewListeners.add(cb);
+  return () => {
+    viewListeners.delete(cb);
+  };
+};
 
 const LINE_H = 320;
 const LINE_MARGIN = { top: 12, bottom: 4, left: 4 };
@@ -42,6 +62,13 @@ const VIZ_CSS = `
 .viz-tip-row strong { color: var(--text-primary); font-weight: 600; margin-left: auto; padding-left: 0.6rem; }
 .viz-tip-name { color: var(--text-secondary); }
 .viz-tip-note { color: var(--text-muted); font-size: 0.75rem; border-top: 1px solid var(--grid); padding-top: 0.3rem; }
+.viz-views { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.viz-view-btn, .viz-seg-btn { height: 2.25rem; padding: 0 1rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); font-size: 0.8125rem; font-weight: 700; cursor: pointer; }
+.viz-view-btn.is-on, .viz-seg-btn.is-on { background: var(--text-primary); border-color: var(--text-primary); color: #fff; }
+.viz-controls { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem 1rem; flex-wrap: wrap; }
+.viz-seg { display: inline-flex; align-items: center; gap: 0.3rem; }
+.viz-seg-label { font-size: 0.75rem; color: var(--text-muted); margin-right: 0.2rem; }
+.viz-seg-btn { height: 1.9rem; padding: 0 0.8rem; font-weight: 600; }
 .viz-empty { padding: 3rem 1rem; text-align: center; color: var(--text-muted); }
 .viz-table-wrap summary { cursor: pointer; font-size: 0.8125rem; color: var(--text-secondary); }
 .viz-table-scroll { overflow-x: auto; margin-top: 0.5rem; }
@@ -52,22 +79,6 @@ const VIZ_CSS = `
 .viz-table tfoot td { font-weight: 600; border-bottom: 0; }
 @media (max-width: 720px) { .viz-tiles { grid-template-columns: 1fr; } }
 `;
-
-const won = (n: number) => `${formatWon(n)}원`;
-
-function Key({ color, kind }: { color: string; kind: 'line' | 'box' }) {
-  return <span className={kind === 'line' ? 'viz-key-line' : 'viz-key-box'} style={{ background: color }} aria-hidden />;
-}
-
-function Legend({ kind }: { kind: 'line' | 'box' }) {
-  return (
-    <div className="viz-legend">
-      {SERIES.map((s) => (
-        <span key={s.key} className="viz-legend-item"><Key color={s.color} kind={kind} />{s.name}</span>
-      ))}
-    </div>
-  );
-}
 
 // 십자선이 가리킨 날짜의 모든 항목을 한 번에 보여 준다. 값이 앞에 오고 이름은 뒤에 둔다.
 function LineTooltip({ active, payload }: TooltipContentProps) {
@@ -113,12 +124,18 @@ export function ChartClient({
   series,
   totals,
   periodLabel,
+  byProduct,
+  bySeller,
 }: {
   series: DayPoint[];
   totals: PurchaseTotals;
   periodLabel: string;
+  byProduct: GroupPoint[];
+  bySeller: GroupPoint[];
 }) {
   const [hoverBar, setHoverBar] = useState<number | null>(null);
+  const view = useSyncExternalStore(subscribeView, readView, () => 'all' as ChartView);
+  const setView = writeView;
   const isDay = series.length === 1;
   const empty = totals.salesTotal === 0 && totals.purchaseTotal === 0 && totals.rows === 0;
   const summary = `${periodLabel} 판매가 ${won(totals.salesTotal)}, 매입가 ${won(totals.purchaseTotal)}, 수익 ${won(totals.profitTotal)}`;
@@ -197,6 +214,15 @@ export function ChartClient({
         </p>
       )}
 
+      <div className="viz-views" role="group" aria-label="그래프 보기">
+        {VIEWS.map((v) => (
+          <button key={v.key} type="button" className={`viz-view-btn ${view === v.key ? 'is-on' : ''}`} aria-pressed={view === v.key} onClick={() => setView(v.key)}>{v.name}</button>
+        ))}
+      </div>
+
+      {view !== 'all' && <GroupChart key={view} groups={view === 'product' ? byProduct : bySeller} kind={view} periodLabel={periodLabel} />}
+
+      {view === 'all' && (
       <section className="viz-card" aria-label="정산 그래프">
         <div className="viz-head">
           <span className="viz-title">{isDay ? `${series[0].label} (${series[0].weekday}) 판매가·매입가·수익 비교` : `일별 판매가·매입가·수익 추이`}</span>
@@ -291,6 +317,7 @@ export function ChartClient({
           </>
         )}
       </section>
+      )}
     </div>
   );
 }
