@@ -21,7 +21,7 @@ function formatIssuedAt(iso: string): string {
 type OpenReceipt = { receipt: ReceiptRecord; seal: string | null | undefined };
 
 export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[]; sellers: { id: string; name: string }[] }) {
-  const canEdit = useCan()('settlement:edit');
+  const canDelete = useCan()('receipts:delete');
   const [search, setSearch] = useState('');
   const [sellerFilter, setSellerFilter] = useState('');
   const [open, setOpen] = useState<OpenReceipt | null>(null);
@@ -117,7 +117,7 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
               </>
             ) : (
               <>
-                {canEdit && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
+                {canDelete && <button className="ak-btn ak-btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> 삭제</button>}
                 <span className="ak-spacer" />
                 <button className="ak-btn" onClick={() => setOpen(null)}>닫기</button>
               </>

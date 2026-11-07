@@ -6,7 +6,7 @@ import { migrationsFor, rowsOrMissing, valueOrMissing } from '@/lib/supabase/mis
 import { AdminHeader } from '@/components/admin/admin-kit';
 import { MigrationNotice } from '@/components/migration-notice';
 import { todayKST } from '@/lib/order-date';
-import { getPeriod, type Granularity } from '@/lib/report';
+import { parsePeriodParams } from '@/lib/settlement/url';
 import { loadSalesRows, loadStoredPurchases, loadSupplierDirectory } from '@/lib/settlement/server';
 import { loadReceipts } from '@/lib/settlement/receipt-server';
 import { buildPurchaseRows, totalsOf } from '@/lib/settlement/purchases';
@@ -17,9 +17,6 @@ import { SettlementSection } from './settlement-section';
 import { SettlementClient } from './settlement-client';
 import { PurchasesClient } from './purchases-client';
 import { ChartClient } from './chart-client';
-import { ReceiptsClient } from './receipts-client';
-
-const isValidDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 
 // 정산: 출고가 끝난 주문을 판매내역과 매입내역으로 보여 주고 가격·사업자 구분·입금 여부·메모를 입력한다. 그래프·매입내역·판매내역을 한 화면에 함께 보여 준다.
 // ?g=day|week|month(기본 day), ?d=YYYY-MM-DD(기준일, 기본 오늘, 미래는 오늘로 본다)로 기간을 정한다. 세 구역이 같은 기간을 쓴다.
@@ -27,9 +24,7 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
   const accessCheck = requireMenu('settlement'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 await로 확정)
   const { g, d } = await searchParams;
   const today = todayKST();
-  const granularity: Granularity = g === 'week' || g === 'month' ? g : 'day';
-  const anchor = d && isValidDate(d) && d <= today ? d : today;
-  const period = getPeriod(granularity, anchor);
+  const { granularity, anchor, period } = parsePeriodParams(g, d, today);
   const multiDay = period.from !== period.to;
   const supabase = await createClient();
 
@@ -53,7 +48,7 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
     // 매입내역·그래프에 쓰는 값. 0044를 적용하기 전이면 두 구역만 안내를 보여 주고 판매내역은 계속 쓴다.
     rowsOrMissing(loadStoredPurchases(supabase, period.from, period.to)),
     valueOrMissing(loadSupplierDirectory(supabase)),
-    // 영수증 이력(0047). 적용 전이면 그 구역만 안내를 보여 주고 나머지는 계속 쓴다.
+    // 영수증 이력(0047): 판매내역에서 "이미 발행됨" 경고를 하는 데만 쓴다(목록은 영수증 메뉴). 적용 전이면 경고만 빠진다.
     rowsOrMissing(loadReceipts(supabase, period.from, period.to)),
   ]);
 
@@ -93,13 +88,6 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
             to={period.to}
             issued={receipts.missing ? [] : receipts.rows.map((r) => ({ orderDate: r.orderDate, customerName: r.customerName, sellerId: r.sellerId, receiptNo: r.receiptNo }))}
           />
-        </SettlementSection>
-        <SettlementSection id="receipts" title="영수증">
-          {receipts.missing ? (
-            <MigrationNotice feature="영수증" migrations={migrationsFor([receipts.missing])} />
-          ) : (
-            <ReceiptsClient key={key} receipts={receipts.rows} sellers={sellers.rows} />
-          )}
         </SettlementSection>
         <SettlementSection id="purchases" title="매입내역">
           {purchaseRows && directory.value ? (
