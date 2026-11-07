@@ -102,9 +102,9 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
   const doneItemIds = items.filter((i) => doneCardIds.has(i.dailyBusinessId)).map((i) => i.id);
   const stored: StoredSale[] = (
     await mapChunks(doneItemIds, CHUNK, (chunk) =>
-      fetchAll((a, b) => supabase.from('settlement_sales').select('order_item_id, seller_id, price, unit_price, paid, memo').in('order_item_id', chunk).order('order_item_id').range(a, b), '정산 입력값 조회 실패(마이그레이션 0043 적용 필요): '),
+      fetchAll((a, b) => supabase.from('settlement_sales').select('order_item_id, seller_id, price, unit_price, product_override, quantity_override, unit_override, paid, memo').in('order_item_id', chunk).order('order_item_id').range(a, b), '정산 입력값 조회 실패(마이그레이션 0043 적용 필요): '),
     )
-  ).map((s) => ({ orderItemId: s.order_item_id, sellerId: s.seller_id, price: s.price === null ? null : Number(s.price), unitPrice: s.unit_price === null ? null : Number(s.unit_price), paid: s.paid, memo: s.memo }));
+  ).map((s) => ({ orderItemId: s.order_item_id, sellerId: s.seller_id, price: s.price === null ? null : Number(s.price), unitPrice: s.unit_price === null ? null : Number(s.unit_price), productOverride: s.product_override, quantityOverride: s.quantity_override === null ? null : Number(s.quantity_override), unitOverride: s.unit_override, paid: s.paid, memo: s.memo }));
 
   return buildSalesRows(cards, items, stored);
 }

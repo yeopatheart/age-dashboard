@@ -13,8 +13,8 @@ const PAGE_SIZE = 100; // 월 조회는 수천 줄이 될 수 있어 100줄씩 �
 const NO_SELLER = '__none'; // 일괄 적용에서 "미지정으로 되돌리기"
 const EMPTY_HIDDEN = new Set<string>();
 
-type Edit = Partial<Pick<SalesRow, 'sellerId' | 'price' | 'unitPrice' | 'paid' | 'memo'>>;
-type Drafts = Record<string, { price?: string; unitPrice?: string; memo?: string }>;
+type Edit = Partial<Pick<SalesRow, 'sellerId' | 'price' | 'unitPrice' | 'paid' | 'memo' | 'product' | 'quantity' | 'unit' | 'edited'>>;
+type Drafts = Record<string, { price?: string; unitPrice?: string; memo?: string; product?: string; quantity?: string; unit?: string }>;
 
 export function SettlementClient({
   rows,
@@ -78,8 +78,26 @@ export function SettlementClient({
     if (patch.unitPrice !== undefined) local.unitPrice = patch.unitPrice;
     if (patch.paid !== undefined) local.paid = patch.paid;
     if (patch.memo !== undefined) local.memo = patch.memo ?? '';
+    // 품목·수량·단위를 고치거나 되돌린 값을 화면에 먼저 보인다(null = 주문 목록 원본으로 되돌림). 줄마다 원본이 달라 줄별로 계산한다.
+    const itemEdits: Record<string, Edit> | null =
+      patch.product !== undefined || patch.quantity !== undefined || patch.unit !== undefined
+        ? Object.fromEntries(
+            ids.map((id) => {
+              const base = numbered.find((r) => r.itemId === id);
+              const cur = { ...base, ...edits[id] } as SalesRow;
+              const o = base?.original ?? { product: '', quantity: 0, unit: '' };
+              const e: Edit = {};
+              if (patch.product !== undefined) e.product = patch.product ?? o.product;
+              if (patch.quantity !== undefined) e.quantity = patch.quantity ?? o.quantity;
+              if (patch.unit !== undefined) e.unit = patch.unit ?? o.unit;
+              const next = { product: e.product ?? cur.product, quantity: e.quantity ?? cur.quantity, unit: e.unit ?? cur.unit };
+              e.edited = next.product !== o.product || next.quantity !== o.quantity || next.unit !== o.unit;
+              return [id, e];
+            }),
+          )
+        : null;
     const previous = Object.fromEntries(ids.map((id) => [id, edits[id]]));
-    setEdits((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, { ...prev[id], ...local }])) }));
+    setEdits((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, { ...prev[id], ...local, ...itemEdits?.[id] }])) }));
     setSaving((n) => n + 1);
     // 권한이 없거나 연결이 끊기면 서버 액션이 오류를 던진다. 그때도 저장 중 표시와 화면 값을 되돌린다.
     const result = await saveSales({ itemIds: ids, ...patch }).catch(() => ({ error: '저장하지 못했습니다. 권한이나 연결을 확인한 뒤 다시 시도해주세요.' }));
@@ -105,8 +123,8 @@ export function SettlementClient({
     return true;
   };
 
-  const setDraft = (id: string, key: 'price' | 'unitPrice' | 'memo', value: string) => setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], [key]: value } }));
-  const clearDraft = (id: string, key: 'price' | 'unitPrice' | 'memo') =>
+  const setDraft = (id: string, key: 'price' | 'unitPrice' | 'memo' | 'product' | 'quantity' | 'unit', value: string) => setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], [key]: value } }));
+  const clearDraft = (id: string, key: 'price' | 'unitPrice' | 'memo' | 'product' | 'quantity' | 'unit') =>
     setDrafts((prev) => {
       const { [key]: _removed, ...rest } = prev[id] ?? {};
       void _removed;
@@ -206,8 +224,104 @@ export function SettlementClient({
           <strong>{r.customer}</strong>
         ),
     },
-    { key: 'product', label: '품목', hideable: false, render: (r) => r.product },
-    { key: 'qty', label: '수량', hideable: false, className: 'ak-fit', render: (r) => `${formatWon(r.quantity)}${r.unit}` },
+    {
+      key: 'product',
+      label: '품목',
+      hideable: false,
+      render: (r0) => {
+        const r = view(r0);
+        if (!canEdit) return r.product;
+        return (
+          <input
+            className={`ak-input ${r.edited && r.product !== r.original.product ? 'ak-edited' : ''}`}
+            style={{ width: '9rem', height: 'var(--ctl-h)' }}
+            enterKeyHint="next"
+            maxLength={60}
+            aria-label={`${r.customer} 품목`}
+            title={r.product !== r.original.product ? `주문 목록 품목: ${r.original.product}` : undefined}
+            value={drafts[r.itemId]?.product ?? r.product}
+            onChange={(e) => setDraft(r.itemId, 'product', e.target.value)}
+            onBlur={() => {
+              const draft = drafts[r.itemId]?.product;
+              if (draft === undefined) return;
+              clearDraft(r.itemId, 'product');
+              const next = draft.trim();
+              if (next === r.product) return;
+              if (next === '') return flash('품목명을 비울 수 없습니다. 원래 값으로 되돌리려면 ↺ 버튼을 누르세요.');
+              void commit([r.itemId], { product: next === r.original.product ? null : next }).then((ok) => ok && r.original.product !== next && flash('매입내역은 고친 품목명으로 따로 잡힙니다. 이전 품목명으로 입력한 매입가가 있으면 그 행이 그대로 남습니다.'));
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && e.currentTarget.blur()}
+          />
+        );
+      },
+    },
+    {
+      key: 'qty',
+      label: '수량',
+      hideable: false,
+      className: 'ak-fit',
+      render: (r0) => {
+        const r = view(r0);
+        if (!canEdit) return `${formatWon(r.quantity)}${r.unit}`;
+        const qtyChanged = r.quantity !== r.original.quantity;
+        const unitChanged = r.unit !== r.original.unit;
+        return (
+          <span className="ak-qty">
+            <input
+              className={`ak-input ${qtyChanged ? 'ak-edited' : ''}`}
+              style={{ width: '4.2rem', height: 'var(--ctl-h)', textAlign: 'right' }}
+              inputMode="decimal"
+              enterKeyHint="next"
+              aria-label={`${r.customer} ${r.product} 수량`}
+              title={qtyChanged ? `주문 목록 수량: ${formatWon(r.original.quantity)}${r.original.unit}` : undefined}
+              value={drafts[r.itemId]?.quantity ?? String(r.quantity)}
+              onChange={(e) => setDraft(r.itemId, 'quantity', e.target.value.replace(/[^0-9.]/g, ''))}
+              onBlur={() => {
+                const draft = drafts[r.itemId]?.quantity;
+                if (draft === undefined) return;
+                clearDraft(r.itemId, 'quantity');
+                const next = Number(draft);
+                if (draft === '' || !Number.isFinite(next) || next <= 0) return flash('수량은 0보다 큰 숫자로 입력해주세요.');
+                if (next === r.quantity) return;
+                void commit([r.itemId], { quantity: next === r.original.quantity ? null : next });
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && e.currentTarget.blur()}
+            />
+            <input
+              className={`ak-input ${unitChanged ? 'ak-edited' : ''}`}
+              style={{ width: '3.2rem', height: 'var(--ctl-h)' }}
+              enterKeyHint="next"
+              maxLength={10}
+              aria-label={`${r.customer} ${r.product} 단위`}
+              title={unitChanged ? `주문 목록 단위: ${r.original.unit}` : undefined}
+              value={drafts[r.itemId]?.unit ?? r.unit}
+              onChange={(e) => setDraft(r.itemId, 'unit', e.target.value)}
+              onBlur={() => {
+                const draft = drafts[r.itemId]?.unit;
+                if (draft === undefined) return;
+                clearDraft(r.itemId, 'unit');
+                const next = draft.trim();
+                if (next === '') return flash('단위를 비울 수 없습니다.');
+                if (next === r.unit) return;
+                void commit([r.itemId], { unit: next === r.original.unit ? null : next });
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && e.currentTarget.blur()}
+            />
+            {r.edited && (
+              <button
+                type="button"
+                className="ak-undo-btn"
+                title={`원래대로: ${r.original.product} ${formatWon(r.original.quantity)}${r.original.unit}`}
+                aria-label={`${r.customer} ${r.product} 품목·수량을 주문 목록 값으로 되돌리기`}
+                onClick={() => void commit([r.itemId], { product: null, quantity: null, unit: null })}
+              >
+                ↺
+              </button>
+            )}
+          </span>
+        );
+      },
+    },
     {
       key: 'unitPrice',
       label: '단가(원)',

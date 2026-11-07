@@ -9,11 +9,17 @@ export interface SalesPatch {
   sellerId?: string | null; // 사업자 구분(null = 미지정)
   price?: number | null; // 판매가(원, null = 비움)
   unitPrice?: number | null; // 단가(원, null = 비움). 영수증의 단가 칸에 쓴다
+  product?: string | null; // 정산에서 고친 품목명(null = 주문 목록 값으로 되돌림)
+  quantity?: number | null; // 고친 수량(null = 되돌림)
+  unit?: string | null; // 고친 단위(null = 되돌림)
   paid?: boolean; // 입금 여부(Y = true)
   memo?: string | null;
 }
 
 const MAX_ROWS = 5000;
+const MAX_PRODUCT_LEN = 60; // 0048의 check와 같다
+const MAX_UNIT_LEN = 10;
+const MAX_QUANTITY = 100_000;
 const MAX_PRICE = 99_999_999_999; // src/lib/money.ts의 MAX_WON_DIGITS(11자리)와 같다
 const CHUNK = 500;
 
@@ -24,7 +30,7 @@ export async function saveSales(patch: SalesPatch): Promise<{ error: string | nu
   if (ids.length === 0) return { error: null };
   if (ids.length > MAX_ROWS) return { error: `한 번에 ${MAX_ROWS.toLocaleString('ko-KR')}건까지만 바꿀 수 있습니다.` };
 
-  const fields: { seller_id?: string | null; price?: number | null; unit_price?: number | null; paid?: boolean; memo?: string | null } = {};
+  const fields: { seller_id?: string | null; price?: number | null; unit_price?: number | null; product_override?: string | null; quantity_override?: number | null; unit_override?: string | null; paid?: boolean; memo?: string | null } = {};
   if (patch.sellerId !== undefined) fields.seller_id = patch.sellerId;
   if (patch.price !== undefined) {
     if (patch.price !== null && (!Number.isInteger(patch.price) || patch.price < 0 || patch.price > MAX_PRICE)) return { error: '판매가가 올바르지 않습니다.' };
@@ -33,6 +39,21 @@ export async function saveSales(patch: SalesPatch): Promise<{ error: string | nu
   if (patch.unitPrice !== undefined) {
     if (patch.unitPrice !== null && (!Number.isInteger(patch.unitPrice) || patch.unitPrice < 0 || patch.unitPrice > MAX_PRICE)) return { error: '단가가 올바르지 않습니다.' };
     fields.unit_price = patch.unitPrice;
+  }
+  if (patch.product !== undefined) {
+    const product = patch.product === null ? null : patch.product.trim();
+    if (product !== null && (product.length === 0 || product.length > MAX_PRODUCT_LEN)) return { error: `품목명은 1~${MAX_PRODUCT_LEN}자로 입력해주세요.` };
+    fields.product_override = product;
+  }
+  if (patch.quantity !== undefined) {
+    const q = patch.quantity;
+    if (q !== null && (!Number.isFinite(q) || q <= 0 || q > MAX_QUANTITY || Math.round(q * 100) / 100 !== q)) return { error: `수량은 0보다 크고 ${MAX_QUANTITY.toLocaleString('ko-KR')} 이하(소수 둘째 자리까지)로 입력해주세요.` };
+    fields.quantity_override = q;
+  }
+  if (patch.unit !== undefined) {
+    const unit = patch.unit === null ? null : patch.unit.trim();
+    if (unit !== null && (unit.length === 0 || unit.length > MAX_UNIT_LEN)) return { error: `단위는 1~${MAX_UNIT_LEN}자로 입력해주세요.` };
+    fields.unit_override = unit;
   }
   if (patch.paid !== undefined) fields.paid = patch.paid === true;
   if (patch.memo !== undefined) {

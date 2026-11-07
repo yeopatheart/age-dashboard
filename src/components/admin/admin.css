@@ -161,6 +161,9 @@ select.ak-input { padding-right: 2.25rem; }
    · 고객명 열은 옆으로 밀어도 왼쪽에 붙어 있다(체크박스 열 옆).
    · 저장 실패·결과 안내는 화면 위쪽에 고정한다.
    · 구역 순서는 PC와 같다(위 .ak-split 참고). */
+.ak-qty { display: inline-flex; align-items: center; gap: 0.3rem; }
+.ak-input.ak-edited { border-color: #f59e0b; background: #fffbeb; } /* 정산에서 주문 목록 값을 고친 칸 */
+.ak-undo-btn { flex: none; width: var(--chip-h); height: var(--chip-h); border-radius: 999px; border: 1px solid var(--border); background: #fff; color: #b45309; font-size: 1rem; font-weight: 800; line-height: 1; cursor: pointer; }
 .ak-link-btn { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .ak-link-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .ak-bulk-extra { display: contents; }
