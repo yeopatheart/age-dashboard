@@ -2,9 +2,11 @@
 import { useState, type ReactNode } from 'react';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Ban, Check, ChevronDown, ChevronLeft, ChevronRight, GripVertical, ListChecks, PackageX, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Ban, Check, ChevronDown, GripVertical, ListChecks, PackageX, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { getProductCustomers, getProductSummary, prepLabelOf, isCardComplete, isUndecidedQuantity, roundLabel, type OrderItem, type OrderRound, type OrderRow } from '@/lib/orders';
 import { BoxDots } from '@/components/box-dots';
+import { DateNav } from '@/components/date-nav';
+import { Segmented } from '@/components/segmented';
 import { STAGES, STAGE_COLOR, STAGE_LABEL, stageDetail, stageOf, type Stage } from '@/lib/overview';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
 
@@ -175,12 +177,6 @@ export function DashboardMobile(props: DashboardMobileProps) {
       else next.add(id);
       return next;
     });
-  const shiftDate = (days: number) => {
-    const d = new Date(`${orderDate}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + days);
-    props.onSetDate(d.toISOString().slice(0, 10));
-  };
-
   const switchSegment = (next: Segment) => {
     if (next === segment) return;
     setSegment(next);
@@ -198,25 +194,22 @@ export function DashboardMobile(props: DashboardMobileProps) {
     <div className="dm-root">
       <div className="dm-head">
         <div className="dm-date">
-          <div className="dm-date-nav">
-            <button className="dm-icon" onClick={() => shiftDate(-1)} aria-label="전날"><ChevronLeft size={18} /></button>
-            <label className="dm-date-label">
-              <input type="date" value={orderDate} max={today} onChange={(e) => e.target.value && props.onSetDate(e.target.value)} />
-              <span>{orderDate.slice(5).replace('-', '/')}{orderDate === today ? ' · 오늘' : ''}</span>
-            </label>
-            <button className="dm-icon" onClick={() => shiftDate(1)} disabled={orderDate >= today} aria-label="다음날"><ChevronRight size={18} /></button>
-            {orderDate !== today && <button className="dm-today" onClick={() => props.onSetDate(today)}>오늘</button>}
-          </div>
+          <DateNav value={orderDate} today={today} onChange={props.onSetDate} label="주문 날짜" grow />
           {!readOnly && (
             <button className="dm-add" onClick={props.onAddOrder} aria-label="주문 추가" title="주문 추가 (고객 카드 추가)">
               <Plus size={20} strokeWidth={2.5} />
             </button>
           )}
           {/* 기본 주문 ↔ 별도 주문(택배 등) 전환. 아래 터미널 칩·진행·상태 필터가 고른 구분에 맞춰 바뀐다. */}
-          <div className="dm-toggle" role="tablist" aria-label="주문 구분">
-            <button role="tab" aria-selected={segment === 'main'} className={segment === 'main' ? 'dm-toggle-on' : ''} onClick={() => switchSegment('main')}>기본</button>
-            <button role="tab" aria-selected={segment === 'separate'} className={segment === 'separate' ? 'dm-toggle-on' : ''} onClick={() => switchSegment('separate')}>별도{separateRows.length > 0 ? ` ${separateRows.length}` : ''}</button>
-          </div>
+          <Segmented
+            label="주문 구분"
+            value={segment}
+            items={[
+              { key: 'main' as const, label: '기본' },
+              { key: 'separate' as const, label: `별도${separateRows.length > 0 ? ` ${separateRows.length}` : ''}` },
+            ]}
+            onSelect={switchSegment}
+          />
         </div>
 
         <div className="dm-chips" role="tablist" aria-label="터미널">
@@ -236,12 +229,8 @@ export function DashboardMobile(props: DashboardMobileProps) {
           <span>상품 {totals.done}/{totals.live} · {pct}%</span>
         </div>
         <div className="dm-filters">
-          <div className="dm-seg" role="tablist" aria-label="상태">
-            {filters.map((f) => (
-              <button key={f.key} role="tab" aria-selected={status === f.key} className={status === f.key ? 'dm-seg-on' : ''} onClick={() => setStatus(f.key)}>
-                {f.label} <b>{f.count}</b>
-              </button>
-            ))}
+          <div className="dm-seg-wrap">
+            <Segmented label="상태" fill value={status} items={filters.map((f) => ({ key: f.key, label: `${f.label} ${f.count}` }))} onSelect={setStatus} />
           </div>
           <button className={`dm-view ${view === 'products' ? 'dm-view-on' : ''}`} onClick={() => setView(view === 'products' ? 'customers' : 'products')} aria-pressed={view === 'products'}>
             <ListChecks size={16} /> 품목별
@@ -437,67 +426,56 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-head { display: flex; flex-direction: column; gap: 0.4rem; }
         .dm-sticky { position: sticky; top: 0; z-index: 20; background: var(--background, #f8fafc); padding: 0.25rem 0.25rem 0.35rem; margin: 0 -0.25rem; display: flex; flex-direction: column; gap: 0.35rem; }
         .dm-date { display: flex; align-items: center; gap: 0.4rem; }
-        .dm-date-nav { display: flex; align-items: center; gap: 0.3rem; flex: 1; min-width: 0; }
-        .dm-toggle { flex: none; display: flex; background: #e2e8f0; border-radius: 12px; padding: 3px; gap: 2px; height: var(--ctl-h); }
-        .dm-toggle button { border: 0; background: transparent; border-radius: 9px; padding: 0 0.55rem; font-size: 0.75rem; font-weight: 800; color: #475569; white-space: nowrap; }
-        .dm-toggle .dm-toggle-on { background: #fff; color: #003057; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15); }
-        .dm-add { flex: none; width: var(--ctl-h); height: var(--ctl-h); border-radius: 12px; border: 0; background: #003057; color: #fff; display: grid; place-items: center; }
+        .dm-seg-wrap { flex: 1; min-width: 0; }
+        .dm-add { flex: none; width: var(--chip-h); height: var(--chip-h); border-radius: 999px; border: 0; background: #003057; color: #fff; display: grid; place-items: center; }
         .dm-add:active { opacity: 0.85; }
-        .dm-icon { width: var(--ctl-h); height: var(--ctl-h); border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; flex: none; }
-        .dm-icon:disabled { opacity: 0.4; }
-        .dm-date-label { position: relative; flex: 1; min-width: 0; padding: 0 0.4rem; height: var(--ctl-h); border-radius: 12px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; font-size: 0.9375rem; font-weight: 800; }
-        .dm-date-label input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; font-size: 16px; }
-        .dm-today { height: var(--ctl-h); padding: 0 0.8rem; border-radius: 12px; border: 0; background: #003057; color: #fff; font-weight: 800; font-size: 0.8125rem; flex: none; }
+        .dm-icon { width: var(--ctl-h); height: var(--ctl-h); border-radius: 999px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; flex: none; }
         .dm-progress { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0 0.7rem; height: var(--ctl-h); display: flex; align-items: center; gap: 0.6rem; }
-        .dm-progress strong { font-size: 0.875rem; font-weight: 900; white-space: nowrap; }
-        .dm-progress span { font-size: 0.75rem; color: var(--muted-foreground); font-weight: 700; white-space: nowrap; }
+        .dm-progress strong { font-size: var(--fs-md); font-weight: 900; white-space: nowrap; }
+        .dm-progress span { font-size: var(--fs-xs); color: var(--muted-foreground); font-weight: 700; white-space: nowrap; }
         .dm-bar { flex: 1; min-width: 2rem; height: 7px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
         .dm-bar span { display: block; height: 100%; background: #22c55e; border-radius: 999px; }
         .dm-chips { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
         .dm-chips::-webkit-scrollbar { display: none; }
-        .dm-chip { flex: none; height: var(--chip-h); padding: 0 0.75rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; white-space: nowrap; }
+        .dm-chip { flex: none; height: var(--chip-h); padding: 0 0.75rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: var(--fs-sm); font-weight: 700; white-space: nowrap; }
         .dm-chip-on { background: #003057; border-color: #003057; color: #fff; }
         .dm-filters { display: flex; gap: 0.5rem; align-items: center; }
-        .dm-seg { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: #e2e8f0; border-radius: 12px; padding: 3px; gap: 2px; height: var(--ctl-h); }
-        .dm-view { flex: none; height: var(--ctl-h); padding: 0 0.7rem; border-radius: 12px; border: 1px solid var(--border); background: #fff; font-size: 0.75rem; font-weight: 800; display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
+        .dm-view { flex: none; height: var(--chip-h); padding: 0 0.7rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: var(--fs-xs); font-weight: 800; display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
         .dm-view-on { background: #003057; border-color: #003057; color: #fff; }
-        .dm-seg button { height: calc(var(--ctl-h) - 6px); border: 0; background: transparent; border-radius: 10px; font-size: 0.75rem; font-weight: 700; color: #475569; padding: 0 0.3rem; white-space: nowrap; }
-        .dm-seg button b { font-weight: 900; margin-left: 0.1rem; }
-        .dm-seg .dm-seg-on { background: #fff; color: #0f172a; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15); }
         .dm-cards, .dm-products { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
         .dm-empty { text-align: center; color: var(--muted-foreground); padding: 2rem 1rem; font-weight: 700; display: flex; flex-direction: column; gap: 0.75rem; align-items: center; }
         .dm-empty button { min-height: 44px; padding: 0 1.2rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-weight: 800; }
         .dm-card { background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
         .dm-card-done { background: #f0fdf4; border-color: #86efac; }
         .dm-card-top { display: flex; align-items: flex-start; }
-        .dm-no { flex: none; width: 22px; height: 22px; border-radius: 999px; background: #f1f5f9; color: #64748b; display: grid; place-items: center; font-size: 0.6875rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .dm-no { flex: none; width: 22px; height: 22px; border-radius: 999px; background: #f1f5f9; color: #64748b; display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 800; font-variant-numeric: tabular-nums; }
         .dm-card-done .dm-no { background: #dcfce7; color: #166534; }
         .dm-grip { flex: none; width: 40px; height: 44px; margin-right: 0.2rem; display: grid; place-items: center; background: none; border: 0; color: #94a3b8; touch-action: none; cursor: grab; border-radius: 10px; }
         .dm-grip:active { background: #f1f5f9; color: #475569; }
         .dm-dragging { position: relative; z-index: 30; box-shadow: 0 10px 28px rgba(15, 23, 42, 0.28); opacity: 0.95; }
         .dm-card-head { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.55rem; padding: 0.55rem 0.1rem 0.15rem 0.875rem; background: none; border: 0; text-align: left; min-height: 44px; }
         .dm-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.5rem; }
-        .dm-term { flex: none; white-space: nowrap; padding: 0.1rem 0.45rem; border-radius: 7px; border: 1px solid; font-size: 0.6875rem; font-weight: 800; }
-        .dm-name { flex: 1; min-width: 0; font-size: 1rem; font-weight: 800; line-height: 1.3; word-break: keep-all; }
-        .dm-round { margin-right: 0.35rem; padding: 0 0.4rem; border-radius: 6px; border: 1px solid #c4b5fd; background: #f5f3ff; color: #6d28d9; font-size: 0.6875rem; font-weight: 800; vertical-align: 2px; }
+        .dm-term { flex: none; white-space: nowrap; padding: 0.1rem 0.45rem; border-radius: 7px; border: 1px solid; font-size: var(--fs-xs); font-weight: 800; }
+        .dm-name { flex: 1; min-width: 0; font-size: var(--fs-md); font-weight: 800; line-height: 1.3; word-break: keep-all; }
+        .dm-round { margin-right: 0.35rem; padding: 0 0.4rem; border-radius: 6px; border: 1px solid #c4b5fd; background: #f5f3ff; color: #6d28d9; font-size: var(--fs-xs); font-weight: 800; vertical-align: 2px; }
         .dm-chev { flex: none; color: #94a3b8; transition: transform 0.15s; }
         .dm-chev-open { transform: rotate(180deg); }
         .dm-body { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.3rem 0.875rem 0.8rem; min-width: 0; }
         .dm-prog-row { display: flex; align-items: center; gap: 0.6rem; }
         .dm-tags { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.35rem; }
-        .dm-prog { flex: none; min-width: 2rem; font-size: 0.8125rem; font-weight: 700; color: #475569; font-variant-numeric: tabular-nums; }
+        .dm-prog { flex: none; min-width: 2rem; font-size: var(--fs-sm); font-weight: 700; color: #475569; font-variant-numeric: tabular-nums; }
         .dm-prog b { font-weight: 900; color: #0f172a; }
-        .dm-tag { font-size: 0.6875rem; font-weight: 800; line-height: 1.4; border-radius: 6px; padding: 0.1rem 0.45rem; border: 1px solid; white-space: nowrap; }
+        .dm-tag { font-size: var(--fs-xs); font-weight: 800; line-height: 1.4; border-radius: 6px; padding: 0.1rem 0.45rem; border: 1px solid; white-space: nowrap; }
         .dm-tag-green { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
         .dm-tag-amber { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
-        .dm-stage-meta { flex: none; display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; line-height: 1.5; }
+        .dm-stage-meta { flex: none; display: inline-flex; align-items: center; gap: 0.4rem; font-size: var(--fs-xs); line-height: 1.5; }
         .dm-stage-detail { color: var(--muted-foreground); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-        .dm-stage { flex: none; font-size: 0.75rem; font-weight: 800; line-height: 1.4; border-radius: 999px; padding: 0.15rem 0.65rem; border: 1px solid; white-space: nowrap; }
+        .dm-stage { flex: none; font-size: var(--fs-xs); font-weight: 800; line-height: 1.4; border-radius: 999px; padding: 0.15rem 0.65rem; border: 1px solid; white-space: nowrap; }
         ${STAGES.map((st) => `.dm-stage-${st} { background: ${STAGE_COLOR[st].tint}; border-color: ${STAGE_COLOR[st].border}; color: ${STAGE_COLOR[st].text}; }`).join('\n        ')}
         .dm-tag-merge { background: #f0fdf4; border-color: #86efac; color: #166534; }
         .dm-tag-red { background: #fff1f2; border-color: #fda4af; color: #be123c; }
-        .dm-memo { margin: 0; font-size: 0.75rem; font-weight: 700; color: #92400e; }
-        .dm-summary { font-size: 0.8125rem; color: #475569; line-height: 1.45; min-width: 0; }
+        .dm-memo { margin: 0; font-size: var(--fs-xs); font-weight: 700; color: #92400e; }
+        .dm-summary { font-size: var(--fs-sm); color: #475569; line-height: 1.45; min-width: 0; }
         .dm-items { border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; }
         .dm-item { display: flex; align-items: center; gap: 0.55rem; padding: 0.3rem 0.875rem; min-height: 42px; background: none; border: 0; border-bottom: 1px solid #f1f5f9; text-align: left; width: 100%; }
         .dm-item-done .dm-item-name, .dm-item-done .dm-item-detail { color: #94a3b8; }
@@ -507,10 +485,10 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-check { flex: none; width: 24px; height: 24px; border-radius: 999px; border: 2px solid #cbd5e1; display: grid; place-items: center; color: #fff; background: #fff; }
         .dm-check-on { background: #22c55e; border-color: #22c55e; }
         .dm-item-main { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
-        .dm-item-name { font-size: 0.875rem; font-weight: 800; line-height: 1.25; min-width: 0; }
-        .dm-item-detail { font-size: 0.8125rem; font-weight: 700; color: #0369a1; text-align: right; flex: none; max-width: 55%; }
+        .dm-item-name { font-size: var(--fs-md); font-weight: 800; line-height: 1.25; min-width: 0; }
+        .dm-item-detail { font-size: var(--fs-sm); font-weight: 700; color: #0369a1; text-align: right; flex: none; max-width: 55%; }
         .dm-item-flags { display: flex; flex-direction: column; gap: 0.2rem; align-items: flex-end; flex: none; }
-        .dm-card-actions { display: flex; gap: 0.5rem; padding: 0.5rem 0.875rem 0.75rem; font-size: 0.8125rem; }
+        .dm-card-actions { display: flex; gap: 0.5rem; padding: 0.5rem 0.875rem 0.75rem; font-size: var(--fs-sm); }
         .dm-card-actions button { flex: 1; min-height: 44px; border-radius: 12px; border: 1px dashed #94a3b8; background: #fff; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; }
         .dm-card-actions .dm-danger { border-style: solid; border-color: #fecdd3; color: #be123c; flex: none; padding: 0 1rem; }
         .dm-product { background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
@@ -521,18 +499,18 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-check-sm { width: 18px; height: 18px; border-width: 2px; }
         .dm-text-line { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.5rem; }
         .dm-text-line .dm-product-name, .dm-text-line .dm-pc-name { flex: 1; }
-        .dm-pc-name { min-width: 0; font-size: 0.875rem; font-weight: 700; word-break: keep-all; }
-        .dm-pc-qty { font-size: 0.875rem; font-weight: 800; color: #0369a1; }
-        .dm-product-name { flex: 1; min-width: 0; font-weight: 700; font-size: 0.875rem; word-break: keep-all; }
-        .dm-product-qty { font-size: 0.9375rem; font-weight: 900; }
+        .dm-pc-name { min-width: 0; font-size: var(--fs-md); font-weight: 700; word-break: keep-all; }
+        .dm-pc-qty { font-size: var(--fs-md); font-weight: 800; color: #0369a1; }
+        .dm-product-name { flex: 1; min-width: 0; font-weight: 700; font-size: var(--fs-md); word-break: keep-all; }
+        .dm-product-qty { font-size: var(--fs-md); font-weight: 900; }
         .dm-sheet-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(15, 23, 42, 0.45); display: flex; align-items: flex-end; }
         .dm-sheet { width: 100%; background: #fff; border-radius: 20px 20px 0 0; padding: 0.9rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 0.8rem; box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.25); }
         .dm-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
         .dm-sheet-head div { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
-        .dm-sheet-head strong { font-size: 1.0625rem; font-weight: 900; }
-        .dm-sheet-head span { font-size: 0.8125rem; color: #475569; font-weight: 700; }
+        .dm-sheet-head strong { font-size: var(--fs-lg); font-weight: 900; }
+        .dm-sheet-head span { font-size: var(--fs-sm); color: #475569; font-weight: 700; }
         .dm-sheet-actions { display: flex; flex-direction: column; gap: 0.5rem; }
-        .dm-sheet-actions button { min-height: 48px; border-radius: 12px; border: 1px solid var(--border); background: #fff; font-size: 0.9375rem; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+        .dm-sheet-actions button { min-height: 48px; border-radius: 12px; border: 1px solid var(--border); background: #fff; font-size: var(--fs-md); font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
         .dm-sheet-actions .dm-primary { background: #22c55e; border-color: #22c55e; color: #fff; }
         .dm-sheet-actions .dm-danger { color: #be123c; border-color: #fecdd3; }
         .dm-sheet-note { margin: 0; color: #64748b; font-weight: 700; }

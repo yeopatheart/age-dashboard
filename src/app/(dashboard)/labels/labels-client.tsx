@@ -387,17 +387,17 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
         .lb-layout { display: grid; grid-template-columns: 22rem minmax(0, 1fr); gap: 0.9rem; align-items: start; }
         .lb-side { display: flex; flex-direction: column; gap: 0.75rem; }
         .lb-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.6rem; box-shadow: var(--shadow-sm); }
-        .lb-card h3 { font-size: 0.8125rem; font-weight: 800; color: var(--muted-foreground); }
+        .lb-card h3 { font-size: var(--fs-sm); font-weight: 800; color: var(--muted-foreground); }
         .lb-size { display: flex; align-items: flex-end; gap: 0.5rem; }
         .lb-x { color: var(--muted-foreground); margin-bottom: 0.7rem; }
         .lb-add { display: flex; flex-wrap: wrap; gap: 0.4rem; }
         .lb-props { display: flex; flex-direction: column; gap: 0.6rem; }
         .lb-row { display: flex; align-items: center; gap: 0.5rem; }
         .lb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; align-items: end; }
-        .lb-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; font-weight: 700; color: var(--muted-foreground); }
-        .lb-num { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.75rem; font-weight: 700; color: var(--muted-foreground); }
-        .lb-num input { height: 2.25rem; border: 1px solid var(--border); border-radius: 8px; padding: 0 0.5rem; font-size: 0.875rem; font-weight: 700; width: 100%; background: #fff; color: var(--foreground); }
-        .lb-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 700; }
+        .lb-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: var(--fs-xs); font-weight: 700; color: var(--muted-foreground); }
+        .lb-num { display: flex; flex-direction: column; gap: 0.2rem; font-size: var(--fs-xs); font-weight: 700; color: var(--muted-foreground); }
+        .lb-num input { height: 2.25rem; border: 1px solid var(--border); border-radius: 8px; padding: 0 0.5rem; font-size: var(--fs-md); font-weight: 700; width: 100%; background: #fff; color: var(--foreground); }
+        .lb-check { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-sm); font-weight: 700; }
         .lb-align { display: flex; gap: 0.35rem; }
         .lb-stage { background: #eef2f6; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; overflow: auto; outline: none; min-height: 20rem; }
         .lb-paper { position: relative; margin: 0 auto; background-color: #fff; box-shadow: 0 2px 10px rgba(15, 23, 42, 0.25);
@@ -408,7 +408,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
         .lb-hit:hover { outline: 1px dashed #3b82f6; }
         .lb-hit-on { outline: 1px solid #2563eb; }
         .lb-frame { position: absolute; left: 0; right: 0; pointer-events: none; }
-        .lb-title { font-size: 0.9375rem; font-weight: 800; }
+        .lb-title { font-size: var(--fs-md); font-weight: 800; }
         .lb-fold { position: absolute; inset: 0; pointer-events: none; }
         .lb-fold-band { position: absolute; left: 0; right: 0; background: rgba(37, 99, 235, 0.09); border-top: 1px solid rgba(37, 99, 235, 0.25); border-bottom: 1px solid rgba(37, 99, 235, 0.25); display: flex; align-items: center; justify-content: space-between; padding: 0 6px; font-size: 10px; font-weight: 800; color: #1d4ed8; white-space: nowrap; overflow: hidden; }
         .lb-fold-line { position: absolute; left: 0; right: 0; border-top: 1.5px dashed #2563eb; }
@@ -417,11 +417,11 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
         .lb-margin span { position: absolute; background: repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.22) 0 3px, rgba(239, 68, 68, 0.06) 3px 7px); }
         .lb-margin i { position: absolute; border: 1px dashed rgba(220, 38, 38, 0.8); }
         .lb-hit-out { outline: 1px dashed #dc2626; background: rgba(239, 68, 68, 0.08); }
-        .lb-guide summary { font-size: 0.8125rem; font-weight: 800; cursor: pointer; }
-        .lb-guide ol { list-style: decimal; margin: 0.6rem 0; padding-left: 1.4rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8125rem; line-height: 1.45; }
+        .lb-guide summary { font-size: var(--fs-sm); font-weight: 800; cursor: pointer; }
+        .lb-guide ol { list-style: decimal; margin: 0.6rem 0; padding-left: 1.4rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: var(--fs-sm); line-height: 1.45; }
         .lb-shortcut { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.45rem 0; }
-        .lb-guide code { background: #f1f5f9; border-radius: 6px; padding: 0.05rem 0.35rem; font-size: 0.78rem; }
-        .lb-warn { font-size: 0.8125rem; font-weight: 700; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 0.45rem 0.65rem; }
+        .lb-guide code { background: #f1f5f9; border-radius: 6px; padding: 0.05rem 0.35rem; font-size: var(--fs-md); }
+        .lb-warn { font-size: var(--fs-sm); font-weight: 700; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 0.45rem 0.65rem; }
         .lb-handle { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid #2563eb; border-radius: 2px; pointer-events: auto; touch-action: none; }
         .lb-hint { margin: 0.75rem 0 0; text-align: center; }
         @media (max-width: 1000px) { .lb-layout { grid-template-columns: 1fr; } }

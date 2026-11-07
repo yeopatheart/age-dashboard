@@ -95,11 +95,11 @@ export function UsersClient({ users, meId, setupError }: { users: UserRow[]; meI
       )}
 
       <style>{`
-        .us-root { display: flex; flex-direction: column; gap: 0.9rem; width: 100%; min-width: 0; }
+        .us-root { display: flex; flex-direction: column; gap: var(--space-block); width: 100%; min-width: 0; }
         .us-layout { display: grid; grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr); gap: 1rem; align-items: start; }
         .us-list-pane, .us-detail-pane { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); min-width: 0; }
         .us-pane-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.85rem 1rem; border-bottom: 1px solid var(--border); }
-        .us-pane-head h2 { font-size: 0.9375rem; font-weight: 800; }
+        .us-pane-head h2 { font-size: var(--fs-lg); font-weight: 800; }
         .us-list { list-style: none; margin: 0; padding: 0.35rem; display: flex; flex-direction: column; gap: 0.15rem; }
         .us-list > li { display: flex; align-items: center; border-radius: 12px; border: 1px solid transparent; }
         .us-list > li:hover { background: #f8fafc; }
@@ -108,24 +108,24 @@ export function UsersClient({ users, meId, setupError }: { users: UserRow[]; meI
         .us-avatar { flex: none; width: 2.25rem; height: 2.25rem; border-radius: 999px; background: #e2e8f0; color: #334155; display: grid; place-items: center; font-weight: 800; }
         .us-item-on .us-avatar { background: var(--primary); color: #fff; }
         .us-item-text { display: flex; flex-direction: column; min-width: 0; gap: 0.1rem; }
-        .us-item-text strong { font-size: 0.9375rem; font-weight: 800; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
-        .us-master { font-size: 0.6875rem; font-weight: 800; color: #92400e; background: #fef3c7; border-radius: 999px; padding: 0.05rem 0.5rem; }
-        .us-sub { font-size: 0.75rem; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .us-item-text strong { font-size: var(--fs-md); font-weight: 800; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+        .us-master { font-size: var(--fs-xs); font-weight: 800; color: #92400e; background: #fef3c7; border-radius: 999px; padding: 0.05rem 0.5rem; }
+        .us-sub { font-size: var(--fs-xs); color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .us-item-actions { display: flex; gap: 0.2rem; padding-right: 0.5rem; flex: none; }
         .us-icon { width: 2rem; height: 2rem; border-radius: 8px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; cursor: pointer; color: #475569; }
         .us-icon:hover { background: #f1f5f9; }
         .us-icon-danger { color: #dc2626; }
-        .us-empty { padding: 2.5rem 1rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem; }
+        .us-empty { padding: 2.5rem 1rem; text-align: center; color: var(--muted-foreground); font-size: var(--fs-md); }
         .us-detail-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-        .us-detail-head h2 { font-size: 0.9375rem; font-weight: 800; }
+        .us-detail-head h2 { font-size: var(--fs-lg); font-weight: 800; }
         .us-matrix { display: flex; flex-direction: column; }
         .us-menu { display: grid; grid-template-columns: 9rem 1fr; gap: 0.5rem; padding: 0.7rem 1rem; border-bottom: 1px solid #f1f5f9; align-items: center; }
         .us-menu:last-child { border-bottom: 0; }
-        .us-menu-name { font-weight: 800; font-size: 0.875rem; }
+        .us-menu-name { font-weight: 800; font-size: var(--fs-md); }
         .us-checks { display: flex; flex-wrap: wrap; gap: 0.45rem 1.1rem; }
-        .us-checks label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; font-weight: 600; cursor: pointer; }
+        .us-checks label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
         .us-checks input { width: 1rem; height: 1rem; }
-        .us-note { padding: 0.8rem 1rem; font-size: 0.8125rem; color: var(--muted-foreground); }
+        .us-note { padding: 0.8rem 1rem; font-size: var(--fs-sm); color: var(--muted-foreground); }
         .us-modal-overlay { position: fixed; inset: 0; z-index: 70; background: rgba(15, 23, 42, 0.45); display: grid; place-items: center; padding: 1rem; }
         .us-modal { width: min(26rem, 100%); background: #fff; border-radius: 16px; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.3); display: flex; flex-direction: column; max-height: 100%; }
         .us-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); font-weight: 800; }

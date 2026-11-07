@@ -6,6 +6,7 @@ import { roundLabel, type OrderRound } from '@/lib/orders';
 import { editableDateError } from '@/lib/order-date';
 import { useCan } from '@/components/permissions-context';
 import { DateNav } from '@/components/date-nav';
+import { Segmented } from '@/components/segmented';
 import { useIsMobile } from '@/lib/use-is-mobile';
 import {
   suggestOrderLines,
@@ -186,13 +187,7 @@ export function NewOrderClient({
         <div className="page-header-icon"><Sparkles size={20} /></div>
         <h1 className="page-title">주문 입력</h1>
         <DateNav value={orderDate} today={today} onChange={handleOrderDateChange} label="주문 입력 날짜" />
-        <div className="round-toggle" role="group" aria-label="주문 차수">
-          {([1, 2] as const).map((r) => (
-            <button key={r} type="button" className={round === r ? 'active' : ''} aria-pressed={round === r} onClick={() => handleRoundChange(r)}>
-              {r}차
-            </button>
-          ))}
-        </div>
+        <Segmented label="주문 차수" value={String(round) as '1' | '2'} items={[{ key: '1', label: '1차' }, { key: '2', label: '2차' }]} onSelect={(r) => handleRoundChange(Number(r) as 1 | 2)} />
         <button className="guide-btn" onClick={() => setGuideOpen(true)}>
           <BookOpen size={15} /> 입력 가이드
         </button>
@@ -385,34 +380,34 @@ export function NewOrderClient({
       </div>
 
       <style>{`
-        .new-order-root { display: flex; flex-direction: column; gap: 1.25rem; height: 100%; min-height: 0; }
-        .new-order-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; align-items: stretch; }
-        .new-order-main { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; min-height: 0; overflow-y: auto; }
+        .new-order-root { display: flex; flex-direction: column; gap: var(--space-block); height: 100%; min-height: 0; }
+        .new-order-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-block); align-items: stretch; }
+        .new-order-main { display: flex; flex-direction: column; gap: var(--space-block); min-width: 0; min-height: 0; overflow-y: auto; }
         .history-panel {
           background: #fff;
           border: 1px solid var(--border);
           border-radius: var(--radius-lg);
           box-shadow: var(--shadow-sm);
-          padding: 1rem;
+          padding: var(--space-card);
           display: flex;
           flex-direction: column;
-          gap: 0.625rem;
+          gap: var(--space-inner);
           min-height: 0;
         }
         .history-panel-header {
           display: flex;
           align-items: center;
           gap: 0.4rem;
-          font-size: 0.875rem;
+          font-size: var(--fs-md);
           font-weight: 700;
           color: var(--foreground);
         }
-        .history-count { margin-left: auto; font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); }
+        .history-count { margin-left: auto; font-size: var(--fs-xs); font-weight: 600; color: var(--muted-foreground); }
         .history-date-input {
           border: 1px solid var(--border);
           border-radius: var(--radius);
           padding: 0.35rem 0.5rem;
-          font-size: 0.8125rem;
+          font-size: var(--fs-sm);
           font-family: var(--font-sans);
           color: var(--foreground);
           background: #fff;
@@ -420,7 +415,7 @@ export function NewOrderClient({
         .history-date-input:focus { outline: none; border-color: var(--primary); }
         .history-round-1 { background: #f0f9ff; color: #0369a1; }
         .history-round-2 { background: #f5f3ff; color: #6d28d9; }
-        .history-date-label { font-size: 0.75rem; font-weight: 700; color: var(--primary); background: var(--primary-light); padding: 0.1rem 0.5rem; border-radius: 999px; }
+        .history-date-label { font-size: var(--fs-xs); font-weight: 700; color: var(--primary); background: var(--primary-light); padding: 0.1rem 0.5rem; border-radius: 999px; }
         .history-date-loading { color: var(--muted-foreground); }
         .history-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; }
         .history-item {
@@ -438,11 +433,11 @@ export function NewOrderClient({
         }
         .history-item:hover { background: #eef2f7; }
         .history-item-top { display: flex; align-items: center; gap: 0.4rem; }
-        .history-time { font-size: 0.75rem; color: var(--muted-foreground); font-weight: 600; }
-        .history-author { font-size: 0.75rem; color: var(--muted-foreground); }
+        .history-time { font-size: var(--fs-xs); color: var(--muted-foreground); font-weight: 600; }
+        .history-author { font-size: var(--fs-xs); color: var(--muted-foreground); }
         .history-chevron { margin-left: auto; color: var(--muted-foreground); flex-shrink: 0; }
         .history-text {
-          font-size: 0.75rem;
+          font-size: var(--fs-xs);
           color: var(--foreground);
           line-height: 1.5;
           white-space: pre-wrap;
@@ -463,10 +458,10 @@ export function NewOrderClient({
           border: 1px solid var(--border);
           border-radius: var(--radius-lg);
           box-shadow: var(--shadow-sm);
-          padding: 1.25rem;
+          padding: var(--space-card);
           display: flex;
           flex-direction: column;
-          gap: 0.875rem;
+          gap: var(--space-inner);
           flex: 1 0 280px;
         }
         .paste-area {
@@ -475,7 +470,7 @@ export function NewOrderClient({
           border-radius: var(--radius);
           padding: 0.875rem;
           font-family: var(--font-mono, monospace);
-          font-size: 0.875rem;
+          font-size: var(--fs-md);
           resize: none;
           flex: 1;
           min-height: 160px;
@@ -485,9 +480,9 @@ export function NewOrderClient({
         .btn-loading { display: flex; align-items: center; gap: 0.5rem; justify-content: center; }
         .spin { animation: spin 0.6s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .error-text { color: var(--danger); font-size: 0.875rem; font-weight: 500; }
-        .success-text { color: var(--teal); font-size: 0.875rem; font-weight: 600; }
-        .empty-text { color: var(--muted-foreground); font-size: 0.875rem; padding: 1rem 0; }
+        .error-text { color: var(--danger); font-size: var(--fs-md); font-weight: 500; }
+        .success-text { color: var(--teal); font-size: var(--fs-md); font-weight: 600; }
+        .empty-text { color: var(--muted-foreground); font-size: var(--fs-md); padding: 1rem 0; }
         .review-list { display: flex; flex-direction: column; gap: 0.625rem; flex-shrink: 0; }
         .review-row {
           display: flex;
@@ -504,39 +499,35 @@ export function NewOrderClient({
         .review-row-flag { border-color: #fde68a; background: #fffce8; }
         .review-row-off { opacity: 0.55; }
         .review-row-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-        .row-btn { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.75rem; font-weight: 700; padding: 0.3rem 0.65rem; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--muted-foreground); cursor: pointer; }
+        .row-btn { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--fs-xs); font-weight: 700; padding: 0.3rem 0.65rem; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--muted-foreground); cursor: pointer; }
         .row-btn:hover { background: var(--muted); }
         .row-btn-on { background: var(--primary); border-color: var(--primary); color: #fff; }
         .row-btn-on:hover { background: var(--primary-hover); }
-        .row-off-note { font-size: 0.75rem; color: var(--muted-foreground); }
+        .row-off-note { font-size: var(--fs-xs); color: var(--muted-foreground); }
         .review-qty-undecided { background: #fef3c7; color: #92400e; }
-        .edited-tag { font-size: 0.7rem; font-weight: 700; color: #0369a1; background: #e0f2fe; padding: 0.1rem 0.45rem; border-radius: 6px; }
+        .edited-tag { font-size: var(--fs-xs); font-weight: 700; color: #0369a1; background: #e0f2fe; padding: 0.1rem 0.45rem; border-radius: 6px; }
         .review-edit { width: 100%; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding-top: 0.25rem; }
-        .review-edit-input { flex: 1; min-width: 14rem; padding: 0.45rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; font-size: 0.875rem; }
-        .review-edit-hint { width: 100%; font-size: 0.75rem; color: var(--muted-foreground); }
+        .review-edit-input { flex: 1; min-width: 14rem; padding: 0.45rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius-input); font-size: var(--fs-md); }
+        .review-edit-hint { width: 100%; font-size: var(--fs-xs); color: var(--muted-foreground); }
         .review-row-main { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
-        .review-biz { font-weight: 700; color: var(--primary); font-size: 0.9rem; }
-        .review-product { font-size: 0.875rem; color: var(--foreground); }
-        .review-qty { font-size: 0.8125rem; font-weight: 600; color: var(--primary); background: var(--primary-light); padding: 0.15rem 0.6rem; border-radius: 6px; }
-        .review-flag { display: flex; align-items: center; gap: 0.3rem; font-size: 0.75rem; color: var(--warning); font-weight: 500; }
+        .review-biz { font-weight: 700; color: var(--primary); font-size: var(--fs-md); }
+        .review-product { font-size: var(--fs-md); color: var(--foreground); }
+        .review-qty { font-size: var(--fs-sm); font-weight: 600; color: var(--primary); background: var(--primary-light); padding: 0.15rem 0.6rem; border-radius: 6px; }
+        .review-flag { display: flex; align-items: center; gap: 0.3rem; font-size: var(--fs-xs); color: var(--warning); font-weight: 500; }
         .badge-ai { display: inline-flex; align-items: center; gap: 0.25rem; background: #f5f3ff; color: #7c3aed; }
-        .kind-badge { font-size: 0.8125rem; font-weight: 700; padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+        .kind-badge { font-size: var(--fs-sm); font-weight: 700; padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid; white-space: nowrap; }
         .kind-badge-add { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
-        .round-toggle { display: flex; padding: 3px; border-radius: 999px; border: 1px solid var(--border); background: #fff; }
-        .round-toggle button { font-size: 0.875rem; font-weight: 700; padding: 0.35rem 1.1rem; border-radius: 999px; border: none; background: transparent; color: var(--muted-foreground); cursor: pointer; }
-        .round-toggle button.active { background: var(--primary); color: #fff; }
         .new-order-root .page-header { align-items: center; flex-wrap: wrap; row-gap: 0.5rem; }
-        .guide-btn { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
+        .guide-btn { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-sm); font-weight: 700; padding: 0.5rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
         .guide-btn:hover { background: var(--primary-light); }
-        /* 휴대폰: 날짜 이동과 1·2차 선택이 한 줄에 놓이고(제목 다음 줄), 입력 가이드 버튼은 숨기며, 입력칸 글자를 줄인다. */
+        /* 휴대폰: 날짜 이동과 1·2차 선택이 한 줄에 놓이고, 입력 가이드 버튼은 숨기며, 입력칸 글자를 줄인다. */
         @media (max-width: 768px) {
           .guide-btn { display: none; }
-          .new-order-root .page-title { flex: 1 1 calc(100% - 3rem); white-space: nowrap; }
-          .new-order-root .page-header { column-gap: 0.4rem; }
-          .round-toggle { flex: none; padding: 2px; }
-          .round-toggle button { height: calc(var(--ctl-h) - 6px); padding: 0 0.9rem; font-size: 0.8125rem; }
-          .paste-area { font-family: var(--font-sans); line-height: 1.45; font-size: 13px !important; }
-          .paste-area::placeholder { font-size: 12px; line-height: 1.5; }
+          /* 상단 바가 "주문 입력"을 보여 주므로 아이콘·제목은 숨기고, 날짜 이동과 1·2차 선택만 한 줄로 둔다. */
+          .new-order-root .page-header { display: flex; column-gap: 0.4rem; }
+          .new-order-root .page-header-icon, .new-order-root .page-title { display: none; }
+          .paste-area { font-family: var(--font-sans); line-height: 1.45; }
+          .paste-area::placeholder { line-height: 1.5; }
         }
         .guide-overlay { position: fixed; inset: 0; z-index: 50; background: rgba(15, 23, 42, 0.45); display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
         .guide-modal { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); width: min(860px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; }
@@ -544,10 +535,10 @@ export function NewOrderClient({
         .guide-close { border: none; background: var(--muted); border-radius: 7px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .guide-modal-body { padding: 1rem 1.5rem 1.5rem; overflow-y: auto; }
         .kind-badge-cancel { background: #fff1f2; border-color: #fda4af; color: #be123c; }
-        .spec-chip { font-size: 0.75rem; font-weight: 700; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.1rem 0.45rem; }
+        .spec-chip { font-size: var(--fs-xs); font-weight: 700; color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.1rem 0.45rem; }
         .spec-chip-off { color: #64748b; background: #f1f5f9; border-color: #cbd5e1; }
-        .normalized-note { font-size: 0.75rem; color: var(--muted-foreground); border-bottom: 1px dotted currentColor; cursor: help; }
-        .memo-note { font-size: 0.75rem; font-weight: 600; color: #b45309; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.1rem 0.45rem; }
+        .normalized-note { font-size: var(--fs-xs); color: var(--muted-foreground); border-bottom: 1px dotted currentColor; cursor: help; }
+        .memo-note { font-size: var(--fs-xs); font-weight: 600; color: #b45309; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.1rem 0.45rem; }
         .kind-badge-same { background: #f1f5f9; border-color: #cbd5e1; color: #64748b; }
         .kind-badge-update { background: #fffbeb; border-color: #fcd34d; color: #b45309; }
         .confirm-btn { padding: 0.625rem 1.5rem; flex-shrink: 0; }
@@ -567,10 +558,10 @@ export function NewOrderClient({
           box-shadow: var(--shadow-sm);
         }
         .review-bar-text { flex: 1; }
-        .filter-btn { font-size: 0.8125rem; font-weight: 700; padding: 0.4rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--muted-foreground); cursor: pointer; white-space: nowrap; }
+        .filter-btn { font-size: var(--fs-sm); font-weight: 700; padding: 0.4rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--muted-foreground); cursor: pointer; white-space: nowrap; }
         .filter-btn-on { background: #fffbeb; border-color: #fcd34d; color: #b45309; }
-        .new-tag { font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.55rem; border-radius: 999px; background: #eff6ff; border: 1px solid #93c5fd; color: #1d4ed8; white-space: nowrap; }
-        .review-bar-text { font-size: 0.875rem; font-weight: 700; color: var(--primary); }
+        .new-tag { font-size: var(--fs-xs); font-weight: 700; padding: 0.15rem 0.55rem; border-radius: 999px; background: #eff6ff; border: 1px solid #93c5fd; color: #1d4ed8; white-space: nowrap; }
+        .review-bar-text { font-size: var(--fs-md); font-weight: 700; color: var(--primary); }
       `}</style>
     </div>
   );

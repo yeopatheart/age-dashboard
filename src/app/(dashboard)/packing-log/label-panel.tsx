@@ -246,7 +246,7 @@ export function LabelPanelView({
       <style>{`
         .lp-root { border-top: 1px solid var(--border); padding: 1rem 1.1rem 1.1rem; display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
         .lp-head { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
-        .lp-head h2 { font-size: 1rem; font-weight: 800; }
+        .lp-head h2 { font-size: var(--fs-lg); font-weight: 800; }
         .lp-count { font-size: 0.8125rem; font-weight: 700; color: var(--muted-foreground); }
         .lp-spacer { flex: 1; }
         .lp-bulk { display: inline-flex; align-items: center; gap: 0.35rem; height: 2.25rem; padding: 0 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; cursor: pointer; }
@@ -279,7 +279,7 @@ export function LabelPanelView({
         .lp-fold span { position: absolute; right: 3px; top: 1px; font-size: 0.625rem; font-weight: 800; color: #2563eb; background: rgba(255, 255, 255, 0.85); padding: 0 3px; border-radius: 3px; }
         .lp-keepout { position: absolute; left: 0; right: 0; background: rgba(37, 99, 235, 0.06); pointer-events: none; }
         .lp-loading { font-size: 0.8125rem; color: var(--muted-foreground); }
-        .lp-print { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; height: 3.25rem; border-radius: 12px; border: 0; background: var(--primary); color: #fff; font-size: 1.05rem; font-weight: 800; cursor: pointer; }
+        .lp-print { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; height: 3.25rem; border-radius: 12px; border: 0; background: var(--primary); color: #fff; font-size: var(--fs-md); font-weight: 800; cursor: pointer; }
         .lp-print-again { background: #fff; color: var(--primary); border: 2px solid var(--primary); }
         .lp-warn { font-size: 0.8125rem; font-weight: 700; color: #92400e; background: #fffbeb; border-radius: 10px; padding: 0.45rem 0.7rem; }
         .lp-error { font-size: 0.875rem; font-weight: 700; color: var(--danger, #dc2626); }

@@ -3,8 +3,6 @@ import { getPeriod, type Granularity } from '@/lib/report';
 
 export const settlementUrl = (g: Granularity, d: string, base = '/settlement') => `${base}?g=${g}&d=${d}`;
 
-// "오늘" 버튼: 기간을 기본값(오늘, 일)으로 돌린다.
-export const settlementTodayUrl = (base = '/settlement') => base;
 
 const isValidDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 

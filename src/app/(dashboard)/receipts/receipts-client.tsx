@@ -243,12 +243,12 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
         .rc-skeleton { min-height: 12rem; background: #f1f5f9; }
         .rc-thumb { display: block; width: 100%; overflow: hidden; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: zoom-in; text-align: left; }
         .rc-meta { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; padding: 0 0.1rem; }
-        .rc-name { font-size: 0.875rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .rc-sub { font-size: 0.75rem; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .rc-name { font-size: var(--fs-md); font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .rc-sub { font-size: var(--fs-xs); color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .rc-actions { display: flex; gap: 0.35rem; }
         .rc-send { flex: 1; justify-content: center; min-width: 0; }
         .rc-del { flex: none; width: var(--ctl-h); padding: 0; justify-content: center; color: var(--danger); }
-        .rc-confirm { display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.75rem; font-weight: 700; color: var(--danger); }
+        .rc-confirm { display: flex; flex-direction: column; gap: 0.4rem; font-size: var(--fs-xs); font-weight: 700; color: var(--danger); }
         .rc-confirm .rc-actions .ak-btn { flex: 1; justify-content: center; padding: 0 0.4rem; }
       `}</style>
     </>

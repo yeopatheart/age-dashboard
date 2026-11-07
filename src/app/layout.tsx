@@ -17,10 +17,12 @@ export const metadata: Metadata = {
 };
 
 // viewport-fit=cover: iPhone 하단 홈 인디케이터 영역까지 그리고, 하단 고정 바는 env(safe-area-inset-bottom)로 피한다.
-// 핀치 확대를 막지 않는다(maximum-scale 없음). iOS의 입력칸 자동 확대는 입력 글자를 16px로 맞춰(globals.css의 --input-fs) 피한다.
+// maximum-scale=1: 입력 글자를 표·필터와 같은 크기(16px 미만)로 통일했기 때문에, iOS가 입력칸을 누를 때 화면을 자동 확대하는 것을 막는다(2026-11-07 결정).
+// iOS는 이 값을 줘도 핀치 확대는 그대로 되고, 안드로이드 크롬은 핀치 확대가 막힌다(접근성 설정 "강제 확대"를 켜면 가능).
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
   viewportFit: "cover",
   themeColor: "#003057",
 };

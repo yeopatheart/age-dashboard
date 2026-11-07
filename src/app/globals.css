@@ -141,7 +141,7 @@ body {
   border: none;
   border-radius: var(--radius);
   padding: 0.625rem 1.25rem;
-  font-size: 0.875rem;
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
@@ -170,7 +170,7 @@ body {
   padding: 0 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 0.875rem;
+  font-size: var(--fs-md);
   font-family: var(--font-sans);
   background: #ffffff;
   color: var(--foreground);
@@ -185,12 +185,34 @@ body {
   color: #6b7a90;
 }
 
+/* ─── 디자인 기준 (2026-11-07 전체 화면 점검 후 정리) ─────────────────────────────────────────
+   글자·간격·모서리를 화면마다 따로 정하지 않고 아래 토큰만 쓴다(점검 때 페이지 제목 20/22px, 블록 간격 14/16/20/28px,
+   카드 모서리 8/10/12/14/16px, 카드 안쪽 여백 7가지, 카드 제목 15/16/16.8px, 표 본문 13/14px로 갈라져 있었다).
+   · 글자: xs 보조·표 머리·배지 / sm 버튼·칩·보조 문장 / md 본문·표 본문 / lg 카드·구역 제목 / xl 페이지 제목·큰 숫자. 휴대폰은 xs를 sm와 같게(작은 글자가 너무 작아지지 않게).
+   · 간격: --space-block 블록(카드·도구줄) 사이 / --space-card 카드 안쪽 여백 / --space-inner 카드 안에서 요소 사이.
+   · 모양: 카드 = 흰 배경 + 1px 테두리 + --radius-lg(12px) + --shadow-sm. 카드 안의 항목은 테두리만. 버튼·선택칸은 알약(999px), 글자 입력칸은 10px. */
+:root {
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.875rem;
+  --fs-lg: 1rem;
+  --fs-xl: 1.25rem;
+  --fs-num: 1.5rem; /* 대시보드·그래프의 큰 숫자 */
+  --space-block: 1rem;
+  --space-card: 1rem;
+  --space-inner: 0.75rem;
+  --radius-input: 10px;
+}
+@media (max-width: 768px) {
+  :root { --fs-xs: 0.8125rem; --fs-num: 1.25rem; --space-block: 0.75rem; --space-card: 0.75rem; --space-inner: 0.6rem; }
+}
+
 /* Page header (설정류 화면 공통: 아이콘 + 제목 + 설명) */
 .page-header {
   display: flex;
   align-items: flex-start;
   gap: 0.875rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0; /* 블록 사이 간격은 화면 루트의 gap(--space-block)이 정한다 */
 }
 .page-header-icon {
   width: 44px;
@@ -204,14 +226,14 @@ body {
   flex-shrink: 0;
 }
 .page-title {
-  font-size: 1.375rem;
+  font-size: var(--fs-xl);
   font-weight: 800;
   color: var(--foreground);
   letter-spacing: -0.02em;
   line-height: 1.3;
 }
 .page-sub {
-  font-size: 0.8125rem;
+  font-size: var(--fs-sm);
   color: var(--muted-foreground);
   margin-top: 0.2rem;
   line-height: 1.5;
@@ -223,7 +245,7 @@ body {
   align-items: center;
   padding: 0.2rem 0.6rem;
   border-radius: 9999px;
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -233,18 +255,20 @@ body {
 
 /* ─── 휴대폰 UI 규칙 (768px 이하) ──────────────────────────────────────────────
    모든 메뉴가 같은 규칙을 쓴다. 새 화면을 만들 때도 아래 값(토큰)을 쓰고 개별 크기를 새로 정하지 않는다.
-   · 글자: 본문 0.875rem, 보조 0.75rem, 제목 1.1875rem, 버튼·칩 0.8125rem(굵게). html을 14.5px로 줄여 rem 글자가 한 단계 작아진다.
+   · 글자: 본문 0.875rem, 보조 0.75rem, 제목 1.1875rem, 버튼·칩 0.8125rem(굵게). html을 14px로 줄여 rem 글자가 한 단계 작아진다.
    · 높이: 일반 컨트롤(버튼·입력·선택·분할 버튼) --ctl-h 36px, 칩·태그 --chip-h 32px, 한 번에 눌러 확정하는 주 동작 --cta-h 48px.
    · 모양: 컨트롤은 알약(999px), 카드는 14px 모서리, 간격은 0.4~0.6rem 단위.
    · 메뉴 설명 문구는 숨긴다. */
 :root { --ctl-h: 2.25rem; --chip-h: 2rem; --cta-h: 3rem; }
 @media (max-width: 768px) {
   :root { --ctl-h: 36px; --chip-h: 32px; --cta-h: 48px; }
-  html { font-size: 14.5px; }
+  html { font-size: 14px; }
   .page-sub { display: none; }
-  .page-header { align-items: center; gap: 0.6rem; margin-bottom: 0.25rem; flex-wrap: wrap; }
+  /* 휴대폰은 상단 바가 이미 메뉴 이름을 보여 주므로 화면 안의 같은 제목 줄(아이콘 + 제목 + 설명)은 숨겨 공간을 번다(2026-11-07).
+     상단 바와 다른 제목을 가진 화면(박스 추천 정확도 등)은 page-header-keep을 붙여 남긴다. 제목 줄에 컨트롤이 함께 있는 화면(주문 입력)은 그 화면의 스타일에서 따로 다룬다. */
+  .page-header { display: none; }
+  .page-header.page-header-keep { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.25rem; flex-wrap: wrap; }
   .page-header-icon { width: 36px; height: 36px; border-radius: 10px; }
-  .page-title { font-size: 1.1875rem; }
   .ak-toolbar { padding: 0.5rem; gap: 0.4rem; }
   .ak-search { flex: 1 1 100%; }
   .ak-search input { width: 100%; flex: 1; min-width: 0; }
@@ -259,22 +283,49 @@ body {
   .ak-tag { white-space: nowrap; }
 }
 
-/* 휴대폰 글자 단계와 간격 (2026-11-07, 정산 화면 실측으로 정리). 글자는 5단계만 쓴다(입력칸 16px은 위 --input-fs):
-   보조 0.8125rem(11.8px) · 버튼·칩 0.8125rem · 본문·표 0.9375rem(13.6px) · 구역 제목 1.0625rem(15.4px) · 페이지 제목 1.1875rem(17.2px).
-   예전에는 보조 0.75rem·본문 0.875rem·버튼 0.8125rem·입력 16px이 한 화면에 섞여 들쭉날쭉했다.
-   간격은 화면 폭에 비례해 12~20px 사이에서 변한다: 페이지 좌우 --page-pad, 카드·구역 사이 --block-gap, 카드 안쪽 --card-pad. */
-:root { --page-pad: clamp(0.75rem, 4.5vw, 1.25rem); --block-gap: clamp(0.6rem, 3vw, 0.9rem); --card-pad: clamp(0.5rem, 2.8vw, 0.75rem); }
+/* 휴대폰 글자·간격: 위 "디자인 기준" 토큰이 휴대폰에서 바뀐다(html 14px, --space-* 축소). 페이지 좌우 여백만 폭에 비례한다. */
+:root { --page-pad: clamp(0.75rem, 4.5vw, 1.25rem); }
 /* 글자·간격 규칙 본문은 admin.css 맨 아래(기본 규칙보다 뒤에 와야 덮는다). */
 
-/* 휴대폰 입력·선택칸 글자: 16px(--input-fs). iOS Safari는 입력 글자가 16px 미만이면 포커스할 때 화면을 확대하므로 16px로 맞추고,
-   viewport의 maximum-scale 제한은 두지 않는다(핀치 확대 허용). 버튼·칩 글자는 그대로 0.8125rem이다. 2026-11-06 결정: docs/decisions/2026-10-29-mobile-ui.md. */
-:root { --input-fs: 16px; } /* 입력칸만 16px — iOS가 확대하지 않는 최소 크기이고 야외에서도 읽기 쉽다 */
+/* 휴대폰 입력·선택칸 글자(--input-fs): 기본은 본문(md)과 같다. 도구줄 안은 sm, 표 안은 md로 자리마다 정한다(admin.css). 16px 미만이면 iOS가 입력칸을 누를 때 화면을 자동 확대하는데,
+   이는 layout.tsx의 viewport maximum-scale=1로 막는다(2026-11-07 결정: 입력칸 글자를 다른 글자와 통일하는 쪽을 택했다. 이력: docs/decisions/2026-10-29-mobile-ui.md). */
+:root { --input-fs: var(--fs-md); }
 @media (max-width: 768px) {
   input:not([type='checkbox']):not([type='radio']):not([type='range']),
   select,
   textarea {
     font-size: var(--input-fs) !important;
   }
+}
+
+/* ─── 공용 날짜·구분 컨트롤 (2026-11-07) ─────────────────────────────────────────────
+   날짜·기간 선택 줄(components/date-nav.tsx)과 구분 선택(components/segmented.tsx)의 모양은 여기 한 곳에서만 정한다.
+   알약(999px) · 높이 --ctl-h(휴대폰 --chip-h) · 글자 0.8125rem 굵게 · 선택/오늘은 --primary로 채움. 메뉴별로 따로 꾸미지 않는다. */
+.dn-root { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.dn-btn, .dn-today { display: inline-flex; align-items: center; justify-content: center; flex: none; height: var(--ctl-h); border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--foreground); font-size: 0.8125rem; font-weight: 700; cursor: pointer; }
+.dn-btn { width: var(--ctl-h); padding: 0; }
+.dn-btn:hover { background: var(--muted); }
+.dn-btn:disabled { opacity: 0.4; cursor: default; }
+.dn-today { padding: 0 0.8rem; background: var(--primary); border-color: var(--primary); color: #fff; }
+.dn-date-wrap { position: relative; display: inline-flex; align-items: center; justify-content: center; height: var(--ctl-h); min-width: 8.5rem; padding: 0 0.8rem; border: 1px solid var(--border); border-radius: 999px; background: #fff; }
+.dn-date-wrap:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(0, 48, 87, 0.15); }
+.dn-date-text { font-size: 0.8125rem; font-weight: 700; color: var(--foreground); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dn-date { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.sg-root { display: inline-flex; flex: none; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: #fff; }
+.sg-item { display: inline-flex; align-items: center; justify-content: center; height: calc(var(--ctl-h) - 2px); padding: 0 0.9rem; border: 0; background: transparent; color: var(--muted-foreground); font-size: 0.8125rem; font-weight: 700; white-space: nowrap; text-decoration: none; cursor: pointer; }
+.sg-on { background: var(--primary); color: #fff; }
+.sg-fill { display: flex; width: 100%; }
+.sg-fill .sg-item { flex: 1; }
+@media (max-width: 768px) {
+  .dn-root { gap: 0.3rem; }
+  .dn-grow { display: flex; flex: 1 1 auto; } /* 휴대폰: 남는 폭을 날짜 알약이 채운다 */
+  .dn-grow .dn-date-wrap { flex: 1; }
+  .dn-btn, .dn-today, .dn-date-wrap { height: var(--chip-h); }
+  .sg-item { height: calc(var(--chip-h) - 2px); }
+  .dn-btn { width: 28px; }
+  .dn-today { padding: 0 0.6rem; }
+  .dn-date-wrap { min-width: 0; padding: 0 0.7rem; }
+  .sg-item { padding: 0 0.6rem; }
 }
 
 /* ─── 접근성 기본값 (2026-11-06 UI 감사) ──────────────────────────────────────────

@@ -5,6 +5,7 @@ import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { BoxDots } from '@/components/box-dots';
 import { useAutoRefresh } from '@/lib/realtime/use-live-refresh';
 import { DateNav } from '@/components/date-nav';
+import { Segmented } from '@/components/segmented';
 import { STAGES, STAGE_COLOR, STAGE_LABEL, stageDetail, totalsOf, type OverviewCard, type Stage } from '@/lib/overview';
 
 type Scope = 'all' | 'main' | 'separate';
@@ -13,21 +14,21 @@ const SCOPES: { key: Scope; label: string }[] = [
   { key: 'main', label: '기본' },
   { key: 'separate', label: '별도' },
 ];
-type Filter = 'open' | 'all' | Stage;
+type Filter = 'all' | Stage;
 
 // 대시보드(진행 현황): 하루 주문이 박스 할당 → 라벨 출력 → 포장 → 상차 어디까지 왔는지 한눈에 본다.
 // 단계는 고객사 단위로 세고, 박스 단위인 라벨·상차는 고객 행의 박스 점과 "n/m박스"로 보여준다. 읽기 전용이다.
 export function OverviewClient({ orderDate, today, cards }: { orderDate: string; today: string; cards: OverviewCard[] }) {
   const router = useRouter();
   const [scope, setScope] = useState<Scope>('all');
-  const [filter, setFilter] = useState<Filter>('open');
+  const [filter, setFilter] = useState<Filter>('all');
   const [refreshing, setRefreshing] = useState(false);
   // 폰으로 가끔 열어 보는 화면이라 1분마다(그리고 다른 앱에서 돌아왔을 때) 저절로 새로 받는다. 낡은 진행 상황을 믿지 않게 마지막 갱신 시각을 보여 준다.
   const lastAt = useAutoRefresh(60_000);
 
   const scoped = cards.filter((c) => c.hasOrder && (scope === 'all' ? true : scope === 'separate' ? c.separate : !c.separate));
   const totals = totalsOf(scoped);
-  const shown = scoped.filter((c) => (filter === 'all' ? true : filter === 'open' ? c.stage !== 'done' : c.stage === filter));
+  const shown = scoped.filter((c) => (filter === 'all' ? true : c.stage === filter));
 
   const terminalNames = [...new Set(scoped.map((c) => c.terminal || '미지정'))];
   const byTerminal = terminalNames.map((name) => ({ name, totals: totalsOf(scoped.filter((c) => (c.terminal || '미지정') === name)) }));
@@ -44,13 +45,7 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
       <div className="ov-bar">
         <h1 className="ov-title">대시보드</h1>
         <DateNav value={orderDate} today={today} onChange={go} />
-        <div className="ov-seg" role="group" aria-label="구분">
-          {SCOPES.map((s) => (
-            <button key={s.key} type="button" className={scope === s.key ? 'ov-seg-on' : ''} onClick={() => setScope(s.key)}>
-              {s.label}
-            </button>
-          ))}
-        </div>
+        <Segmented label="구분" value={scope} items={SCOPES} onSelect={setScope} />
         {lastAt && <span className="ov-updated" aria-live="off">갱신 {new Date(lastAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>}
         <button type="button" className="ov-refresh" onClick={refresh} aria-label="새로고침" title="새로고침">
           <RefreshCw size={14} className={refreshing ? 'ov-spin' : ''} />
@@ -73,7 +68,7 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
             </div>
             <div className="ov-tiles" role="group" aria-label="단계별 고객 수">
               {STAGES.map((s) => (
-                <button key={s} type="button" aria-pressed={filter === s} className={`ov-tile ${filter === s ? 'ov-tile-on' : ''}`} onClick={() => setFilter(filter === s ? 'open' : s)}>
+                <button key={s} type="button" aria-pressed={filter === s} className={`ov-tile ${filter === s ? 'ov-tile-on' : ''}`} onClick={() => setFilter(filter === s ? 'all' : s)}>
                   <span className={`ov-dot ov-seg-${s}`} />
                   <span className="ov-tile-label">{STAGE_LABEL[s]}</span>
                   <strong>{totals.byStage[s]}<small>곳</small></strong>
@@ -110,21 +105,18 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
               <h2>고객별 진행</h2>
             </div>
             <div className="ov-chips" role="group" aria-label="고객 목록 필터">
-              <button type="button" aria-pressed={filter === 'open'} className={filter === 'open' ? 'ov-chip-on' : ''} onClick={() => setFilter('open')}>
-                진행 중 <b>{totals.customers - totals.byStage.done}</b>
-              </button>
               <button type="button" aria-pressed={filter === 'all'} className={filter === 'all' ? 'ov-chip-on' : ''} onClick={() => setFilter('all')}>
                 전체 <b>{totals.customers}</b>
               </button>
               <span className="ov-chip-sep" aria-hidden />
               {STAGES.map((s) => (
-                <button key={s} type="button" aria-pressed={filter === s} className={`ov-chip-stage ov-chip-${s} ${filter === s ? 'ov-chip-stage-on' : ''} ${totals.byStage[s] === 0 ? 'ov-chip-zero' : ''}`} onClick={() => setFilter(filter === s ? 'open' : s)}>
+                <button key={s} type="button" aria-pressed={filter === s} title={STAGE_LABEL[s]} aria-label={`${STAGE_LABEL[s]} ${totals.byStage[s]}곳`} className={`ov-chip-stage ov-chip-${s} ${filter === s ? 'ov-chip-stage-on' : ''} ${totals.byStage[s] === 0 ? 'ov-chip-zero' : ''}`} onClick={() => setFilter(filter === s ? 'all' : s)}>
                   <span className={`ov-dot ov-seg-${s}`} />
-                  {STAGE_LABEL[s]} <b>{totals.byStage[s]}</b>
+                  <span className="ov-chip-label">{STAGE_LABEL[s]}</span> <b>{totals.byStage[s]}</b>
                 </button>
               ))}
             </div>
-            {typeof filter === 'string' && filter !== 'open' && filter !== 'all' && (
+            {filter !== 'all' && (
               <p className="ov-filter-note">{STAGE_LABEL[filter]} 단계의 고객 {shown.length}곳 · 같은 칩을 다시 누르면 해제됩니다</p>
             )}
             <p className="ov-legend" aria-hidden>
@@ -164,23 +156,20 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
       )}
 
       <style>{`
-        .ov-root { ${STAGES.map((st) => `--c-${st}: ${STAGE_COLOR[st].solid};`).join(' ')} display: flex; flex-direction: column; gap: 0.9rem; padding: 1rem 1.2rem 2rem; max-width: 72rem; margin: 0 auto; width: 100%; min-width: 0; }
+        .ov-root { ${STAGES.map((st) => `--c-${st}: ${STAGE_COLOR[st].solid};`).join(' ')} display: flex; flex-direction: column; gap: var(--space-block); width: 100%; min-width: 0; }
         .ov-bar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-        .ov-title { font-size: 1.25rem; font-weight: 800; margin-right: 0.3rem; }
-        .ov-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: #fff; }
-        .ov-seg button { height: var(--ctl-h); padding: 0 0.9rem; font-size: 0.8125rem; font-weight: 700; border: 0; background: transparent; color: var(--muted-foreground); cursor: pointer; }
-        .ov-seg .ov-seg-on { background: var(--primary); color: #fff; }
-        .ov-updated { margin-left: auto; font-size: 0.75rem; color: var(--muted-foreground); white-space: nowrap; }
+        .ov-title { font-size: var(--fs-xl); font-weight: 800; margin-right: 0.3rem; }
+        .ov-updated { margin-left: auto; font-size: var(--fs-xs); color: var(--muted-foreground); white-space: nowrap; }
         .ov-updated + .ov-refresh { margin-left: 0; }
         .ov-refresh { display: inline-flex; align-items: center; justify-content: center; height: var(--ctl-h); width: var(--ctl-h); border-radius: 999px; border: 1px solid var(--border); background: #fff; cursor: pointer; margin-left: auto; }
         .ov-spin { animation: ov-spin 0.6s linear infinite; }
         @keyframes ov-spin { to { transform: rotate(360deg); } }
-        .ov-empty { color: var(--muted-foreground); font-size: 0.875rem; padding: 1.2rem 0; text-align: center; }
-        .ov-card { border: 1px solid var(--border); border-radius: 14px; background: #fff; padding: 0.9rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
-        .ov-card h2 { font-size: 0.9375rem; font-weight: 800; }
+        .ov-empty { color: var(--muted-foreground); font-size: var(--fs-md); padding: 1.2rem 0; text-align: center; }
+        .ov-card { border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); background: #fff; padding: var(--space-card); display: flex; flex-direction: column; gap: var(--space-inner); min-width: 0; }
+        .ov-card h2 { font-size: var(--fs-lg); font-weight: 800; }
         .ov-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
-        .ov-head-main { font-size: 0.9375rem; font-weight: 700; color: var(--muted-foreground); }
-        .ov-head-main b { font-size: 1.5rem; font-weight: 900; color: var(--foreground); line-height: 1.3; }
+        .ov-head-main { font-size: var(--fs-md); font-weight: 700; color: var(--muted-foreground); }
+        .ov-head-main b { font-size: var(--fs-num); font-weight: 900; color: var(--foreground); line-height: 1.3; }
         .ov-seg-boxing { background: var(--c-boxing); } .ov-seg-labeling { background: var(--c-labeling); } .ov-seg-packing { background: var(--c-packing); }
         .ov-seg-packed { background: var(--c-packed); } .ov-seg-loading { background: var(--c-loading); } .ov-seg-done { background: var(--c-done); }
         .ov-stack { display: flex; gap: 2px; height: 12px; border-radius: 999px; overflow: hidden; background: #e2e8f0; }
@@ -190,18 +179,18 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
         .ov-tile { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 0.4rem; row-gap: 0.1rem; text-align: left; border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 0.5rem 0.65rem; cursor: pointer; font-family: inherit; color: var(--foreground); min-width: 0; }
         .ov-tile-on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
         .ov-dot { width: 10px; height: 10px; border-radius: 999px; }
-        .ov-tile-label { font-size: 0.75rem; font-weight: 700; color: var(--muted-foreground); white-space: nowrap; }
-        .ov-tile strong { grid-column: 1 / -1; font-size: 1.5rem; font-weight: 900; line-height: 1.3; }
-        .ov-tile small { font-size: 0.75rem; font-weight: 700; color: var(--muted-foreground); margin-left: 0.1rem; }
-        .ov-boxline { font-size: 0.8125rem; font-weight: 600; color: var(--muted-foreground); line-height: 1.5; }
+        .ov-tile-label { font-size: var(--fs-xs); font-weight: 700; color: var(--muted-foreground); white-space: nowrap; }
+        .ov-tile strong { grid-column: 1 / -1; font-size: var(--fs-num); font-weight: 900; line-height: 1.3; }
+        .ov-tile small { font-size: var(--fs-xs); font-weight: 700; color: var(--muted-foreground); margin-left: 0.1rem; }
+        .ov-boxline { font-size: var(--fs-sm); font-weight: 600; color: var(--muted-foreground); line-height: 1.5; }
         .ov-boxline b { color: var(--foreground); font-weight: 800; }
         .ov-terms { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; }
         .ov-terms li { display: flex; align-items: center; gap: 0.7rem; }
-        .ov-term-name { flex: none; width: 6rem; font-size: 0.8125rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .ov-term-num { flex: none; width: 3.2rem; text-align: right; font-size: 0.8125rem; font-weight: 700; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+        .ov-term-name { flex: none; width: 6rem; font-size: var(--fs-sm); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ov-term-num { flex: none; width: 3.2rem; text-align: right; font-size: var(--fs-sm); font-weight: 700; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
         .ov-term-num b { color: var(--foreground); }
         .ov-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-        .ov-chips button { height: var(--chip-h); padding: 0 0.8rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; color: var(--foreground); cursor: pointer; white-space: nowrap; }
+        .ov-chips button { height: var(--chip-h); padding: 0 0.8rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: var(--fs-sm); font-weight: 700; color: var(--foreground); cursor: pointer; white-space: nowrap; }
         .ov-chips b { margin-left: 0.2rem; font-weight: 800; }
         .ov-chips .ov-chip-on { background: var(--primary); border-color: var(--primary); color: #fff; }
         .ov-chips .ov-chip-sep { flex: none; width: 1px; align-self: stretch; margin: 0.25rem 0.1rem; background: var(--border); }
@@ -209,30 +198,38 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
         .ov-chips .ov-chip-stage .ov-dot { flex: none; width: 9px; height: 9px; }
         .ov-chips .ov-chip-zero:not(.ov-chip-stage-on) { opacity: 0.55; }
         ${STAGES.map((st) => `.ov-chips .ov-chip-${st}.ov-chip-stage-on { background: ${STAGE_COLOR[st].tint}; border-color: ${STAGE_COLOR[st].solid}; box-shadow: 0 0 0 1px ${STAGE_COLOR[st].solid}; color: ${st === 'done' ? '#15803d' : STAGE_COLOR[st].text}; }`).join('\n        ')}
-        .ov-filter-note { font-size: 0.75rem; font-weight: 700; color: var(--primary); }
-        .ov-legend { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); line-height: 1.5; }
+        .ov-filter-note { font-size: var(--fs-xs); font-weight: 700; color: var(--primary); }
+        .ov-legend { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; font-size: var(--fs-xs); font-weight: 600; color: var(--muted-foreground); line-height: 1.5; }
         .ov-legend .bd-root { margin-left: 0.3rem; }
         .ov-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
         .ov-row { display: flex; flex-direction: column; gap: 0.5rem; border: 1px solid var(--border); border-radius: 12px; padding: 0.6rem 0.75rem; min-width: 0; }
         .ov-row-done { background: #f7fef9; border-color: #bbf7d0; }
         .ov-row-top { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
-        .ov-no { flex: none; width: 1.6rem; height: 1.6rem; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: 0.75rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+        .ov-no { flex: none; width: 1.6rem; height: 1.6rem; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: var(--fs-xs); font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
         .ov-name { flex: 1; display: flex; align-items: baseline; gap: 0.45rem; min-width: 0; }
-        .ov-name strong { font-size: 0.9375rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; line-height: 1.5; }
-        .ov-name em { flex: none; font-style: normal; font-size: 0.75rem; font-weight: 800; color: #b45309; background: #fef3c7; border-radius: 999px; padding: 0.05rem 0.5rem; }
-        .ov-term { flex: none; font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); }
-        .ov-stage { flex: none; font-size: 0.75rem; font-weight: 800; border-radius: 999px; padding: 0.15rem 0.65rem; line-height: 1.5; white-space: nowrap; }
+        .ov-name strong { font-size: var(--fs-md); font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; line-height: 1.5; }
+        .ov-name em { flex: none; font-style: normal; font-size: var(--fs-xs); font-weight: 800; color: #b45309; background: #fef3c7; border-radius: 999px; padding: 0.05rem 0.5rem; }
+        .ov-term { flex: none; font-size: var(--fs-xs); font-weight: 600; color: var(--muted-foreground); }
+        .ov-stage { flex: none; font-size: var(--fs-xs); font-weight: 800; border-radius: 999px; padding: 0.15rem 0.65rem; line-height: 1.5; white-space: nowrap; }
         ${STAGES.map((st) => `.ov-stage-${st} { background: ${STAGE_COLOR[st].tint}; color: ${STAGE_COLOR[st].text}; box-shadow: inset 0 0 0 1px ${STAGE_COLOR[st].border}; }`).join('\n        ')}
-        .ov-row-sub { display: flex; align-items: center; gap: 0.6rem; min-width: 0; padding-left: 2.2rem; font-size: 0.75rem; line-height: 1.5; }
+        .ov-row-sub { display: flex; align-items: center; gap: 0.6rem; min-width: 0; padding-left: 2.2rem; font-size: var(--fs-xs); line-height: 1.5; }
         .ov-detail { font-weight: 700; color: var(--muted-foreground); white-space: nowrap; }
         .ov-merge { font-weight: 800; color: #166534; background: #f0fdf4; border: 1px solid #86efac; border-radius: 999px; padding: 0 0.5rem; white-space: nowrap; }
         .ov-warn { display: inline-flex; align-items: center; gap: 0.2rem; margin-left: auto; font-weight: 800; color: #b45309; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 999px; padding: 0 0.5rem; white-space: nowrap; }
         @media (max-width: 768px) {
-          .ov-root { padding: 0.75rem 0.75rem 1.5rem; gap: 0.7rem; }
           .ov-title { display: none; }
           .ov-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
           .ov-row-sub { padding-left: 0; flex-wrap: wrap; }
           .ov-chips .ov-chip-sep { display: none; }
+          /* 위쪽 줄: 날짜 · 구분(전체/기본/별도) · 새로고침을 한 줄에. 갱신 시각은 숨긴다. */
+          .ov-bar { flex-wrap: nowrap; gap: 0.35rem; }
+          .ov-updated { display: none; }
+          .ov-refresh { height: var(--chip-h); width: var(--chip-h); flex: none; margin-left: auto; }
+          /* 고객별 진행 필터: 전체 + 단계는 색 점과 곳 수만(이름은 위 단계 타일·길게 누르면 나오는 제목에서 본다) */
+          .ov-chips { flex-wrap: nowrap; gap: 0.2rem; }
+          .ov-chips button { padding: 0 0.55rem; }
+          .ov-chips .ov-chip-stage { gap: 0.2rem; padding: 0 0.35rem; }
+          .ov-chip-label { display: none; }
         }
       `}</style>
     </div>

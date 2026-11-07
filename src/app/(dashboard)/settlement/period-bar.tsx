@@ -1,12 +1,13 @@
 'use client';
-import Link from 'next/link';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { GRANULARITY_LABEL, getPeriod, shiftAnchor, type Granularity } from '@/lib/report';
-import { settlementTodayUrl, settlementUrl } from '@/lib/settlement/url';
+import { useRouter } from 'next/navigation';
+import { GRANULARITY_LABEL, type Granularity } from '@/lib/report';
+import { settlementUrl } from '@/lib/settlement/url';
+import { PeriodNav } from '@/components/date-nav';
+import { Segmented } from '@/components/segmented';
 
 const GRANULARITIES: Granularity[] = ['day', 'week', 'month'];
 
-// 판매내역·매입내역·그래프가 한 화면에서 함께 쓰는 기간 선택 줄: 일/주/월 전환, 이전·다음 이동, 오늘. 스크롤해도 위에 붙어 있다.
+// 정산·영수증이 쓰는 기간 선택 줄: [일 주 월] + [‹ 기간 › 오늘]. 모양은 공용 컨트롤(date-nav.tsx · segmented.tsx)이다. 스크롤해도 위에 붙어 있다.
 export function PeriodBar({
   granularity,
   anchor,
@@ -22,27 +23,17 @@ export function PeriodBar({
   basePath?: string; // 기간 이동이 가는 화면(정산 /settlement, 영수증 /receipts)
   dayOnly?: boolean; // 일 단위로만 보는 화면(영수증): 일/주/월 전환을 숨긴다
 }) {
-  const prevUrl = settlementUrl(granularity, shiftAnchor(granularity, anchor, -1), basePath);
-  const nextAnchor = shiftAnchor(granularity, anchor, 1);
-  const nextDisabled = getPeriod(granularity, nextAnchor).from > today; // 아직 오지 않은 기간으로는 못 간다
-
+  const router = useRouter();
   return (
     <div className="ak-toolbar ak-sticky ak-period-bar">
-      {!dayOnly && <div className="ak-period-seg">
-        {GRANULARITIES.map((g) => (
-          <Link key={g} href={settlementUrl(g, anchor, basePath)} className={`ak-btn ${g === granularity ? 'ak-btn-primary' : ''}`}>{GRANULARITY_LABEL[g]}</Link>
-        ))}
-      </div>}
-      <div className="ak-period-nav">
-        <Link href={prevUrl} className="ak-btn ak-period-icon" aria-label={`이전 ${GRANULARITY_LABEL[granularity]}`}><ChevronLeft size={14} /></Link>
-        <strong className="ak-period-label">{periodLabel}</strong>
-        {nextDisabled ? (
-          <span className="ak-btn ak-period-icon" aria-disabled style={{ opacity: 0.4, pointerEvents: 'none' }}><ChevronRight size={14} /></span>
-        ) : (
-          <Link href={settlementUrl(granularity, nextAnchor, basePath)} className="ak-btn ak-period-icon" aria-label={`다음 ${GRANULARITY_LABEL[granularity]}`}><ChevronRight size={14} /></Link>
-        )}
-        <Link href={settlementTodayUrl(basePath)} className="ak-btn ak-period-today">오늘</Link>
-      </div>
+      {!dayOnly && (
+        <Segmented
+          label="기간 단위"
+          value={granularity}
+          items={GRANULARITIES.map((g) => ({ key: g, label: GRANULARITY_LABEL[g], href: settlementUrl(g, anchor, basePath) }))}
+        />
+      )}
+      <PeriodNav granularity={granularity} anchor={anchor} today={today} periodLabel={periodLabel} grow onChange={(d) => router.push(settlementUrl(granularity, d, basePath))} />
     </div>
   );
 }
