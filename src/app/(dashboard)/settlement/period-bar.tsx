@@ -13,12 +13,14 @@ export function PeriodBar({
   today,
   periodLabel,
   basePath = '/settlement',
+  dayOnly = false,
 }: {
   granularity: Granularity;
   anchor: string;
   today: string;
   periodLabel: string;
   basePath?: string; // 기간 이동이 가는 화면(정산 /settlement, 영수증 /receipts)
+  dayOnly?: boolean; // 일 단위로만 보는 화면(영수증): 일/주/월 전환을 숨긴다
 }) {
   const prevUrl = settlementUrl(granularity, shiftAnchor(granularity, anchor, -1), basePath);
   const nextAnchor = shiftAnchor(granularity, anchor, 1);
@@ -26,11 +28,11 @@ export function PeriodBar({
 
   return (
     <div className="ak-toolbar ak-sticky ak-period-bar">
-      <div className="ak-period-seg">
+      {!dayOnly && <div className="ak-period-seg">
         {GRANULARITIES.map((g) => (
           <Link key={g} href={settlementUrl(g, anchor, basePath)} className={`ak-btn ${g === granularity ? 'ak-btn-primary' : ''}`}>{GRANULARITY_LABEL[g]}</Link>
         ))}
-      </div>
+      </div>}
       <div className="ak-period-nav">
         <Link href={prevUrl} className="ak-btn ak-period-icon" aria-label={`이전 ${GRANULARITY_LABEL[granularity]}`}><ChevronLeft size={14} /></Link>
         <strong className="ak-period-label">{periodLabel}</strong>
