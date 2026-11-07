@@ -381,6 +381,7 @@ export function SettlementClient({
         hidden={EMPTY_HIDDEN}
         rows={pageRows}
         rowKey={(r) => r.itemId}
+        limitRows
         selected={canEdit ? selected : undefined}
         onToggleRow={canEdit ? toggleRow : undefined}
         onToggleAll={canEdit ? toggleAllOnPage : undefined}

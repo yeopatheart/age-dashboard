@@ -200,6 +200,7 @@ export function DataTable<T>({
   onToggleRow,
   onToggleAll,
   emptyText,
+  limitRows,
 }: {
   columns: Column<T>[];
   hidden: Set<string>;
@@ -211,12 +212,13 @@ export function DataTable<T>({
   onToggleRow?: (key: string) => void;
   onToggleAll?: () => void;
   emptyText: string;
+  limitRows?: boolean; // 최대 행 수(admin.css의 --ak-rows)를 넘으면 머리글을 고정한 채 표 안에서 세로 스크롤한다
 }) {
   const visible = columns.filter((c) => c.hideable === false || !hidden.has(c.key));
   const selectable = !!selected && !!onToggleRow;
   const allSelected = selectable && rows.length > 0 && rows.every((r) => selected!.has(rowKey(r)));
   return (
-    <div className="ak-table-wrap">
+    <div className={`ak-table-wrap ${limitRows ? 'ak-limit' : ''}`}>
       <table className="ak-table">
         <thead>
           <tr>
