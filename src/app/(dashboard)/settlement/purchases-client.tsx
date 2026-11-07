@@ -147,8 +147,7 @@ export function PurchasesClient({
         const r = view(r0);
         return (
           <select
-            className="ak-select"
-            style={{ minWidth: '9rem' }}
+            className="ak-select ak-select-seller"
             value={r.sellerId ?? ''}
             disabled={!canEdit}
             aria-label={`${r.product} 사업자 구분`}
@@ -170,8 +169,7 @@ export function PurchasesClient({
         const options = supplierOptions(r);
         return (
           <select
-            className="ak-select"
-            style={{ minWidth: '9rem' }}
+            className="ak-select ak-select-seller"
             value={r.supplierId ?? ''}
             disabled={!canEdit || options.length === 0}
             title={options.length === 0 ? '상품 관리에서 이 상품의 매입처를 먼저 등록하세요' : undefined}

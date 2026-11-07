@@ -197,8 +197,7 @@ export function SettlementClient({
         const r = view(r0);
         return (
           <select
-            className="ak-select"
-            style={{ minWidth: '9rem' }}
+            className="ak-select ak-select-seller"
             value={r.sellerId ?? ''}
             disabled={!canEdit}
             aria-label={`${r.customer} ${r.product} 사업자 구분`}
