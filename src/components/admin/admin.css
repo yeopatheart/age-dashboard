@@ -1,17 +1,17 @@
 /* 관리 화면(고객사/터미널/상품/박스) 공통 모양. 클래스는 ak- 접두사로 다른 화면과 겹치지 않게 한다. */
-.ak-page { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+.ak-page { display: flex; flex-direction: column; gap: var(--space-block); min-width: 0; }
 
 /* 도구줄: 검색 · 필터 · 정렬 · 개수 · 열 선택 · 추가 */
-.ak-toolbar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.6rem 0.75rem; box-shadow: var(--shadow-sm); }
+.ak-toolbar { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.625rem 0.75rem; box-shadow: var(--shadow-sm); }
 .ak-search { display: flex; align-items: center; gap: 0.4rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 0.85rem; height: var(--ctl-h); color: var(--muted-foreground); background: #fff; }
-.ak-search input { border: none; outline: none; font-size: 0.875rem; background: transparent; width: 11rem; }
+.ak-search input { border: none; outline: none; font-size: var(--fs-sm); background: transparent; width: 11rem; }
 /* 드롭다운: 브라우저 기본 화살표를 끄고 같은 화살표를 오른쪽 안쪽에 그려서 글자와 겹치거나 떨어지지 않게 한다. */
 .ak-select, select.ak-input { appearance: none; -webkit-appearance: none; background-color: #fff; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right 0.7rem center; background-size: 1rem; cursor: pointer; }
-.ak-select { height: var(--ctl-h); border: 1px solid var(--border); border-radius: 999px; padding: 0 2.25rem 0 1rem; font-size: 0.8125rem; font-weight: 600; color: var(--foreground); }
+.ak-select { height: var(--ctl-h); border: 1px solid var(--border); border-radius: 999px; padding: 0 2.25rem 0 1rem; font-size: var(--fs-sm); font-weight: 600; color: var(--foreground); }
 select.ak-input { padding-right: 2.25rem; }
-.ak-count { font-size: 0.8125rem; color: var(--muted-foreground); white-space: nowrap; }
+.ak-count { font-size: var(--fs-sm); color: var(--muted-foreground); white-space: nowrap; }
 .ak-spacer { flex: 1; }
-.ak-btn { display: inline-flex; align-items: center; gap: 0.35rem; height: var(--ctl-h); padding: 0 0.95rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: 0.8125rem; font-weight: 700; color: var(--foreground); cursor: pointer; white-space: nowrap; }
+.ak-btn { display: inline-flex; align-items: center; gap: 0.35rem; height: var(--ctl-h); padding: 0 0.95rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: var(--fs-sm); font-weight: 700; color: var(--foreground); cursor: pointer; white-space: nowrap; }
 .ak-btn:hover { background: var(--muted); }
 .ak-btn:disabled { opacity: 0.45; cursor: default; }
 .ak-btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
@@ -26,19 +26,19 @@ select.ak-input { padding-right: 2.25rem; }
 .ak-input:focus, .ak-search:focus-within, .ak-quick-add input:focus { box-shadow: 0 0 0 2px rgba(0, 48, 87, 0.15); }
 .ak-panel:focus { outline: none; }
 .ak-quick-add { display: flex; align-items: center; gap: 0.4rem; }
-.ak-quick-add input { height: var(--ctl-h); border: 1px solid var(--border); border-radius: 999px; padding: 0 0.9rem; font-size: 0.875rem; width: 14rem; outline: none; }
+.ak-quick-add input { height: var(--ctl-h); border: 1px solid var(--border); border-radius: 999px; padding: 0 0.9rem; font-size: var(--fs-md); width: 14rem; outline: none; }
 .ak-quick-add input:focus { border-color: var(--primary); }
 
 /* 열 선택 메뉴 */
 .ak-menu-wrap { position: relative; }
 .ak-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 11rem; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-md); padding: 0.4rem; }
-.ak-menu label { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; font-size: 0.8125rem; border-radius: 8px; cursor: pointer; }
+.ak-menu label { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; font-size: var(--fs-sm); border-radius: 8px; cursor: pointer; }
 .ak-menu label:hover { background: var(--muted); }
 
 /* 표 */
 .ak-table-wrap { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow: auto; max-height: calc(100vh - 17rem); }
-.ak-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; }
-.ak-table th { position: sticky; top: 0; z-index: 2; text-align: left; background: #f8fafc; color: var(--muted-foreground); font-size: 0.75rem; font-weight: 700; padding: 0 0.9rem; height: 2.5rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.ak-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs-md); }
+.ak-table th { position: sticky; top: 0; z-index: 2; text-align: left; background: #f8fafc; color: var(--muted-foreground); font-size: var(--fs-xs); font-weight: 700; padding: 0 0.9rem; height: 2.5rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .ak-table td { padding: 0 0.9rem; height: 3rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
 .ak-table tbody tr:last-child td { border-bottom: none; }
 .ak-table tbody tr.ak-row { cursor: pointer; }
@@ -47,23 +47,23 @@ select.ak-input { padding-right: 2.25rem; }
 .ak-table .ak-check { width: 2.5rem; }
 .ak-table .ak-right { text-align: right; }
 .ak-table .ak-fit { width: 1%; white-space: nowrap; }
-.ak-empty { padding: 3rem 1rem; text-align: center; color: var(--muted-foreground); font-size: 0.875rem; }
+.ak-empty { padding: 3rem 1rem; text-align: center; color: var(--muted-foreground); font-size: var(--fs-md); }
 .ak-chevron { color: #cbd5e1; }
 
 /* 작은 부품 */
 .ak-name { font-weight: 700; color: var(--foreground); }
-.ak-sub { color: var(--muted-foreground); font-size: 0.75rem; }
+.ak-sub { color: var(--muted-foreground); font-size: var(--fs-xs); }
 .ak-muted { color: var(--muted-foreground); }
 .ak-ellipsis { display: block; max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ak-via { display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
-.ak-tag { font-size: 0.6875rem; font-weight: 700; padding: 0.15rem 0.55rem; border-radius: 999px; border: 1px solid; }
+.ak-tag { font-size: var(--fs-xs); font-weight: 700; padding: 0.15rem 0.55rem; border-radius: 999px; border: 1px solid; }
 .ak-tag-order { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
 .ak-tag-manual { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
 .ak-tag-on { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
 .ak-tag-off { background: #f1f5f9; border-color: #cbd5e1; color: #64748b; }
-.ak-badge { display: inline-block; border: 1px solid; border-radius: 6px; padding: 0.15rem 0.7rem; font-size: 0.8125rem; font-weight: 700; }
+.ak-badge { display: inline-block; border: 1px solid; border-radius: 6px; padding: 0.15rem 0.7rem; font-size: var(--fs-sm); font-weight: 700; }
 .ak-swatch { display: inline-block; width: 22px; height: 22px; border-radius: 6px; border: 2px solid; vertical-align: middle; }
-.ak-pill { display: inline-block; border: 2px solid; border-radius: 8px; padding: 0.15rem 0.8rem; font-weight: 700; font-size: 0.8125rem; }
+.ak-pill { display: inline-block; border: 2px solid; border-radius: 8px; padding: 0.15rem 0.8rem; font-weight: 700; font-size: var(--fs-sm); }
 
 /* 토글 스위치 */
 .ak-toggle { position: relative; width: 38px; height: 22px; border-radius: 999px; border: none; background: #cbd5e1; cursor: pointer; padding: 0; transition: background 0.15s; flex-shrink: 0; }
@@ -74,8 +74,8 @@ select.ak-input { padding-right: 2.25rem; }
 .ak-toggle[aria-checked='true']::after { transform: translateX(16px); }
 
 /* 일괄 작업 바 */
-.ak-bulk { display: flex; flex-direction: column; gap: 0.7rem; background: var(--primary-light); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.8rem 1rem; }
-.ak-bulk-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: 0.875rem; }
+.ak-bulk { display: flex; flex-direction: column; gap: 0.7rem; background: var(--primary-light); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-card); }
+.ak-bulk-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: var(--fs-md); }
 
 /* 오른쪽 상세 패널 */
 .ak-overlay { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 60; background: rgba(15, 23, 42, 0.35); display: flex; justify-content: flex-end; }
@@ -87,19 +87,19 @@ select.ak-input { padding-right: 2.25rem; }
 .ak-panel-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.85rem 1.25rem; padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--border); background: #fff; }
 .ak-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
 .ak-field { display: flex; flex-direction: column; gap: 0.35rem; }
-.ak-field > label, .ak-field-label { font-size: 0.75rem; font-weight: 700; color: var(--muted-foreground); }
-.ak-input { height: 2.5rem; border: 1px solid var(--border); border-radius: 10px; padding: 0 0.8rem; font-size: 0.9rem; outline: none; background: #fff; width: 100%; }
+.ak-field > label, .ak-field-label { font-size: var(--fs-xs); font-weight: 700; color: var(--muted-foreground); }
+.ak-input { height: 2.5rem; border: 1px solid var(--border); border-radius: 10px; padding: 0 0.8rem; font-size: var(--fs-md); outline: none; background: #fff; width: 100%; }
 .ak-input:focus { border-color: var(--primary); }
 .ak-textarea { min-height: 5rem; padding: 0.6rem 0.8rem; height: auto; resize: vertical; }
 .ak-row2 { display: flex; gap: 0.6rem; }
 .ak-row2 > * { flex: 1; min-width: 0; }
-.ak-setting { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 0.85rem; background: var(--muted); border-radius: 10px; font-size: 0.875rem; font-weight: 600; }
-.ak-setting small { display: block; font-weight: 400; font-size: 0.75rem; color: #475569; } /* 연회색 배경 위라 본문 회색보다 조금 더 진하게 */
-.ak-meta { font-size: 0.75rem; color: var(--muted-foreground); }
-.ak-error { color: var(--danger-text, #b91c1c); font-size: 0.8125rem; font-weight: 600; }
-.ak-notice { color: var(--success-text, #15803d); font-size: 0.8125rem; font-weight: 600; }
+.ak-setting { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 0.85rem; background: var(--muted); border-radius: 10px; font-size: var(--fs-md); font-weight: 600; }
+.ak-setting small { display: block; font-weight: 400; font-size: var(--fs-xs); color: #475569; } /* 연회색 배경 위라 본문 회색보다 조금 더 진하게 */
+.ak-meta { font-size: var(--fs-xs); color: var(--muted-foreground); }
+.ak-error { color: var(--danger-text, #b91c1c); font-size: var(--fs-sm); font-weight: 600; }
+.ak-notice { color: var(--success-text, #15803d); font-size: var(--fs-sm); font-weight: 600; }
 /* 권한이 없어 보기만 가능할 때 패널 맨 위 안내 */
-.ak-readonly-note { background: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 0.55rem 0.8rem; font-size: 0.8125rem; font-weight: 600; color: #475569; }
+.ak-readonly-note { background: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 0.55rem 0.8rem; font-size: var(--fs-sm); font-weight: 600; color: #475569; }
 /* 삭제 확인 줄: 넓은 화면은 문구 오른쪽에 버튼, 휴대폰은 문구를 윗줄에 두고 버튼을 아랫줄 오른쪽에 둔다 */
 .ak-delete-msg { flex: 1 1 auto; }
 .ak-delete-msg + .ak-btn { margin-left: auto; }
@@ -123,15 +123,15 @@ select.ak-input { padding-right: 2.25rem; }
    휴대폰은 기간 바가 두 줄(약 100px)이라 붙여 두면 화면을 너무 가려서 고정하지 않는다. */
 .ak-sticky { position: sticky; top: -2.25rem; z-index: 5; }
 @media (max-width: 768px) { .ak-sticky { position: static; } }
-.ak-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.9rem; align-items: start; }
+.ak-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-block); align-items: start; }
 .ak-section { min-width: 0; }
 .ak-section-head { display: flex; align-items: baseline; gap: 0.6rem; cursor: pointer; list-style: none; padding: 0.1rem 0.1rem 0.5rem; }
 .ak-section-head::-webkit-details-marker { display: none; }
 .ak-section-head::before { content: '▾'; color: var(--muted-foreground); }
 .ak-section:not([open]) > .ak-section-head { padding-bottom: 0.1rem; }
 .ak-section:not([open]) > .ak-section-head::before { content: '▸'; }
-.ak-section-title { font-size: 1rem; font-weight: 700; }
-.ak-section-body { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+.ak-section-title { font-size: var(--fs-lg); font-weight: 800; }
+.ak-section-body { display: flex; flex-direction: column; gap: var(--space-block); min-width: 0; }
 @media (min-width: 2400px) { /* 표가 열 폭에 거의 들어가는 폭(매입내역 표가 약 1260px). 이보다 좁으면 한 열로 쌓는다 */
   .ak-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ak-section-sales { order: 1; }
@@ -140,20 +140,9 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-section-chart { grid-column: 1 / -1; order: 4; }
 }
 
-/* 정산 기간 바: [일 주 월] 묶음과 [‹ 날짜 › 오늘] 묶음. 휴대폰에서는 한 줄에 모두 둔다. */
-.ak-period-seg { display: inline-flex; gap: 4px; }
-.ak-period-nav { display: inline-flex; align-items: center; gap: 0.6rem; }
-.ak-period-label { min-width: 9rem; text-align: center; white-space: nowrap; }
-@media (max-width: 768px) { /* 휴대폰: 한 줄 — [일 주 월] 뒤에 [‹ 날짜 ›]. "오늘"은 숨긴다(날짜 칸이 좁아져서) */
-  .ak-toolbar.ak-period-bar { gap: 0.4rem; flex-wrap: nowrap; }
-  .ak-period-seg { flex: 0 0 auto; }
-  .ak-period-seg .ak-btn { justify-content: center; height: var(--chip-h); padding: 0 0.7rem; }
-  .ak-period-nav { flex: 1 1 auto; min-width: 0; gap: 0.25rem; }
-  .ak-period-nav .ak-btn { height: var(--chip-h); padding: 0 0.75rem; }
-  .ak-period-nav .ak-period-icon { padding: 0; width: var(--chip-h); flex: 0 0 auto; justify-content: center; }
-  .ak-period-today { display: none; }
-  .ak-period-label { flex: 1; min-width: 0; font-size: 0.9375rem; }
-}
+/* 정산·영수증 기간 줄(PeriodBar): [일 주 월] + [‹ 기간 › 오늘]. 알약·구분 버튼 모양은 공용 컨트롤(globals.css .dn-* · .sg-*)이다. 휴대폰에서도 한 줄에 둔다. */
+.ak-toolbar.ak-period-bar { flex-wrap: nowrap; }
+@media (max-width: 768px) { .ak-toolbar.ak-period-bar { gap: 0.4rem; } }
 
 /* ─── 정산 판매내역 휴대폰 ──────────────────────────────────────────────────────
    · 일괄 바(선택한 줄 처리): 휴대폰에서는 화면 아래(하단 탭 위)에 고정해 어느 줄을 입력하다가도 바로 영수증 만들기·일괄 변경을 누를 수 있다.
@@ -163,7 +152,7 @@ select.ak-input { padding-right: 2.25rem; }
    · 구역 순서는 PC와 같다(위 .ak-split 참고). */
 .ak-qty { display: inline-flex; align-items: center; gap: 0.3rem; }
 .ak-input.ak-edited { border-color: #f59e0b; background: #fffbeb; } /* 정산에서 주문 목록 값을 고친 칸 */
-.ak-undo-btn { flex: none; width: var(--chip-h); height: var(--chip-h); border-radius: 999px; border: 1px solid var(--border); background: #fff; color: #b45309; font-size: 1rem; font-weight: 800; line-height: 1; cursor: pointer; }
+.ak-undo-btn { flex: none; width: var(--chip-h); height: var(--chip-h); border-radius: 999px; border: 1px solid var(--border); background: #fff; color: #b45309; font-size: var(--fs-lg); font-weight: 800; line-height: 1; cursor: pointer; }
 .ak-link-btn { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .ak-link-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .ak-bulk-extra { display: contents; }
@@ -182,18 +171,19 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-table th.ak-check { background: #f8fafc; z-index: 3; }
 }
 
-/* 휴대폰 글자 단계·간격 적용 (토큰 설명은 globals.css). 위의 기본 규칙보다 뒤에 있어야 한다. */
+/* 컨트롤 글자 크기는 자리마다 하나다(2026-11-07): 도구줄 안(검색·선택·버튼·건수·합계 문구) = sm, 표 안(입력칸·선택칸) = 표 본문과 같은 md.
+   휴대폰은 입력 글자를 --input-fs 하나로 정하므로(globals.css) 같은 자리에서 --input-fs를 덮어 같은 크기로 맞춘다. */
+.ak-toolbar { font-size: var(--fs-sm); --input-fs: var(--fs-sm); }
+.ak-toolbar .ak-sub { font-size: var(--fs-sm); }
+.ak-table-wrap { --input-fs: var(--fs-md); }
+.ak-table-wrap select, .ak-table-wrap .ak-select, .ak-table-wrap input:not([type='checkbox']) { font-size: var(--fs-md); }
+
+/* 휴대폰 보정 (글자·간격 값은 globals.css의 디자인 기준 토큰이 휴대폰에서 알아서 바뀐다). 위의 기본 규칙보다 뒤에 있어야 한다. */
 @media (max-width: 768px) {
-  .ak-meta, .ak-sub, .ak-count, .ak-table th { font-size: 0.8125rem; }
-  .ak-table { font-size: 0.9375rem; }
-  .ak-section-title { font-size: 1.0625rem; }
   .ak-table .ak-select, .ak-table .ak-input { font-weight: 500; }
-  .ak-toolbar { padding: var(--card-pad); gap: 0.5rem; }
-  .ak-page, .ak-split { gap: var(--block-gap); }
-  .ak-section-body { gap: var(--block-gap); }
+  .ak-toolbar { padding: 0.5rem var(--space-inner); gap: 0.5rem; }
   .ak-section-head { padding: 0.1rem 0.1rem 0.4rem; }
-  /* 정산 표(판매내역·매입내역)의 선택칸(사업자 구분·입금)은 고객명과 같은 크기로 줄인다. 형이 주로 보는 화면이라 큰 글씨보다 한 화면에 보이는 정보가 우선이다.
-     입력칸(판매가·메모 등)은 16px를 유지한다: 16px 미만이면 iOS가 입력할 때 화면을 확대한다. 선택칸도 iOS에서는 눌렀을 때 확대될 수 있다(핀치로 되돌린다). 되돌리려면 아래 --input-fs 줄을 지운다. */
-  .ak-table-wrap.ak-limit select { --input-fs: 0.9375rem; height: var(--chip-h); padding: 0 1.9rem 0 0.75rem; background-position: right 0.55rem center; }
+  /* 정산 표의 선택칸(사업자 구분·입금)은 표 안 컨트롤 규칙(위)으로 표 본문과 같은 크기다. 높이·여백만 줄인다. */
+  .ak-table-wrap.ak-limit select { height: var(--chip-h); padding: 0 1.9rem 0 0.75rem; background-position: right 0.55rem center; }
   .ak-table-wrap.ak-limit .ak-select-seller { min-width: 6.5rem; }
 }

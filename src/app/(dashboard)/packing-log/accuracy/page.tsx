@@ -55,7 +55,7 @@ export default async function PackingAccuracyPage() {
 
   return (
     <div className="ak-page">
-      <div className="page-header">
+      <div className="page-header page-header-keep">
         <div className="page-header-icon"><BarChart3 size={20} /></div>
         <div>
           <h1 className="page-title">박스 추천 정확도</h1>

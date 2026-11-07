@@ -1,8 +1,10 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { BarChart3, ChevronLeft, ChevronRight, Download } from 'lucide-react';
-import { GRANULARITY_LABEL, shiftAnchor, type Granularity, type ReportSummary } from '@/lib/report';
+import { BarChart3, Download } from 'lucide-react';
+import { PeriodNav } from '@/components/date-nav';
+import { Segmented } from '@/components/segmented';
+import { GRANULARITY_LABEL, type Granularity, type ReportSummary } from '@/lib/report';
 
 type View = 'product' | 'business' | 'terminal';
 const VIEW_LABEL: Record<View, string> = { product: '상품별', business: '업체별', terminal: '터미널별' };
@@ -133,7 +135,6 @@ export function ReportsClient({
     URL.revokeObjectURL(a.href);
   };
 
-  const nextDisabled = shiftAnchor(granularity, anchor, 1) > today && period.to >= today;
 
   return (
     <div className="reports-root">
@@ -146,30 +147,22 @@ export function ReportsClient({
       </div>
 
       <div className="period-card">
-        <div className="seg">
-          {(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => (
-            <button key={g} className={granularity === g ? 'seg-on' : ''} onClick={() => go(g, anchor)}>{GRANULARITY_LABEL[g]}</button>
-          ))}
-        </div>
-        <div className="period-nav">
-          <button onClick={() => go(granularity, shiftAnchor(granularity, anchor, -1))} title="이전"><ChevronLeft size={16} /></button>
-          {/* 기간 이름을 누르면 날짜를 고른다(휴대폰: 별도 날짜 입력칸 대신 이 칸에 겹쳐 둔 입력) */}
-          <label className="period-label">
-            {period.label}
-            <input type="date" className="period-date-overlay" value={anchor} max={today} onChange={(e) => e.target.value && go(granularity, e.target.value)} aria-label="기간 기준 날짜" />
-          </label>
-          <button onClick={() => go(granularity, shiftAnchor(granularity, anchor, 1))} disabled={nextDisabled} title="다음"><ChevronRight size={16} /></button>
-          <input type="date" className="period-date-desktop" value={anchor} max={today} onChange={(e) => e.target.value && go(granularity, e.target.value)} />
-          <button className="today-btn" onClick={() => go(granularity, today)}>오늘</button>
-        </div>
+        <Segmented
+          label="기간 단위"
+          value={granularity}
+          items={(Object.keys(GRANULARITY_LABEL) as Granularity[]).map((g) => ({ key: g, label: GRANULARITY_LABEL[g] }))}
+          onSelect={(g) => go(g, anchor)}
+        />
+        <PeriodNav granularity={granularity} anchor={anchor} today={today} periodLabel={period.label} grow onChange={(d) => go(granularity, d)} />
       </div>
 
       <div className="tool-row">
-        <div className="seg">
-          {(Object.keys(VIEW_LABEL) as View[]).map((v) => (
-            <button key={v} className={view === v ? 'seg-on' : ''} onClick={() => changeView(v)}>{VIEW_LABEL[v]}</button>
-          ))}
-        </div>
+        <Segmented
+          label="보기"
+          value={view}
+          items={(Object.keys(VIEW_LABEL) as View[]).map((v) => ({ key: v, label: VIEW_LABEL[v] }))}
+          onSelect={changeView}
+        />
         <label className="sort-box">
           정렬
           <select value={sortKey} onChange={(e) => setSortKey(e.target.value)}>
@@ -226,60 +219,41 @@ export function ReportsClient({
       <p className="foot-note"><b>미출고</b>는 주문은 유효하지만 현장에서 출고하지 못한 수량입니다(주문 수량에는 포함). 미 상품의 <em>(+kg)</em>은 &quot;1미+2.5kg&quot;처럼 마릿수와 함께 적은 부가 중량의 합계입니다. 단위가 다른 수량은 더하지 않고 단위별로 따로 보여줍니다.</p>
 
       <style>{`
-        .reports-root { display: flex; flex-direction: column; gap: 1rem; }
-        .period-card { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 0.85rem 1rem; }
-        .seg { display: inline-flex; background: var(--muted); border-radius: 10px; padding: 3px; gap: 2px; }
-        .seg button { border: none; background: transparent; font-size: 0.8125rem; font-weight: 700; padding: 0.4rem 1rem; border-radius: 8px; color: var(--muted-foreground); cursor: pointer; }
-        .seg button.seg-on { background: #fff; color: var(--primary); box-shadow: var(--shadow-sm); }
-        .period-nav { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-        .period-nav button { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 8px; background: #fff; cursor: pointer; }
-        .period-nav button:disabled { opacity: 0.35; cursor: default; }
-        .period-nav .today-btn { width: auto; padding: 0 0.8rem; font-size: 0.8125rem; font-weight: 700; }
-        .period-nav input { border: 1px solid var(--border); border-radius: 8px; padding: 0.3rem 0.5rem; font-size: 0.8125rem; }
-        .period-label { font-size: 1rem; font-weight: 800; color: var(--primary); min-width: 11rem; text-align: center; }
+        .reports-root { display: flex; flex-direction: column; gap: var(--space-block); }
+        .period-card { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 0.625rem 0.75rem; }
         .tool-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-        .sort-box { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8125rem; font-weight: 700; color: var(--muted-foreground); }
-        .sort-box select { appearance: none; -webkit-appearance: none; border: 1px solid var(--border); border-radius: 999px; height: 2.25rem; padding: 0 2.25rem 0 1rem; font-size: 0.8125rem; font-weight: 600; background-color: #fff; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right 0.7rem center; background-size: 1rem; cursor: pointer; }
-        .count-text { font-size: 0.8125rem; color: var(--muted-foreground); }
-        .csv-btn { margin-left: auto; display: flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; font-weight: 700; padding: 0.45rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
+        .sort-box { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-sm); font-weight: 700; color: var(--muted-foreground); }
+        .sort-box select { appearance: none; -webkit-appearance: none; border: 1px solid var(--border); border-radius: 999px; height: 2.25rem; padding: 0 2.25rem 0 1rem; font-size: var(--fs-sm); font-weight: 600; background-color: #fff; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right 0.7rem center; background-size: 1rem; cursor: pointer; }
+        .count-text { font-size: var(--fs-sm); color: var(--muted-foreground); }
+        .csv-btn { margin-left: auto; display: flex; align-items: center; gap: 0.35rem; font-size: var(--fs-sm); font-weight: 700; padding: 0.45rem 0.9rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--primary); cursor: pointer; }
         .csv-btn:disabled { opacity: 0.45; cursor: default; }
-        .empty-text { color: var(--muted-foreground); font-size: 0.9rem; padding: 2.5rem 0; text-align: center; }
+        .empty-text { color: var(--muted-foreground); font-size: var(--fs-md); padding: 2.5rem 0; text-align: center; }
         .table-wrap { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); overflow-x: auto; }
-        .report-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-        .report-table th { text-align: left; font-size: 0.75rem; font-weight: 700; color: var(--muted-foreground); background: var(--muted); padding: 0.6rem 0.8rem; white-space: nowrap; }
+        .report-table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+        .report-table th { text-align: left; font-size: var(--fs-xs); font-weight: 700; color: var(--muted-foreground); background: var(--muted); padding: 0.6rem 0.8rem; white-space: nowrap; }
         .report-table td { padding: 0.55rem 0.8rem; border-top: 1px solid var(--border); vertical-align: middle; }
         .report-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-        .rank { width: 2.5rem; color: var(--muted-foreground); font-size: 0.8125rem; }
+        .rank { width: 2.5rem; color: var(--muted-foreground); font-size: var(--fs-sm); }
         .name-cell { min-width: 12rem; }
         .name-text { font-weight: 700; }
-        .term-text { margin-left: 0.5rem; font-size: 0.75rem; color: var(--muted-foreground); }
+        .term-text { margin-left: 0.5rem; font-size: var(--fs-xs); color: var(--muted-foreground); }
         .bar { height: 4px; background: var(--muted); border-radius: 999px; margin-top: 0.35rem; overflow: hidden; }
         .bar > div { height: 100%; background: var(--primary); border-radius: 999px; opacity: 0.55; }
         .unit-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-        .unit-chip { display: inline-flex; align-items: baseline; gap: 0.15rem; padding: 0.15rem 0.6rem; border-radius: 999px; background: #f1f5f9; border: 1px solid #e2e8f0; font-size: 0.8125rem; white-space: nowrap; }
-        .unit-chip strong { font-size: 0.9375rem; }
-        .unit-unshipped { margin-left: 0.35rem; font-size: 0.6875rem; font-weight: 700; color: #b45309; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 0 0.3rem; }
-        .unit-chip em { font-style: normal; font-size: 0.6875rem; color: var(--muted-foreground); margin-left: 0.2rem; }
-        .period-label { position: relative; }
-        .period-date-overlay { display: none; }
+        .unit-chip { display: inline-flex; align-items: baseline; gap: 0.15rem; padding: 0.15rem 0.6rem; border-radius: 999px; background: #f1f5f9; border: 1px solid #e2e8f0; font-size: var(--fs-sm); white-space: nowrap; }
+        .unit-chip strong { font-size: var(--fs-md); }
+        .unit-unshipped { margin-left: 0.35rem; font-size: var(--fs-xs); font-weight: 700; color: #b45309; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 0 0.3rem; }
+        .unit-chip em { font-style: normal; font-size: var(--fs-xs); color: var(--muted-foreground); margin-left: 0.2rem; }
         .csv-short { display: none; }
-        .foot-note { font-size: 0.75rem; color: var(--muted-foreground); }
+        .foot-note { font-size: var(--fs-xs); color: var(--muted-foreground); }
         /* 휴대폰: 위에서 아래로 "기간 종류 → 기간 이동 → 보기 → 정렬·내려받기" 순서로, 줄마다 폭을 꽉 채워 정렬한다. */
         @media (max-width: 768px) {
-          .reports-root { gap: 0.6rem; }
-          .period-card { flex-direction: column; align-items: stretch; gap: 0.5rem; padding: 0.6rem; }
-          .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
-          .seg button { height: calc(var(--ctl-h) - 6px); padding: 0 0.4rem; }
-          .period-nav { flex-wrap: nowrap; gap: 0.4rem; }
-          .period-nav button { width: var(--ctl-h); height: var(--ctl-h); border-radius: 999px; flex: none; }
-          .period-nav .today-btn { width: auto; padding: 0 0.9rem; }
-          .period-date-desktop { display: none; }
-          .period-label { flex: 1; min-width: 0; height: var(--ctl-h); border: 1px solid var(--border); border-radius: 999px; background: #fff; display: grid; place-items: center; font-size: 0.9375rem; }
-          .period-date-overlay { display: block; position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 14px; }
+          .period-card { flex-wrap: nowrap; gap: 0.4rem; padding: 0.5rem; }
           .tool-row { display: grid; grid-template-columns: 1fr auto auto; gap: 0.5rem; align-items: center; }
-          .tool-row > .seg { grid-column: 1 / -1; }
+          .tool-row > .sg-root { grid-column: 1 / -1; display: flex; width: 100%; }
+          .tool-row > .sg-root .sg-item { flex: 1; }
           .sort-box { min-width: 0; }
-          .sort-box select { flex: 1; min-width: 0; height: var(--ctl-h); }
+          .sort-box select { flex: 1; min-width: 0; height: var(--ctl-h); --input-fs: var(--fs-sm); }
           .csv-btn { margin-left: 0; height: var(--ctl-h); padding: 0 0.8rem; }
           .csv-long { display: none; }
           .csv-short { display: inline; }

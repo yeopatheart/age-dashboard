@@ -186,14 +186,14 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       </div>
 
       <style>{`
-        .st-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
-        .st-title { font-size: 1rem; font-weight: 800; color: var(--primary); }
-        .st-desc { font-size: 0.8125rem; color: var(--muted-foreground); }
+        .st-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-card); display: flex; flex-direction: column; gap: var(--space-inner); }
+        .st-title { font-size: var(--fs-lg); font-weight: 800; color: var(--primary); }
+        .st-desc { font-size: var(--fs-sm); color: var(--muted-foreground); }
         .st-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.9rem; }
-        .st-card small { font-size: 0.75rem; color: var(--muted-foreground); }
+        .st-card small { font-size: var(--fs-xs); color: var(--muted-foreground); }
         .st-try { display: flex; flex-direction: column; gap: 0.4rem; background: var(--muted); border-radius: 12px; padding: 0.75rem; }
         .st-result { display: flex; flex-wrap: wrap; gap: 0.4rem; min-height: 1.6rem; align-items: center; }
-        .st-row { display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; font-weight: 600; }
+        .st-row { display: flex; align-items: center; gap: 0.75rem; font-size: var(--fs-md); font-weight: 600; }
         .st-actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
       `}</style>
     </div>

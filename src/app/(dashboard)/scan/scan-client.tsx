@@ -367,22 +367,22 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       )}
 
       <style>{`
-        .sc-root { display: flex; flex-direction: column; gap: 0.9rem; max-width: 42rem; margin: 0 auto; width: 100%; min-width: 0; }
-        .sc-warn { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; border-radius: 12px; padding: 0.6rem 0.9rem; font-size: 0.875rem; font-weight: 700; }
+        .sc-root { display: flex; flex-direction: column; gap: var(--space-block); max-width: 42rem; width: 100%; min-width: 0; }
+        .sc-warn { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; border-radius: 12px; padding: 0.6rem 0.9rem; font-size: var(--fs-md); font-weight: 700; }
         .sc-banner { border-radius: 18px; padding: 1.1rem 1rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; border: 3px solid transparent; }
         .sc-pop { animation: sc-pop 0.28s ease-out; }
         @keyframes sc-pop { 0% { transform: scale(0.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
-        .sc-count { font-size: 0.8125rem; font-weight: 700; opacity: 0.85; }
+        .sc-count { font-size: var(--fs-sm); font-weight: 700; opacity: 0.85; }
         .sc-ok { background: #dcfce7; border-color: #22c55e; color: #14532d; }
         .sc-ok-done { background: #bbf7d0; border-color: #15803d; }
         .sc-progress { display: flex; align-items: baseline; justify-content: center; gap: 0.5rem; }
         .sc-progress strong { font-size: 2.4rem; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
-        .sc-progress span { font-size: 0.9375rem; font-weight: 800; }
+        .sc-progress span { font-size: var(--fs-md); font-weight: 800; }
         .sc-compact { padding: 0.7rem 0.8rem; gap: 0.3rem; }
-        .sc-compact .sc-title { font-size: 1.3rem; }
+        .sc-compact .sc-title { font-size: var(--fs-xl); }
         .sc-compact .sc-progress strong { font-size: 1.8rem; }
-        .sc-compact .sc-detail { font-size: 0.875rem; }
-        .sc-hint { position: absolute; top: 0.6rem; left: 0.6rem; right: 3.6rem; padding: 0.35rem 0.7rem; border-radius: 999px; background: rgba(15, 23, 42, 0.65); color: #fff; font-size: 0.8125rem; font-weight: 700; text-align: center; pointer-events: none; word-break: keep-all; }
+        .sc-compact .sc-detail { font-size: var(--fs-md); }
+        .sc-hint { position: absolute; top: 0.6rem; left: 0.6rem; right: 3.6rem; padding: 0.35rem 0.7rem; border-radius: 999px; background: rgba(15, 23, 42, 0.65); color: #fff; font-size: var(--fs-sm); font-weight: 700; text-align: center; pointer-events: none; word-break: keep-all; }
         .sc-flash { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.8rem; text-align: center; border: 4px solid transparent; pointer-events: none; animation: sc-flash 2.4s ease-out forwards; }
         .sc-flash .sc-title { font-size: 1.5rem; }
         .sc-flash.sc-ok, .sc-flash.sc-dup, .sc-flash.sc-bad { opacity: 0.96; }
@@ -391,43 +391,43 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         .sc-dup { background: #fef9c3; border-color: #eab308; color: #713f12; }
         .sc-bad { background: #fee2e2; border-color: #ef4444; color: #7f1d1d; }
         .sc-title { font-size: 1.7rem; font-weight: 900; line-height: 1.25; word-break: keep-all; }
-        .sc-detail { font-size: 1rem; font-weight: 600; word-break: keep-all; }
+        .sc-detail { font-size: var(--fs-lg); font-weight: 600; word-break: keep-all; }
         .sc-undo { margin-top: 0.4rem; min-height: 2.75rem; padding: 0 1.1rem; border-radius: 999px; border: 2px solid currentColor; background: rgba(255, 255, 255, 0.6); font-weight: 800; display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; }
-        .sc-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.7rem; box-shadow: var(--shadow-sm); }
-        .sc-card h2 { font-size: 0.9375rem; font-weight: 800; display: flex; align-items: center; gap: 0.5rem; }
-        .sc-total { font-size: 1rem; color: var(--primary); }
+        .sc-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-card); display: flex; flex-direction: column; gap: var(--space-inner); box-shadow: var(--shadow-sm); }
+        .sc-card h2 { font-size: var(--fs-lg); font-weight: 800; display: flex; align-items: center; gap: 0.5rem; }
+        .sc-total { font-size: var(--fs-lg); color: var(--primary); }
         .sc-scan { padding: 0.7rem; }
         .sc-video { position: relative; background: #0f172a; border-radius: 14px; overflow: hidden; aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; }
         .sc-video-off { aspect-ratio: 16 / 9; background: #f1f5f9; }
         .sc-video-off video { visibility: hidden; }
-        .sc-start { position: absolute; inset: 0; width: 100%; border: 2px dashed #94a3b8; border-radius: 14px; background: transparent; color: #1e293b; font-size: 1.35rem; font-weight: 900; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem; cursor: pointer; }
+        .sc-start { position: absolute; inset: 0; width: 100%; border: 2px dashed #94a3b8; border-radius: 14px; background: transparent; color: #1e293b; font-size: var(--fs-num); font-weight: 900; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem; cursor: pointer; }
         .sc-start:active { background: #e2e8f0; }
         .sc-stop { position: absolute; top: 0.6rem; right: 0.6rem; width: 2.5rem; height: 2.5rem; border-radius: 999px; border: 0; background: rgba(15, 23, 42, 0.65); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .sc-video video { width: 100%; height: 100%; object-fit: cover; }
         .sc-guide { position: absolute; border: 3px solid rgba(34, 197, 94, 0.9); border-radius: 10px; box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.35); pointer-events: none; }
         .sc-manual { display: flex; align-items: center; gap: 0.5rem; }
-        .sc-manual .ak-input { flex: 1; min-width: 0; height: 2.75rem; font-size: 1rem; }
+        .sc-manual .ak-input { flex: 1; min-width: 0; height: 2.75rem; font-size: var(--fs-lg); }
         .sc-manual .ak-btn { height: 2.75rem; }
         .sc-terminals { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.5rem; }
         .sc-term { border: 1px solid var(--border); border-radius: 12px; padding: 0.55rem 0.7rem; display: flex; flex-direction: column; gap: 0.25rem; }
         .sc-term-done { background: #f0fdf4; border-color: #86efac; }
-        .sc-term-name { font-size: 0.8125rem; font-weight: 800; color: var(--muted-foreground); }
+        .sc-term-name { font-size: var(--fs-sm); font-weight: 800; color: var(--muted-foreground); }
         .sc-term-row { display: flex; align-items: center; justify-content: space-between; gap: 0.2rem 0.4rem; flex-wrap: wrap; }
-        .sc-term-count { font-size: 1.35rem; font-weight: 900; }
+        .sc-term-count { font-size: var(--fs-num); font-weight: 900; }
         .sc-share { display: flex; gap: 0.3rem; }
         .sc-ic { width: var(--chip-h); height: var(--chip-h); border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--foreground); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
         .sc-ic-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
         .sc-ic:disabled { opacity: 0.45; cursor: default; }
         .sc-bar { height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
         .sc-bar span { display: block; height: 100%; background: #22c55e; }
-        .sc-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.875rem; font-weight: 700; }
+        .sc-check { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-md); font-weight: 700; }
         .sc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-        .sc-list li { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.2rem; border-bottom: 1px solid #f1f5f9; font-size: 1rem; }
+        .sc-list li { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.2rem; border-bottom: 1px solid #f1f5f9; font-size: var(--fs-lg); }
         .sc-done { color: #15803d; }
-        .sc-tag { flex: none; font-size: 0.75rem; font-weight: 800; background: #f1f5f9; border-radius: 999px; padding: 0.15rem 0.6rem; }
+        .sc-tag { flex: none; font-size: var(--fs-xs); font-weight: 800; background: #f1f5f9; border-radius: 999px; padding: 0.15rem 0.6rem; }
         .sc-name { flex: 1; min-width: 0; font-weight: 800; word-break: keep-all; }
         .sc-prog { flex: none; font-weight: 900; }
-        .sc-recent { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; font-weight: 600; }
+        .sc-recent { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; font-size: var(--fs-md); font-weight: 600; }
         .sc-recent span { color: var(--muted-foreground); margin-right: 0.5rem; font-variant-numeric: tabular-nums; }
         .sc-r-bad { color: #b91c1c; }
         .sc-r-dup { color: #a16207; }
