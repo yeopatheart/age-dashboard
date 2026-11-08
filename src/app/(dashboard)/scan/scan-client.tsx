@@ -31,10 +31,9 @@ interface Banner {
   done?: boolean; // 방금 이 업체의 마지막 박스까지 상차됨
 }
 
-// 초록 조준선(화면 폭·높이에 대한 비율). 카메라는 이 안쪽만 잘라서 읽는다 — 조준선 밖에 보이는 바코드는 읽지 않는다.
-const GUIDE = { left: 0.08, right: 0.08, top: 0.35, bottom: 0.35 };
+// 초록 조준선(정사각형, CSS .sc-guide). 카메라는 화면에 그려진 이 상자의 위치를 그대로 읽어 안쪽만 잘라서 읽는다 — 조준선 밖에 보이는 QR은 읽지 않는다.
 const SCAN_INTERVAL_MS = 80;
-const DUPLICATE_IGNORE_MS = 2500; // 카메라가 같은 바코드를 연속으로 읽는 것을 무시하는 시간
+const DUPLICATE_IGNORE_MS = 2500; // 카메라가 같은 QR을 연속으로 읽는 것을 무시하는 시간
 
 export function ScanClient({ orderDate, today, cards }: { orderDate: string; today: string; cards: ScanCard[] }) {
   const can = useCan();
@@ -47,6 +46,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [onlyPending, setOnlyPending] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const guideRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const last = useRef<{ code: string; at: number } | null>(null);
   const busy = useRef(false);
@@ -81,7 +81,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         const at = b.loadedAt ? new Date(b.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
         next = { tone: 'dup', title: '이미 상차된 박스', detail: `${b.business} ${b.boxNo}번${at ? ` · ${at}에 처리됨` : ''}`, labelId: b.labelId, progress: { loaded: b.loadedCount, total: b.totalCount } };
       } else {
-        next = { tone: 'bad', title: result.status === 'invalid' ? '우리 라벨이 아닙니다' : '출력된 적 없는 바코드', detail: result.code };
+        next = { tone: 'bad', title: result.status === 'invalid' ? '우리 라벨이 아닙니다' : '출력된 적 없는 번호', detail: result.code };
       }
       if (result.status === 'loaded') loadedCount.current += 1;
       setBanner({ ...next, seq: ++seq.current, count: result.status === 'loaded' ? loadedCount.current : undefined });
@@ -99,7 +99,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       if (last.current && last.current.code === code) {
         const stillInView = now - last.current.at < DUPLICATE_IGNORE_MS;
         // 무시하는 동안에도 시각을 갱신한다 — 같은 박스를 계속 비추고 있어도 2.5초 뒤 서버로 다시 가서 초록 "상차됨" 배너가
-        // 노란 "이미 상차된 박스"로 바뀌는 일이 없고, 바코드가 시야에서 사라진 뒤에만 다시 읽는다.
+        // 노란 "이미 상차된 박스"로 바뀌는 일이 없고, QR이 시야에서 사라진 뒤에만 다시 읽는다.
         last.current.at = now;
         if (stillInView) return;
       } else {
@@ -133,11 +133,11 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
     try {
       void unlockAudio(); // 버튼을 누른 순간에 켜야 브라우저가 소리를 허용한다
       const hints = new Map();
-      hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]);
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
       hints.set(DecodeHintType.TRY_HARDER, true);
       const reader = new BrowserMultiFormatReader(hints);
       const video = videoRef.current;
-      // 영상만 받는다(마이크 없음). 해상도는 막대가 가늘어도 읽히도록 넉넉히 요청한다.
+      // 영상만 받는다(마이크 없음). 해상도는 칸이 작은 QR도 읽히도록 넉넉히 요청한다.
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
       video.srcObject = stream;
       await video.play();
@@ -152,21 +152,23 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         if (stopped) return;
         try {
           const { clientWidth: cw, clientHeight: ch, videoWidth: vw, videoHeight: vh } = video;
-          if (ctx && cw > 0 && ch > 0 && vw > 0 && vh > 0) {
+          const guide = guideRef.current?.getBoundingClientRect();
+          if (ctx && guide && cw > 0 && ch > 0 && vw > 0 && vh > 0) {
             const scale = Math.max(cw / vw, ch / vh);
             const offsetX = (vw * scale - cw) / 2;
             const offsetY = (vh * scale - ch) / 2;
-            const sx = (cw * GUIDE.left + offsetX) / scale;
-            const sy = (ch * GUIDE.top + offsetY) / scale;
-            const sw = (cw * (1 - GUIDE.left - GUIDE.right)) / scale;
-            const sh = (ch * (1 - GUIDE.top - GUIDE.bottom)) / scale;
+            const box = video.getBoundingClientRect();
+            const sx = (guide.left - box.left + offsetX) / scale;
+            const sy = (guide.top - box.top + offsetY) / scale;
+            const sw = guide.width / scale;
+            const sh = guide.height / scale;
             canvas.width = Math.round(sw);
             canvas.height = Math.round(sh);
             ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
             void submitCode(reader.decodeFromCanvas(canvas).getText());
           }
         } catch {
-          // 조준선 안에 읽을 수 있는 바코드가 없는 프레임이다(정상).
+          // 조준선 안에 읽을 수 있는 QR이 없는 프레임이다(정상).
         }
         timer = setTimeout(tick, SCAN_INTERVAL_MS);
       };
@@ -263,8 +265,8 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
           <video ref={videoRef} muted playsInline disablePictureInPicture disableRemotePlayback controlsList="nodownload noplaybackrate noremoteplayback" />
           {cameraOn ? (
             <>
-              <div className="sc-guide" style={{ left: `${GUIDE.left * 100}%`, right: `${GUIDE.right * 100}%`, top: `${GUIDE.top * 100}%`, bottom: `${GUIDE.bottom * 100}%` }} />
-              <div className="sc-hint">라벨의 바코드를 초록 네모 안에 맞추세요</div>
+              <div ref={guideRef} className="sc-guide" />
+              <div className="sc-hint">라벨의 QR 코드를 초록 네모 안에 맞추세요</div>
               {/* 스캔 결과를 영상 위에 크게 잠깐 보여 준다(라벨을 비추는 동안 아래 안내까지 시선을 옮기지 않아도 되게). 몇 초 뒤 저절로 사라지고, 자세한 결과와 되돌리기는 아래 안내에 남는다. */}
               {banner?.seq !== undefined && (
                 <div key={banner.seq} className={`sc-flash sc-${banner.tone} ${banner.done ? 'sc-ok-done' : ''}`} aria-hidden="true">
@@ -312,7 +314,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
           }}
         >
           <Keyboard size={16} />
-          <input className="ak-input" value={manual} onChange={(e) => setManual(e.target.value)} inputMode="numeric" autoComplete="off" placeholder="바코드 번호 12자리 입력" />
+          <input className="ak-input" value={manual} onChange={(e) => setManual(e.target.value)} inputMode="numeric" autoComplete="off" placeholder="라벨 번호 12자리 입력" />
           <button className="ak-btn ak-btn-primary" type="submit" disabled={!canScan || !manual.trim()}>확인</button>
         </form>
       </section>
@@ -404,7 +406,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         .sc-start:active { background: #e2e8f0; }
         .sc-stop { position: absolute; top: 0.6rem; right: 0.6rem; width: 2.5rem; height: 2.5rem; border-radius: 999px; border: 0; background: rgba(15, 23, 42, 0.65); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
         .sc-video video { width: 100%; height: 100%; object-fit: cover; }
-        .sc-guide { position: absolute; border: 3px solid rgba(34, 197, 94, 0.9); border-radius: 10px; box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.35); pointer-events: none; }
+        .sc-guide { position: absolute; left: 50%; top: 50%; height: 72%; aspect-ratio: 1; transform: translate(-50%, -50%); border: 3px solid rgba(34, 197, 94, 0.9); border-radius: 10px; box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.35); pointer-events: none; }
         .sc-manual { display: flex; align-items: center; gap: 0.5rem; }
         .sc-manual .ak-input { flex: 1; min-width: 0; height: 2.75rem; font-size: var(--fs-lg); }
         .sc-manual .ak-btn { height: 2.75rem; }

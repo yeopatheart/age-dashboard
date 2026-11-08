@@ -20,7 +20,8 @@ import {
   type LabelTemplate,
 } from '@/lib/labels/template';
 import { saveLabelMargin, saveLabelRotate, saveLabelTemplate } from './actions';
-import { barcodeTestTemplate, moduleDots, moduleMm, PRINTER_DPI } from '@/lib/labels/barcode-test';
+import { qrTestTemplate } from '@/lib/labels/qr-test';
+import { PRINTER_DPI, qrModuleDots, qrModuleMm } from '@/lib/labels/qr';
 import { SilentPrintSetup } from './silent-print-setup';
 import { useCan } from '@/components/permissions-context';
 
@@ -51,7 +52,7 @@ interface DragState {
 
 const newElement = (type: LabelElementType): LabelElement => {
   const id = `e-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
-  if (type === 'barcode') return { id, type, x: 5, y: 5, w: 60, h: 18, showText: true };
+  if (type === 'barcode') return { id, type, x: 5, y: 5, w: 21, h: 21 };
   if (type === 'line') return { id, type, x: 5, y: 5, w: 50, h: 0.4 };
   if (type === 'field') return { id, type, field: 'businessBox', x: 5, y: 5, w: 50, h: 10, fontSize: 18, bold: true, align: 'left' };
   return { id, type: 'text', text: '문구', x: 5, y: 5, w: 40, h: 8, fontSize: 14, bold: false, align: 'left' };
@@ -188,7 +189,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
       return { kind: 'margin', text: `프린터 출력 여백(${marginMm}mm)에 걸쳐 있어 잘릴 수 있습니다. 점선 안쪽으로 옮겨주세요.` };
     }
     const p = elementProblem(el, template);
-    if (p === 'fold') return { kind: 'fold', text: `접히는 선 주변(위아래 ${FOLD_KEEP_OUT_MM}mm)에 걸쳐 있습니다. 접히면 글자·바코드가 깨지니 이 구역을 비워 주세요.` };
+    if (p === 'fold') return { kind: 'fold', text: `접히는 선 주변(위아래 ${FOLD_KEEP_OUT_MM}mm)에 걸쳐 있습니다. 접히면 글자·QR이 깨지니 이 구역을 비워 주세요.` };
     if (p === 'side-width') return { kind: 'side-width', text: '측면이 붙는 폭 밖에 걸쳐 있습니다. 측면 영역의 가운데 폭 안으로 옮겨주세요.' };
     return null;
   };
@@ -217,8 +218,8 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
         <button className="ak-btn" onClick={() => setPrintJob({ template, labels: [sample], rotate })} disabled={busy} title="지금 화면의 디자인을 샘플 값으로 한 장 출력합니다. 용지 크기와 위치를 확인할 때 씁니다.">
           <Printer size={14} /> 테스트 출력
         </button>
-        <button className="ak-btn" onClick={() => setPrintJob({ template: barcodeTestTemplate(template), labels: [sample], rotate })} disabled={busy} title={`같은 바코드를 막대 한 칸 2~6도트(${PRINTER_DPI}dpi)로 한 장에 출력합니다. 폰으로 각 줄을 스캔해서 읽히는 가장 가는 줄을 찾습니다.`}>
-          <Barcode size={14} /> 바코드 시험 출력
+        <button className="ak-btn" onClick={() => setPrintJob({ template: qrTestTemplate(template), labels: [sample], rotate })} disabled={busy} title={`같은 QR을 한 칸 3~10도트(${PRINTER_DPI}dpi)로 한 장에 출력합니다. 폰으로 각각 스캔해서 읽히는 가장 작은 크기를 찾습니다.`}>
+          <Barcode size={14} /> QR 시험 출력
         </button>
         <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !(dirty || marginDirty || rotateDirty)}>저장</button>
       </div>
@@ -236,7 +237,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
             <label className="lb-check" title="롤에 들어 있는 라벨의 방향에 맞춰 출력 방향을 바꿉니다. 같은 롤로 가로·세로 배치를 모두 시험할 때 씁니다.">
               <input type="checkbox" checked={rotate} onChange={(e) => { setRotate(e.target.checked); setRotateDirty(true); setNotice(null); }} /> 롤 방향에 맞춰 90도 돌려 출력
             </label>
-            <p className="ak-muted">{rotate ? `라벨 ${template.widthMm}×${template.heightMm}mm를 시계 방향으로 90도 돌려 ${paperText} 용지에 출력합니다. 프린터 용지 크기를 ${paperText}로 맞추세요.` : `전체 ${template.widthMm}×${template.heightMm}mm = 프린터 용지(롤) 크기와 같아야 합니다.`} 상단 면과 측면 사이의 선이 접히는 곳이고, 그 위아래 {FOLD_KEEP_OUT_MM}mm에는 글자·바코드를 두지 않습니다. 측면 가로는 옆면이 라벨보다 좁을 때만 줄입니다(가운데 폭만 씁니다).</p>
+            <p className="ak-muted">{rotate ? `라벨 ${template.widthMm}×${template.heightMm}mm를 시계 방향으로 90도 돌려 ${paperText} 용지에 출력합니다. 프린터 용지 크기를 ${paperText}로 맞추세요.` : `전체 ${template.widthMm}×${template.heightMm}mm = 프린터 용지(롤) 크기와 같아야 합니다.`} 상단 면과 측면 사이의 선이 접히는 곳이고, 그 위아래 {FOLD_KEEP_OUT_MM}mm에는 글자·QR을 두지 않습니다. 측면 가로는 옆면이 라벨보다 좁을 때만 줄입니다(가운데 폭만 씁니다).</p>
           </section>
 
           <section className="lb-card">
@@ -298,10 +299,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
                   </>
                 )}
                 {selected.type === 'barcode' && (
-                  <label className="lb-check"><input type="checkbox" checked={selected.showText !== false} onChange={(e) => updateElement(selected.id, { showText: e.target.checked })} /> 바코드 아래에 숫자도 찍기</label>
-                )}
-                {selected.type === 'barcode' && (
-                  <p className="ak-muted">막대 한 칸 {moduleMm(selected.w).toFixed(2)}mm = {moduleDots(selected.w).toFixed(1)}도트({PRINTER_DPI}dpi). 정수 도트에 가까울수록 또렷하게 찍힙니다.</p>
+                  <p className="ak-muted">QR은 가로·세로 중 작은 쪽에 맞춰 정사각형으로 그려집니다. 한 칸 {qrModuleMm(Math.min(selected.w, selected.h), 21).toFixed(3)}mm = {qrModuleDots(qrModuleMm(Math.min(selected.w, selected.h), 21)).toFixed(1)}도트({PRINTER_DPI}dpi). 사방 4칸은 비워 두세요.</p>
                 )}
                 <div className="lb-grid">
                   {numberInput('가로 위치', selected.x, (v) => updateElement(selected.id, { x: clamp(v, 0, template.widthMm - selected.w) }))}
