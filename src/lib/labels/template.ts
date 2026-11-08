@@ -1,6 +1,6 @@
 // 송장 라벨 디자인(크기·항목 배치)의 타입, 기본값, 검증. DB 접근은 넣지 않는다(서버·클라이언트 모두 사용).
 // 라벨은 한 종류다: 박스 뚜껑 모서리에 감아 붙이는 한 장짜리(wrap-around). 위쪽 부분(상단 면)은 뚜껑 위에,
-// 아래쪽 부분(측면)은 뚜껑 옆면으로 꺾어 내려 붙인다. 접히는 선(상단 면 높이 위치) 양쪽 FOLD_KEEP_OUT_MM에는 글자·바코드를 두지 않는다.
+// 아래쪽 부분(측면)은 뚜껑 옆면으로 꺾어 내려 붙인다. 접히는 선(상단 면 높이 위치) 양쪽 FOLD_KEEP_OUT_MM에는 글자·QR을 두지 않는다.
 // 좌표·크기 단위는 모두 mm.
 export const LABEL_TEMPLATE_KEY = 'label'; // label_templates / box_label_events에 저장하는 종류 값
 export const FOLD_KEEP_OUT_MM = 2;
@@ -13,13 +13,14 @@ export const LABEL_FIELDS = {
   date: '날짜',
   company: '상호',
   contact: '연락처',
-  barcodeNumber: '바코드 번호(숫자)',
+  barcodeNumber: '번호(숫자 12자리)',
   merge: '합포장 표시',
 } as const;
 export type LabelField = keyof typeof LABEL_FIELDS;
 
+// 'barcode'는 QR 코드 항목이다. 이미 저장된 디자인(jsonb)과 이름을 맞추려고 값은 그대로 두었다(화면에는 "QR 코드"로 보인다).
 export type LabelElementType = 'text' | 'field' | 'barcode' | 'line';
-export const ELEMENT_TYPE_NAMES: Record<LabelElementType, string> = { text: '고정 문구', field: '항목', barcode: '바코드', line: '구분선' };
+export const ELEMENT_TYPE_NAMES: Record<LabelElementType, string> = { text: '고정 문구', field: '항목', barcode: 'QR 코드', line: '구분선' };
 
 export interface LabelElement {
   id: string;
@@ -33,7 +34,6 @@ export interface LabelElement {
   fontSize?: number; // pt (text·field)
   bold?: boolean;
   align?: 'left' | 'center' | 'right';
-  showText?: boolean; // type=barcode: 바코드 아래에 숫자도 같이 찍는다
 }
 
 export interface LabelTemplate {
@@ -91,17 +91,24 @@ export const DEFAULT_TEMPLATE: LabelTemplate = {
   topHeightMm: 60,
   sideWidthMm: 100,
   elements: [
-    // 상단 면 (y 0~60, 접히는 선 주변 58~62는 비워 둔다)
-    { id: 'w-terminal', type: 'field', field: 'terminal', x: 4, y: 3, w: 58, h: 12, fontSize: 26, bold: true, align: 'left' },
-    { id: 'w-date', type: 'field', field: 'date', x: 62, y: 4, w: 34, h: 8, fontSize: 13, bold: false, align: 'right' },
-    { id: 'w-business', type: 'field', field: 'businessBox', x: 4, y: 16, w: 92, h: 13, fontSize: 28, bold: true, align: 'left' },
-    { id: 'w-barcode-top', type: 'barcode', x: 4, y: 31, w: 92, h: 17, showText: true },
-    { id: 'w-line', type: 'line', x: 4, y: 49.5, w: 92, h: 0.4 },
-    { id: 'w-company', type: 'field', field: 'company', x: 4, y: 50.5, w: 46, h: 7, fontSize: 12, bold: true, align: 'left' },
-    { id: 'w-contact', type: 'field', field: 'contact', x: 50, y: 50.5, w: 46, h: 7, fontSize: 12, bold: false, align: 'right' },
-    // 측면 (y 60~80, 접히는 선 주변 62까지 비움, 아래 가장자리는 프린터 출력 여백)
-    { id: 'w-barcode-side', type: 'barcode', x: 4, y: 62.5, w: 60, h: 14, showText: true },
-    { id: 'w-business-side', type: 'field', field: 'businessBox', x: 66, y: 64, w: 30, h: 11, fontSize: 14, bold: true, align: 'right' },
+    // 상단 면 (y 0~60, 접히는 선 주변 58~62는 비워 둔다). QR은 오른쪽 위 모서리에 21mm로 크게 두고(사방 4mm는 비운다),
+    // 고객명은 QR 아래에서 라벨 전체 폭을 쓴다.
+    { id: 'w-terminal', type: 'field', field: 'terminal', x: 4, y: 3, w: 46, h: 14, fontSize: 34, bold: true, align: 'left' },
+    { id: 'w-date', type: 'field', field: 'date', x: 4, y: 17.5, w: 46, h: 5.5, fontSize: 12, bold: false, align: 'left' },
+    { id: 'w-qr-top', type: 'barcode', x: 74, y: 4, w: 21, h: 21 },
+    { id: 'w-business', type: 'field', field: 'businessBox', x: 4, y: 30, w: 92, h: 14, fontSize: 32, bold: true, align: 'left' },
+    { id: 'w-line', type: 'line', x: 4, y: 45.2, w: 92, h: 0.4 },
+    { id: 'w-merge', type: 'field', field: 'merge', x: 4, y: 46.5, w: 46, h: 6, fontSize: 14, bold: true, align: 'left' },
+    { id: 'w-separate', type: 'field', field: 'separate', x: 50, y: 46.5, w: 46, h: 6, fontSize: 14, bold: true, align: 'right' },
+    { id: 'w-number', type: 'field', field: 'barcodeNumber', x: 4, y: 52.5, w: 32, h: 5, fontSize: 11, bold: true, align: 'left' },
+    { id: 'w-company', type: 'field', field: 'company', x: 36, y: 52.5, w: 28, h: 5, fontSize: 10, bold: true, align: 'center' },
+    { id: 'w-contact', type: 'field', field: 'contact', x: 64, y: 52.5, w: 32, h: 5, fontSize: 10, bold: false, align: 'right' },
+    // 측면 (y 60~80, 접히는 선 주변 62까지 비움, 아래 가장자리는 프린터 출력 여백). 쌓은 박스는 옆면에서 스캔한다.
+    { id: 'w-qr-side', type: 'barcode', x: 6, y: 63.5, w: 13.1, h: 13.1 },
+    { id: 'w-terminal-side', type: 'field', field: 'terminal', x: 22, y: 63.5, w: 20, h: 8, fontSize: 20, bold: true, align: 'left' },
+    { id: 'w-business-side', type: 'field', field: 'businessBox', x: 42, y: 63.5, w: 52, h: 8, fontSize: 20, bold: true, align: 'right' },
+    { id: 'w-number-side', type: 'field', field: 'barcodeNumber', x: 22, y: 72, w: 40, h: 5, fontSize: 10, bold: true, align: 'left' },
+    { id: 'w-date-side', type: 'field', field: 'date', x: 62, y: 72, w: 32, h: 5, fontSize: 10, bold: false, align: 'right' },
   ],
 };
 
@@ -132,7 +139,6 @@ export function parseElements(value: unknown): LabelElement[] {
       fontSize: type === 'text' || type === 'field' ? clampNum(r.fontSize, 12, 4, 120) : undefined,
       bold: type === 'text' || type === 'field' ? r.bold === true : undefined,
       align: r.align === 'center' || r.align === 'right' ? r.align : 'left',
-      showText: type === 'barcode' ? r.showText !== false : undefined,
     });
   });
   return out;

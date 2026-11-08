@@ -1,6 +1,6 @@
 'use client';
-import { useLayoutEffect, useRef } from 'react';
-import JsBarcode from 'jsbarcode';
+import { useLayoutEffect, useMemo, useRef } from 'react';
+import { makeQrMatrix, qrModuleMm } from '@/lib/labels/qr';
 import { elementText, type LabelData, type LabelTemplate } from '@/lib/labels/template';
 
 const PT_TO_MM = 25.4 / 72;
@@ -69,24 +69,25 @@ function FitText({ text, widthMm, heightMm, nominalMm, bold, unit, singleLine }:
   return <span ref={ref} style={{ maxWidth: '100%', fontSize: u0(nominalMm, unit), whiteSpace: singleLine ? 'nowrap' : undefined }}>{text}</span>;
 }
 
-// Code128 막대만 그린다(숫자는 아래에서 HTML 글자로 따로 찍는다 — 막대를 늘일 때 글자가 같이 찌그러지지 않게).
-// 막대 폭은 상자에 맞춰 가로로 늘어나도 비율이 유지된다. 좌우 여백(quiet zone)은 스캐너가 읽는 데 필요해서 막대 폭의 10배를 둔다.
-function BarcodeBars({ value }: { value: string }) {
-  const ref = useRef<SVGSVGElement>(null);
-  useLayoutEffect(() => {
-    const svg = ref.current;
-    if (!svg) return;
-    try {
-      JsBarcode(svg, value, { format: 'CODE128', displayValue: false, width: 2, height: 100, margin: 0, marginLeft: 20, marginRight: 20, background: '#ffffff', lineColor: '#000000' });
-    } catch {
-      svg.replaceChildren();
-      return;
-    }
-    svg.setAttribute('width', '100%');
-    svg.setAttribute('height', '100%');
-    svg.setAttribute('preserveAspectRatio', 'none');
-  }, [value]);
-  return <svg ref={ref} style={{ display: 'block', width: '100%', height: '100%' }} />;
+// QR 코드를 그린다. 상자(widthMm × heightMm) 안에서 정사각형으로, 가운데에, 칸 크기를 프린터 도트의 정수배로 맞춰 그린다
+// (qrModuleMm). 흰 여백(quiet zone, 4칸)은 상자 밖에 비워 두어야 하며 디자인에서 지킨다. 좌표는 mm, 화면 배율은 SVG가 맞춘다.
+function QrCode({ value, widthMm, heightMm }: { value: string; widthMm: number; heightMm: number }) {
+  const matrix = useMemo(() => makeQrMatrix(value), [value]);
+  const mod = qrModuleMm(Math.min(widthMm, heightMm), matrix.size);
+  const side = mod * matrix.size;
+  const x0 = (widthMm - side) / 2;
+  const y0 = (heightMm - side) / 2;
+  const cells: string[] = [];
+  for (let r = 0; r < matrix.size; r++) {
+    for (let c = 0; c < matrix.size; c++) if (matrix.dark[r * matrix.size + c]) cells.push(`M${c} ${r}h1v1h-1z`);
+  }
+  return (
+    <svg viewBox={`0 0 ${widthMm} ${heightMm}`} preserveAspectRatio="none" shapeRendering="crispEdges" style={{ display: 'block', width: '100%', height: '100%' }}>
+      <g transform={`translate(${x0} ${y0}) scale(${mod})`}>
+        <path d={cells.join('')} fill="#000" />
+      </g>
+    </svg>
+  );
 }
 
 // 라벨 한 장. 좌표·크기는 mm이고, unit(CSS 길이)로 화면 배율을 정한다: 인쇄는 '1mm', 디자이너 화면은 '4px'처럼.
@@ -108,15 +109,7 @@ export function LabelView({
           return <div key={el.id} style={{ ...box, background: '#000' }}></div>;
         }
         if (el.type === 'barcode') {
-          const textMm = el.showText === false ? 0 : Math.min(4.2, el.h * 0.28);
-          return (
-            <div key={el.id} style={{ ...box, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ flex: 1, minHeight: 0 }}><BarcodeBars value={data.barcode} /></div>
-              {textMm > 0 && (
-                <div style={{ height: u(textMm), fontSize: u(textMm * 0.85), lineHeight: u(textMm), textAlign: 'center', letterSpacing: u(0.25), fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden' }}>{data.barcode}</div>
-              )}
-            </div>
-          );
+          return <div key={el.id} style={box}><QrCode value={data.barcode} widthMm={el.w} heightMm={el.h} /></div>;
         }
         const text = elementText(el, data);
         const fontMm = (el.fontSize ?? 12) * PT_TO_MM;
