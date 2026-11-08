@@ -1,25 +1,27 @@
 'use client';
 import '@/components/admin/admin.css';
 import { useRef, useState } from 'react';
-import { Barcode, Plus, Printer, RotateCcw, Trash2 } from 'lucide-react';
+import { Barcode, Pencil, Plus, Printer, Trash2 } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/admin-kit';
 import { LabelView } from '@/components/labels/label-view';
 import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
-import { LabelMockupCard } from '@/components/labels/label-mockup-card';
 import {
-  DEFAULT_TEMPLATE,
   ELEMENT_TYPE_NAMES,
   FOLD_KEEP_OUT_MM,
   LABEL_FIELDS,
+  LABEL_PRESETS,
   SAMPLE_LABEL_DATA,
   elementProblem,
-  sideHeightMm,
+  foldOf,
+  normalizeTemplate,
   type LabelElement,
   type LabelElementType,
   type LabelField,
+  type LabelPresetKey,
   type LabelTemplate,
 } from '@/lib/labels/template';
-import { saveLabelMargin, saveLabelRotate, saveLabelTemplate } from './actions';
+import type { LabelDesign } from '@/lib/labels/server';
+import { activateLabelDesign, createLabelDesign, deleteLabelDesign, renameLabelDesign, saveLabelDesign, saveLabelMargin, saveLabelRotate } from './actions';
 import { qrTestTemplate } from '@/lib/labels/qr-test';
 import { PRINTER_DPI, qrModuleDots, qrModuleMm } from '@/lib/labels/qr';
 import { SilentPrintSetup } from './silent-print-setup';
@@ -50,17 +52,27 @@ interface DragState {
   orig: LabelElement;
 }
 
-const newElement = (type: LabelElementType): LabelElement => {
+const newElement = (type: LabelElementType, t: LabelTemplate): LabelElement => {
   const id = `e-${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
+  if (type === 'fold') return { id, type, x: 0, y: Math.round((t.heightMm * 0.75) / SNAP_MM) * SNAP_MM, w: t.widthMm, h: 0 };
   if (type === 'barcode') return { id, type, x: 5, y: 5, w: 21, h: 21 };
   if (type === 'line') return { id, type, x: 5, y: 5, w: 50, h: 0.4 };
   if (type === 'field') return { id, type, field: 'businessBox', x: 5, y: 5, w: 50, h: 10, fontSize: 18, bold: true, align: 'left' };
   return { id, type: 'text', text: '문구', x: 5, y: 5, w: 40, h: 8, fontSize: 14, bold: false, align: 'left' };
 };
 
-export function LabelsClient({ initial, company, contact, initialMarginMm, initialRotate }: { initial: LabelTemplate; company: string; contact: string; initialMarginMm: number; initialRotate: boolean }) {
+export function LabelsClient({ initialDesigns, initialActiveId, company, contact, initialMarginMm, initialRotate }: { initialDesigns: LabelDesign[]; initialActiveId: string | null; company: string; contact: string; initialMarginMm: number; initialRotate: boolean }) {
   const canEdit = useCan()('labels:edit');
-  const [template, setTemplate] = useState(initial);
+  // 디자인 보관함: 저장된 디자인 목록, 사용 중(출력에 쓰는) 디자인, 지금 편집 중인 디자인
+  const [designs, setDesigns] = useState(initialDesigns);
+  const [activeId, setActiveId] = useState(initialActiveId);
+  const [currentId, setCurrentId] = useState<string | null>(initialActiveId ?? initialDesigns[0]?.id ?? null);
+  const current = designs.find((d) => d.id === currentId) ?? null;
+  const [creating, setCreating] = useState(initialDesigns.length === 0);
+  const [newName, setNewName] = useState('');
+  const [newFrom, setNewFrom] = useState<string>(`preset:${LABEL_PRESETS[0].key}`);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [template, setTemplate] = useState<LabelTemplate>((initialDesigns.find((d) => d.id === (initialActiveId ?? initialDesigns[0]?.id)) ?? { template: LABEL_PRESETS[0].template }).template);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -77,6 +89,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
   const drag = useRef<DragState | null>(null);
 
   const selected = template.elements.find((e) => e.id === selectedId) ?? null;
+  const fold = foldOf(template);
   const sample = { ...SAMPLE_LABEL_DATA, company: company || SAMPLE_LABEL_DATA.company, contact: contact || SAMPLE_LABEL_DATA.contact };
 
   const updateTemplate = (fn: (t: LabelTemplate) => LabelTemplate) => {
@@ -85,13 +98,14 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
     setNotice(null);
   };
   const updateElement = (id: string, patch: Partial<LabelElement>) =>
-    updateTemplate((t) => ({ ...t, elements: t.elements.map((e) => (e.id === id ? { ...e, ...patch } : e)) }));
+    updateTemplate((t) => normalizeTemplate({ ...t, elements: t.elements.map((e) => (e.id === id ? { ...e, ...patch } : e)) }));
   const removeElement = (id: string) => {
     updateTemplate((t) => ({ ...t, elements: t.elements.filter((e) => e.id !== id) }));
     setSelectedId(null);
   };
   const addElement = (type: LabelElementType) => {
-    const el = newElement(type);
+    if (type === 'fold' && fold) return; // 접는선은 한 디자인에 하나
+    const el = newElement(type, template);
     updateTemplate((t) => ({ ...t, elements: [...t.elements, el] }));
     setSelectedId(el.id);
   };
@@ -117,7 +131,9 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
     const W = template.widthMm;
     const H = template.heightMm;
     let nx = x, ny = y, nw = w, nh = h;
-    if (d.mode === 'move') {
+    if (d.mode === 'move' && d.orig.type === 'fold') {
+      ny = clamp(snap(y + dy), 10, Math.max(10, H - 8)); // 접는선은 위아래로만 움직인다
+    } else if (d.mode === 'move') {
       nx = clamp(snap(x + dx), 0, Math.max(0, W - w));
       ny = clamp(snap(y + dy), 0, Math.max(0, H - h));
     } else {
@@ -149,20 +165,21 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
     if (moves[e.key]) {
       e.preventDefault();
       const [dx, dy] = moves[e.key];
-      updateElement(selected.id, { x: clamp(selected.x + dx, 0, template.widthMm - selected.w), y: clamp(selected.y + dy, 0, template.heightMm - selected.h) });
+      updateElement(selected.id, selected.type === 'fold' ? { y: selected.y + dy } : { x: clamp(selected.x + dx, 0, template.widthMm - selected.w), y: clamp(selected.y + dy, 0, template.heightMm - selected.h) });
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
       removeElement(selected.id);
     }
   };
 
-  // ─── 저장·되돌리기·테스트 출력 ──────────────────────────────────────────────
+  // ─── 저장·테스트 출력 ──────────────────────────────────────────────────────
   const save = async () => {
+    if (!currentId) return;
     setBusy(true);
     setError(null);
-    // 이 라벨 디자인과 프린터 여백 중 바뀐 것만 저장한다.
+    // 이 디자인과 프린터 설정(여백·방향) 중 바뀐 것만 저장한다.
     const [templateResult, marginResult, rotateResult] = await Promise.all([
-      dirty ? saveLabelTemplate(template) : null,
+      dirty ? saveLabelDesign(currentId, template) : null,
       marginDirty ? saveLabelMargin(marginMm) : null,
       rotateDirty ? saveLabelRotate(rotate) : null,
     ]);
@@ -171,6 +188,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
     if (failure) return setError(failure);
     if (templateResult) {
       setTemplate(templateResult.template);
+      setDesigns((list) => list.map((d) => (d.id === currentId ? { ...d, template: templateResult.template } : d)));
       setDirty(false);
     }
     if (marginResult) {
@@ -183,8 +201,75 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
     }
     setNotice('저장했습니다.');
   };
+
+  // ─── 디자인 보관함: 고르기·새로 만들기·이름 바꾸기·삭제·사용 중 지정 ───────────────────
+  const confirmDiscard = () => !dirty || window.confirm('저장하지 않은 변경이 있습니다. 버리고 계속할까요?');
+  const openDesign = (design: LabelDesign) => {
+    setCurrentId(design.id);
+    setTemplate(design.template);
+    setDirty(false);
+    setSelectedId(null);
+    setRenaming(null);
+    setNotice(null);
+    setError(null);
+  };
+  const selectDesign = (id: string) => {
+    const design = designs.find((d) => d.id === id);
+    if (!design || id === currentId || !confirmDiscard()) return;
+    openDesign(design);
+  };
+  const createDesign = async () => {
+    if (!confirmDiscard()) return;
+    const from = newFrom.startsWith('copy:') ? ({ kind: 'copy', id: newFrom.slice(5) } as const) : ({ kind: 'preset', key: newFrom.slice(7) as LabelPresetKey } as const);
+    setBusy(true);
+    setError(null);
+    const res = await createLabelDesign({ name: newName, from });
+    setBusy(false);
+    if (res.error || !res.design) return setError(res.error ?? '디자인을 만들지 못했습니다.');
+    const design = res.design;
+    setDesigns((list) => [...list, design]);
+    setActiveId(res.activeId);
+    openDesign(design);
+    setCreating(false);
+    setNewName('');
+    setNotice(`"${design.name}" 디자인을 만들었습니다.`);
+  };
+  const renameDesign = async () => {
+    if (!current || renaming === null) return;
+    setBusy(true);
+    setError(null);
+    const res = await renameLabelDesign(current.id, renaming);
+    setBusy(false);
+    if (res.error) return setError(res.error);
+    setDesigns((list) => list.map((d) => (d.id === current.id ? { ...d, name: res.name } : d)));
+    setRenaming(null);
+  };
+  const removeDesign = async () => {
+    if (!current || !window.confirm(`"${current.name}" 디자인을 지울까요? 되돌릴 수 없습니다.`)) return;
+    setBusy(true);
+    setError(null);
+    const res = await deleteLabelDesign(current.id);
+    setBusy(false);
+    if (res.error) return setError(res.error);
+    const rest = designs.filter((d) => d.id !== current.id);
+    setDesigns(rest);
+    const next = rest.find((d) => d.id === activeId) ?? rest[0];
+    if (next) openDesign(next);
+    setNotice('디자인을 지웠습니다.');
+  };
+  const useDesign = async () => {
+    if (!current) return;
+    setBusy(true);
+    setError(null);
+    const res = await activateLabelDesign(current.id);
+    setBusy(false);
+    if (res.error) return setError(res.error);
+    setActiveId(current.id);
+    setNotice(`"${current.name}" 디자인을 사용합니다. 이제 박스 라벨은 이 디자인으로 출력됩니다.`);
+  };
   // 쓸 수 없는 곳에 걸친 항목: 프린터 출력 여백(바깥 marginMm) / 접히는 선 주변 / 측면 폭 밖
   const problemOf = (el: LabelElement): { kind: 'margin' | 'fold' | 'side-width'; text: string } | null => {
+    if (el.type === 'fold') return null;
     if (marginMm > 0 && (el.x < marginMm - 0.01 || el.y < marginMm - 0.01 || el.x + el.w > template.widthMm - marginMm + 0.01 || el.y + el.h > template.heightMm - marginMm + 0.01)) {
       return { kind: 'margin', text: `프린터 출력 여백(${marginMm}mm)에 걸쳐 있어 잘릴 수 있습니다. 점선 안쪽으로 옮겨주세요.` };
     }
@@ -193,11 +278,6 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
     if (p === 'side-width') return { kind: 'side-width', text: '측면이 붙는 폭 밖에 걸쳐 있습니다. 측면 영역의 가운데 폭 안으로 옮겨주세요.' };
     return null;
   };
-  const resetToDefault = () => {
-    updateTemplate(() => DEFAULT_TEMPLATE);
-    setSelectedId(null);
-  };
-
   const numberInput = (label: string, value: number, onChange: (v: number) => void, step = SNAP_MM) => (
     <label className="lb-num">
       <span>{label}</span>
@@ -207,14 +287,75 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
 
   return (
     <div className="lb-root">
-      <AdminHeader icon={<Barcode size={20} />} title="라벨 설정" sub="박스 뚜껑 모서리에 감아 붙이는 한 장짜리 라벨입니다. 위쪽은 뚜껑 위에, 아래쪽(측면)은 옆면으로 꺾어 붙입니다. 항목을 끌어서 옮기고 모서리를 끌어 크기를 바꿉니다." />
+      <AdminHeader icon={<Barcode size={20} />} title="라벨 설정" sub="라벨 디자인을 여러 개 저장해 두고, 그중 사용 중으로 고른 디자인으로 박스 라벨을 출력합니다. 항목을 끌어서 옮기고 모서리를 끌어 크기를 바꿉니다. 접는선을 넣으면 뚜껑 모서리에 감아 붙이는 라벨, 빼면 윗면 전용 라벨입니다." />
 
-      <div className="ak-toolbar">
-        <strong className="lb-title">박스 라벨 (상단 면 + 측면){dirty ? ' ●' : ''}</strong>
+      <div className="ak-toolbar lb-designs">
+        {current && (
+          <>
+            <label className="lb-design-pick">
+              <span>디자인</span>
+              <select className="ak-select" value={currentId ?? ''} onChange={(e) => selectDesign(e.target.value)} disabled={busy}>
+                {designs.map((d) => <option key={d.id} value={d.id}>{d.name}{d.id === activeId ? ' (사용 중)' : ''}</option>)}
+              </select>
+            </label>
+            {current.id === activeId ? (
+              <span className="lb-badge">사용 중</span>
+            ) : (
+              <button className="ak-btn ak-btn-primary" onClick={useDesign} disabled={!canEdit || busy || dirty} title={dirty ? '저장하지 않은 변경이 있습니다. 먼저 저장하세요.' : '박스 라벨을 이 디자인으로 출력합니다.'}>이 디자인을 사용</button>
+            )}
+            {renaming !== null ? (
+              <>
+                <input className="ak-input lb-rename" value={renaming} maxLength={40} autoFocus onChange={(e) => setRenaming(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void renameDesign(); if (e.key === 'Escape') setRenaming(null); }} />
+                <button className="ak-btn ak-btn-primary" onClick={renameDesign} disabled={busy}>확인</button>
+                <button className="ak-btn" onClick={() => setRenaming(null)} disabled={busy}>취소</button>
+              </>
+            ) : (
+              <button className="ak-btn" onClick={() => setRenaming(current.name)} disabled={!canEdit || busy}><Pencil size={13} /> 이름 바꾸기</button>
+            )}
+            <button className="ak-btn ak-btn-danger" onClick={removeDesign} disabled={!canEdit || busy || current.id === activeId || designs.length <= 1} title={current.id === activeId ? '사용 중인 디자인은 지울 수 없습니다.' : designs.length <= 1 ? '마지막 디자인은 지울 수 없습니다.' : undefined}><Trash2 size={13} /> 삭제</button>
+          </>
+        )}
         <span className="ak-spacer" />
         {error && <span className="ak-error">{error}</span>}
         {notice && <span className="ak-notice">{notice}</span>}
-        <button className="ak-btn" onClick={resetToDefault} disabled={busy}><RotateCcw size={14} /> 기본 배치로</button>
+        <button className="ak-btn" onClick={() => setCreating((v) => !v)} disabled={!canEdit || busy}><Plus size={14} /> 새 디자인</button>
+      </div>
+
+      {creating && (
+        <section className="lb-card lb-new">
+          <h3>새 디자인 만들기</h3>
+          <div className="lb-new-row">
+            <label className="lb-field">
+              <span>이름</span>
+              <input className="ak-input" value={newName} maxLength={40} placeholder="예: 윗면 전용 B" onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void createDesign(); }} />
+            </label>
+            <label className="lb-field">
+              <span>시작 배치</span>
+              <select className="ak-select" value={newFrom} onChange={(e) => setNewFrom(e.target.value)}>
+                <optgroup label="기본 배치">
+                  {LABEL_PRESETS.map((p) => <option key={p.key} value={`preset:${p.key}`}>{p.name} — {p.description}</option>)}
+                </optgroup>
+                {designs.length > 0 && (
+                  <optgroup label="저장된 디자인 복제">
+                    {designs.map((d) => <option key={d.id} value={`copy:${d.id}`}>{d.name} 복제 (저장된 내용)</option>)}
+                  </optgroup>
+                )}
+              </select>
+            </label>
+            <button className="ak-btn ak-btn-primary" onClick={createDesign} disabled={busy || !newName.trim()}>만들기</button>
+            <button className="ak-btn" onClick={() => setCreating(false)} disabled={busy}>취소</button>
+          </div>
+          <p className="ak-muted">만든 디자인은 보관함에 저장되고, 편집해서 저장한 뒤 [이 디자인을 사용]을 눌러야 박스 라벨 출력에 쓰입니다(처음 만드는 디자인은 바로 사용 중이 됩니다).</p>
+        </section>
+      )}
+
+      {!current ? (
+        <section className="lb-card"><p className="ak-muted">저장된 디자인이 없습니다. 위에서 새 디자인을 만들어 시작하세요. 디자인이 없는 동안은 기본 배치(감아 붙이기)로 출력됩니다.</p></section>
+      ) : (
+      <>
+      <div className="ak-toolbar">
+        <strong className="lb-title">{current.name}{dirty ? ' ●' : ''}</strong>
+        <span className="ak-spacer" />
         <button className="ak-btn" onClick={() => setPrintJob({ template, labels: [sample], rotate })} disabled={busy} title="지금 화면의 디자인을 샘플 값으로 한 장 출력합니다. 용지 크기와 위치를 확인할 때 씁니다.">
           <Printer size={14} /> 테스트 출력
         </button>
@@ -229,15 +370,13 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
           <section className="lb-card">
             <h3>라벨 크기 (mm)</h3>
             <div className="lb-grid">
-              {numberInput('가로', template.widthMm, (v) => updateTemplate((t) => { const widthMm = clamp(v, 20, 300); return { ...t, widthMm, sideWidthMm: Math.min(t.sideWidthMm, widthMm) }; }), 1)}
-              {numberInput('상단 면 높이', template.topHeightMm, (v) => updateTemplate((t) => ({ ...t, topHeightMm: clamp(v, 10, 300), heightMm: clamp(v, 10, 300) + sideHeightMm(t) })), 1)}
-              {numberInput('측면 높이', sideHeightMm(template), (v) => updateTemplate((t) => ({ ...t, heightMm: t.topHeightMm + clamp(v, 8, 300) })), 1)}
-              {numberInput('측면 가로(옆면 폭)', template.sideWidthMm, (v) => updateTemplate((t) => ({ ...t, sideWidthMm: clamp(v, 10, t.widthMm) })), 1)}
+              {numberInput('가로', template.widthMm, (v) => updateTemplate((t) => normalizeTemplate({ ...t, widthMm: clamp(v, 20, 300) })), 1)}
+              {numberInput('높이', template.heightMm, (v) => updateTemplate((t) => normalizeTemplate({ ...t, heightMm: clamp(v, 20, 300) })), 1)}
             </div>
             <label className="lb-check" title="롤에 들어 있는 라벨의 방향에 맞춰 출력 방향을 바꿉니다. 같은 롤로 가로·세로 배치를 모두 시험할 때 씁니다.">
               <input type="checkbox" checked={rotate} onChange={(e) => { setRotate(e.target.checked); setRotateDirty(true); setNotice(null); }} /> 롤 방향에 맞춰 90도 돌려 출력
             </label>
-            <p className="ak-muted">{rotate ? `라벨 ${template.widthMm}×${template.heightMm}mm를 시계 방향으로 90도 돌려 ${paperText} 용지에 출력합니다. 프린터 용지 크기를 ${paperText}로 맞추세요.` : `전체 ${template.widthMm}×${template.heightMm}mm = 프린터 용지(롤) 크기와 같아야 합니다.`} 상단 면과 측면 사이의 선이 접히는 곳이고, 그 위아래 {FOLD_KEEP_OUT_MM}mm에는 글자·QR을 두지 않습니다. 측면 가로는 옆면이 라벨보다 좁을 때만 줄입니다(가운데 폭만 씁니다).</p>
+            <p className="ak-muted">{rotate ? `라벨 ${template.widthMm}×${template.heightMm}mm를 시계 방향으로 90도 돌려 ${paperText} 용지에 출력합니다. 프린터 용지 크기를 ${paperText}로 맞추세요.` : `전체 ${template.widthMm}×${template.heightMm}mm = 프린터 용지(롤) 크기와 같아야 합니다.`} {fold ? `접는선(위 ${fold.yMm}mm / 아래 ${template.heightMm - fold.yMm}mm)의 위아래 ${FOLD_KEEP_OUT_MM}mm에는 글자·QR을 두지 않습니다.` : '접는선이 없는 윗면 전용 라벨입니다. 감아 붙이려면 아래 "항목 추가"에서 접는선을 넣으세요.'}</p>
           </section>
 
           <section className="lb-card">
@@ -252,13 +391,11 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
             <SilentPrintSetup sizeText={paperText} />
           </section>
 
-          <LabelMockupCard template={template} data={sample} />
-
           <section className="lb-card">
             <h3>항목 추가</h3>
             <div className="lb-add">
               {(Object.keys(ELEMENT_TYPE_NAMES) as LabelElementType[]).map((type) => (
-                <button key={type} className="ak-btn" onClick={() => addElement(type)}><Plus size={13} /> {ELEMENT_TYPE_NAMES[type]}</button>
+                <button key={type} className="ak-btn" onClick={() => addElement(type)} disabled={type === 'fold' && !!fold} title={type === 'fold' && fold ? '접는선은 하나만 둘 수 있습니다.' : undefined}><Plus size={13} /> {ELEMENT_TYPE_NAMES[type]}</button>
               ))}
             </div>
           </section>
@@ -270,7 +407,16 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
             ) : (
               <div className="lb-props">
                 {problemOf(selected) && <p className="lb-warn">{problemOf(selected)?.text}</p>}
-                <div className="lb-row"><strong>{ELEMENT_TYPE_NAMES[selected.type]}</strong><span className="ak-spacer" /><button className="ak-btn ak-btn-danger" onClick={() => removeElement(selected.id)}><Trash2 size={13} /> 삭제</button></div>
+                <div className="lb-row"><strong>{ELEMENT_TYPE_NAMES[selected.type]}</strong><span className="ak-spacer" /><button className="ak-btn ak-btn-danger" onClick={() => removeElement(selected.id)} title={selected.type === 'fold' ? '지우면 접는선 없는 윗면 전용 라벨이 됩니다.' : undefined}><Trash2 size={13} /> 삭제</button></div>
+                {selected.type === 'fold' && (
+                  <>
+                    <p className="ak-muted">접는선 위는 뚜껑 위(윗면 {selected.y}mm), 아래는 옆면으로 꺾는 측면({Math.round((template.heightMm - selected.y) * 10) / 10}mm)입니다. 인쇄되지 않고 위치만 나타냅니다. 선을 끌어 위아래로 옮기거나 값을 입력하세요.</p>
+                    <div className="lb-grid">
+                      {numberInput('접는 위치(세로)', selected.y, (v) => updateElement(selected.id, { y: v }))}
+                      {numberInput('옆면 가로 폭', selected.w, (v) => updateElement(selected.id, { w: v }), 1)}
+                    </div>
+                  </>
+                )}
                 {selected.type === 'field' && (
                   <label className="lb-field">
                     <span>채울 값</span>
@@ -301,12 +447,14 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
                 {selected.type === 'barcode' && (
                   <p className="ak-muted">QR은 가로·세로 중 작은 쪽에 맞춰 정사각형으로 그려집니다. 한 칸 {qrModuleMm(Math.min(selected.w, selected.h), 21).toFixed(3)}mm = {qrModuleDots(qrModuleMm(Math.min(selected.w, selected.h), 21)).toFixed(1)}도트({PRINTER_DPI}dpi). 사방 4칸은 비워 두세요.</p>
                 )}
+                {selected.type !== 'fold' && (
                 <div className="lb-grid">
                   {numberInput('가로 위치', selected.x, (v) => updateElement(selected.id, { x: clamp(v, 0, template.widthMm - selected.w) }))}
                   {numberInput('세로 위치', selected.y, (v) => updateElement(selected.id, { y: clamp(v, 0, template.heightMm - selected.h) }))}
                   {numberInput('너비', selected.w, (v) => updateElement(selected.id, { w: clamp(v, 0.2, template.widthMm - selected.x) }))}
                   {numberInput('높이', selected.h, (v) => updateElement(selected.id, { h: clamp(v, 0.2, template.heightMm - selected.y) }))}
                 </div>
+                )}
               </div>
             )}
           </section>
@@ -324,25 +472,27 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
                 <i style={{ left: marginMm * SCALE, top: marginMm * SCALE, right: marginMm * SCALE, bottom: marginMm * SCALE }} />
               </div>
             )}
-            <div className="lb-fold" aria-hidden>
-              {/* 접히는 선과 비워 둘 구역(양쪽 FOLD_KEEP_OUT_MM). 띠 안의 글자는 어느 쪽이 뚜껑 위이고 어느 쪽이 옆면인지 알려 준다. */}
-              <div className="lb-fold-band" style={{ top: (template.topHeightMm - FOLD_KEEP_OUT_MM) * SCALE, height: FOLD_KEEP_OUT_MM * 2 * SCALE }}>
-                <span>▲ 상단 면 (뚜껑 위)</span>
-                <span>측면 (옆면으로 꺾음) ▼</span>
+            {fold && (
+              <div className="lb-fold" aria-hidden>
+                {/* 접는선과 비워 둘 구역(양쪽 FOLD_KEEP_OUT_MM). 띠 안의 글자는 어느 쪽이 뚜껑 위이고 어느 쪽이 옆면인지 알려 준다. */}
+                <div className="lb-fold-band" style={{ top: (fold.yMm - FOLD_KEEP_OUT_MM) * SCALE, height: FOLD_KEEP_OUT_MM * 2 * SCALE }}>
+                  <span>▲ 상단 면 (뚜껑 위)</span>
+                  <span>측면 (옆면으로 꺾음) ▼</span>
+                </div>
+                <div className="lb-fold-line" style={{ top: fold.yMm * SCALE }} />
+                {fold.sideWidthMm < template.widthMm && (
+                  <>
+                    <div className="lb-side-off" style={{ left: 0, width: ((template.widthMm - fold.sideWidthMm) / 2) * SCALE, top: fold.yMm * SCALE, bottom: 0 }} />
+                    <div className="lb-side-off" style={{ right: 0, width: ((template.widthMm - fold.sideWidthMm) / 2) * SCALE, top: fold.yMm * SCALE, bottom: 0 }} />
+                  </>
+                )}
               </div>
-              <div className="lb-fold-line" style={{ top: template.topHeightMm * SCALE }} />
-              {template.sideWidthMm < template.widthMm && (
-                <>
-                  <div className="lb-side-off" style={{ left: 0, width: ((template.widthMm - template.sideWidthMm) / 2) * SCALE, top: template.topHeightMm * SCALE, bottom: 0 }} />
-                  <div className="lb-side-off" style={{ right: 0, width: ((template.widthMm - template.sideWidthMm) / 2) * SCALE, top: template.topHeightMm * SCALE, bottom: 0 }} />
-                </>
-              )}
-            </div>
+            )}
             <div className="lb-overlay">
               {template.elements.map((el) => {
                 const isSel = el.id === selectedId;
                 const outside = !!problemOf(el);
-                const hit = Math.max(el.h * SCALE, 8);
+                const hit = el.type === 'fold' ? 14 : Math.max(el.h * SCALE, 8); // 접는선은 얇아서 누르기 쉽게 띠 모양으로 잡는다
                 return (
                   <div
                     key={el.id}
@@ -354,7 +504,7 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
                     onPointerCancel={endDrag}
                     title={ELEMENT_TYPE_NAMES[el.type]}
                   >
-                    {isSel && (
+                    {isSel && el.type !== 'fold' && (
                       <div className="lb-frame" style={{ top: (hit - el.h * SCALE) / 2, height: el.h * SCALE }}>
                         {HANDLES.map((hd) => (
                           <span
@@ -374,9 +524,11 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
               })}
             </div>
           </div>
-          <p className="ak-muted lb-hint">미리보기는 샘플 값(스시고유 #2 등)입니다. 실제 라벨은 고객사 값으로 채워지고, 글자가 칸보다 길면 크기가 자동으로 줄어듭니다. 눈금은 5mm, 빨간 빗금은 프린터가 찍지 못하는 여백, 파란 띠는 접히는 선 주변(비워 둘 구역)입니다.</p>
+          <p className="ak-muted lb-hint">미리보기는 샘플 값(스시고유 #2 등)입니다. 실제 라벨은 고객사 값으로 채워지고, 글자가 칸보다 길면 크기가 자동으로 줄어듭니다. 눈금은 5mm, 빨간 빗금은 프린터가 찍지 못하는 여백, 파란 띠는 접는선 주변(비워 둘 구역)입니다.</p>
         </div>
       </div>
+      </>
+      )}
 
       <LabelPrinter job={printJob} onDone={() => setPrintJob(null)} />
 
@@ -407,6 +559,12 @@ export function LabelsClient({ initial, company, contact, initialMarginMm, initi
         .lb-hit-on { outline: 1px solid #2563eb; }
         .lb-frame { position: absolute; left: 0; right: 0; pointer-events: none; }
         .lb-title { font-size: var(--fs-md); font-weight: 800; }
+        .lb-designs { flex-wrap: wrap; }
+        .lb-design-pick { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-sm); font-weight: 800; color: var(--muted-foreground); }
+        .lb-badge { font-size: var(--fs-sm); font-weight: 800; color: #166534; background: #dcfce7; border: 1px solid #86efac; border-radius: 999px; padding: 0.2rem 0.7rem; }
+        .lb-rename { width: 12rem; }
+        .lb-new-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem; }
+        .lb-new-row .lb-field { min-width: 12rem; }
         .lb-fold { position: absolute; inset: 0; pointer-events: none; }
         .lb-fold-band { position: absolute; left: 0; right: 0; background: rgba(37, 99, 235, 0.09); border-top: 1px solid rgba(37, 99, 235, 0.25); border-bottom: 1px solid rgba(37, 99, 235, 0.25); display: flex; align-items: center; justify-content: space-between; padding: 0 6px; font-size: 10px; font-weight: 800; color: #1d4ed8; white-space: nowrap; overflow: hidden; }
         .lb-fold-line { position: absolute; left: 0; right: 0; border-top: 1.5px dashed #2563eb; }

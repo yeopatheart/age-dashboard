@@ -7,7 +7,7 @@ import { Barcode, Printer } from 'lucide-react';
 import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
 import { LabelView } from '@/components/labels/label-view';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
-import { FOLD_KEEP_OUT_MM, type LabelData } from '@/lib/labels/template';
+import { FOLD_KEEP_OUT_MM, foldOf, type LabelData } from '@/lib/labels/template';
 import type { CardLabelInfo } from '@/lib/labels/server';
 import { getCardLabels, prepareLabelPrint, saveMergeGroups, type CardLabelPreviewSource } from '../labels/actions';
 
@@ -211,11 +211,15 @@ export function LabelPanelView({
                   {data && template ? (
                     <div className="lp-label">
                       <LabelView template={template} data={data} unit={PREVIEW_UNIT} />
-                      {/* 접히는 선: 이 위는 뚜껑 위에, 아래는 옆면으로 꺾어 붙인다 */}
-                      <div className="lp-fold" style={{ top: `calc(${template.topHeightMm} * ${PREVIEW_UNIT})` }} aria-hidden>
-                        <span>접는 선</span>
-                      </div>
-                      <div className="lp-keepout" style={{ top: `calc(${template.topHeightMm - FOLD_KEEP_OUT_MM} * ${PREVIEW_UNIT})`, height: `calc(${FOLD_KEEP_OUT_MM * 2} * ${PREVIEW_UNIT})` }} aria-hidden />
+                      {/* 접는선(있을 때만): 이 위는 뚜껑 위에, 아래는 옆면으로 꺾어 붙인다 */}
+                      {foldOf(template) && (
+                        <>
+                          <div className="lp-fold" style={{ top: `calc(${foldOf(template)!.yMm} * ${PREVIEW_UNIT})` }} aria-hidden>
+                            <span>접는 선</span>
+                          </div>
+                          <div className="lp-keepout" style={{ top: `calc(${foldOf(template)!.yMm - FOLD_KEEP_OUT_MM} * ${PREVIEW_UNIT})`, height: `calc(${FOLD_KEEP_OUT_MM * 2} * ${PREVIEW_UNIT})` }} aria-hidden />
+                        </>
+                      )}
                     </div>
                   ) : (
                     <span className="lp-loading">불러오는 중…</span>

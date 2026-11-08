@@ -11,6 +11,7 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
   settlement_sales: '0043_settlement_sales.sql',
   settlement_purchases: '0044_settlement_purchases.sql',
   settlement_receipts: '0047_settlement_receipts.sql',
+  label_designs: '0050_label_designs.sql',
   settlement_sales_edit: '0048_settlement_sales_edit.sql', // 테이블이 아니라 settlement_sales에 더한 열(품목·수량·단위 수정)
 };
 
