@@ -3,6 +3,7 @@ import '@/components/admin/admin.css';
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import type { LabelPrintStatus } from '@/lib/label-status';
 import {
   DndContext,
   DragOverlay,
@@ -49,6 +50,8 @@ export interface PackingBusiness {
   items: PackingItem[];
   // 박스 추천(shadow test). 미제출 업체는 1순위 추천이 박스에 미리 채워진다.
   recommendation: RecommendationView | null;
+  // 제출한 업체의 라벨 출력 현황(목록 칩용). 택배·미제출 업체는 null
+  labelStatus: LabelPrintStatus | null;
   // 미제출: 추천을 만든 뒤 주문이 바뀜 / 제출: 제출한 뒤 주문이 바뀜
   orderChanged: boolean;
   submitted: {
@@ -403,6 +406,13 @@ export function PackingLogClient({
                   {isModified(r) && <span className="pk-editing" title="수정한 내용이 아직 제출되지 않았습니다">수정 중</span>}
                   {r.orderChanged && <span className="pk-changed" title={r.submitted ? '제출한 뒤 주문이 바뀌었습니다' : '추천을 만든 뒤 주문이 바뀌었습니다'}>주문 변경</span>}
                   {r.submitted ? <span className="ak-tag ak-tag-on">제출 · 박스 {r.submitted.boxes.length}</span> : <span className="ak-tag ak-tag-off">미기록</span>}
+                  {r.labelStatus && r.labelStatus.total > 0 && (
+                    r.labelStatus.printed === 0
+                      ? <span className="ak-tag ak-tag-off">라벨 미출력</span>
+                      : r.labelStatus.printed < r.labelStatus.total
+                        ? <span className="ak-tag pk-label-part" title="아직 출력하지 않은 박스 라벨이 있습니다">라벨 {r.labelStatus.printed}/{r.labelStatus.total}</span>
+                        : <span className="ak-tag ak-tag-on">라벨 {r.labelStatus.printed}/{r.labelStatus.total}</span>
+                  )}
                 </span>
                 <span className="pk-biz-sub">{r.terminal || '터미널 없음'} · 상품 {r.items.length}개</span>
               </button>
@@ -569,6 +579,7 @@ export function PackingLogClient({
         .pk-biz-on { border-color: var(--primary); background: var(--primary-light); }
         .pk-biz-top { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; flex-wrap: wrap; }
         .pk-biz-name { font-weight: 700; font-size: var(--fs-md); min-width: 0; overflow-wrap: anywhere; }
+        .pk-label-part { background: #fffbeb; border-color: #fcd34d; color: #b45309; }
         .pk-biz .ak-tag, .pk-biz .pk-changed, .pk-biz .pk-editing { white-space: nowrap; flex: none; }
         .pk-biz-sub { font-size: var(--fs-xs); color: var(--muted-foreground); }
         .pk-work { container-type: inline-size; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; min-width: 0; }
