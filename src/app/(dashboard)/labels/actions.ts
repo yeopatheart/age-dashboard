@@ -4,30 +4,97 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
 import { mergeLabelText, normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
-import { LABEL_TEMPLATE_KEY, buildTemplate, parseElements, type LabelData, type LabelTemplate } from '@/lib/labels/template';
-import { LABEL_MARGIN_KEY, LABEL_ROTATE_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelRotate, loadLabelTemplate, type CardLabelBase, type CardLabelInfo } from '@/lib/labels/server';
+import { LABEL_PRESETS, LABEL_TEMPLATE_KEY, buildTemplate, parseElements, type LabelData, type LabelPresetKey, type LabelTemplate } from '@/lib/labels/template';
+import { LABEL_ACTIVE_DESIGN_KEY, LABEL_MARGIN_KEY, LABEL_ROTATE_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelDesigns, loadLabelRotate, loadLabelTemplate, type CardLabelBase, type CardLabelInfo, type LabelDesign } from '@/lib/labels/server';
 import { requirePermission } from '@/lib/permissions/access';
 
-// 라벨 디자인 저장(한 장짜리 한 행). 값은 서버에서 한 번 더 검증한다.
-export async function saveLabelTemplate(input: LabelTemplate): Promise<{ error: string | null; template: LabelTemplate }> {
+// ─── 디자인 보관함: 저장·새로 만들기·이름 바꾸기·삭제·사용 중 지정 ───────────────────────────────
+// 값은 서버에서 한 번 더 검증한다(buildTemplate). 모두 labels:edit 권한이 필요하다.
+const DESIGN_NAME_MAX = 40;
+const cleanName = (name: string) => name.trim().replace(/\s+/g, ' ').slice(0, DESIGN_NAME_MAX);
+const duplicateMessage = '같은 이름의 디자인이 이미 있습니다.';
+const isDuplicate = (error: { code?: string }) => error.code === '23505';
+
+const templateRow = (template: LabelTemplate) => ({ width_mm: template.widthMm, height_mm: template.heightMm, elements: template.elements });
+
+export async function saveLabelDesign(id: string, input: LabelTemplate): Promise<{ error: string | null; template: LabelTemplate }> {
   await requirePermission('labels:edit');
-  const template = buildTemplate({ width_mm: input.widthMm, height_mm: input.heightMm, top_height_mm: input.topHeightMm, side_width_mm: input.sideWidthMm, elements: parseElements(input.elements) });
+  const template = buildTemplate({ width_mm: input.widthMm, height_mm: input.heightMm, elements: parseElements(input.elements) });
   const supabase = await createClient();
-  const { error } = await supabase.from('label_templates').upsert(
-    {
-      kind: LABEL_TEMPLATE_KEY,
-      width_mm: template.widthMm,
-      height_mm: template.heightMm,
-      top_height_mm: template.topHeightMm,
-      side_width_mm: template.sideWidthMm,
-      elements: template.elements,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'kind' },
-  );
+  const { error } = await supabase.from('label_designs').update({ ...templateRow(template), updated_at: new Date().toISOString() }).eq('id', id);
   if (error) return { error: error.message, template };
   revalidatePath('/labels');
   return { error: null, template };
+}
+
+// 새 디자인: 프리셋(preset)이나 기존 디자인의 복제(copy)로 시작한다. 사용 중인 디자인이 없으면(처음 만들 때) 이 디자인을 사용 중으로 지정한다.
+export async function createLabelDesign(input: { name: string; from: { kind: 'preset'; key: LabelPresetKey } | { kind: 'copy'; id: string } }): Promise<{ error: string | null; design: LabelDesign | null; activeId: string | null }> {
+  await requirePermission('labels:edit');
+  const name = cleanName(input.name);
+  if (!name) return { error: '디자인 이름을 입력해주세요.', design: null, activeId: null };
+  const supabase = await createClient();
+  const before = await loadLabelDesigns(supabase);
+  if (before.missing) return { error: '필요한 마이그레이션(0050)이 아직 적용되지 않았습니다.', design: null, activeId: null };
+  let template: LabelTemplate | undefined;
+  if (input.from.kind === 'preset') {
+    const key = input.from.key;
+    template = LABEL_PRESETS.find((p) => p.key === key)?.template;
+  } else {
+    const id = input.from.id;
+    template = before.designs.find((d) => d.id === id)?.template;
+  }
+  if (!template) return { error: '시작할 디자인을 찾지 못했습니다.', design: null, activeId: before.activeId };
+  const { data, error } = await supabase.from('label_designs').insert({ name, ...templateRow(template) }).select('id, name').single();
+  if (error) return { error: isDuplicate(error) ? duplicateMessage : error.message, design: null, activeId: before.activeId };
+  let activeId = before.activeId;
+  if (!activeId) {
+    const set = await setActiveDesign(supabase, data.id);
+    if (set) return { error: set, design: { id: data.id, name: data.name, template }, activeId: null };
+    activeId = data.id;
+  }
+  revalidatePath('/labels');
+  return { error: null, design: { id: data.id, name: data.name, template }, activeId };
+}
+
+export async function renameLabelDesign(id: string, name: string): Promise<{ error: string | null; name: string }> {
+  await requirePermission('labels:edit');
+  const clean = cleanName(name);
+  if (!clean) return { error: '디자인 이름을 입력해주세요.', name };
+  const supabase = await createClient();
+  const { error } = await supabase.from('label_designs').update({ name: clean, updated_at: new Date().toISOString() }).eq('id', id);
+  if (error) return { error: isDuplicate(error) ? duplicateMessage : error.message, name };
+  revalidatePath('/labels');
+  return { error: null, name: clean };
+}
+
+// 사용 중인 디자인과 마지막 하나는 지울 수 없다(출력에 쓸 디자인이 없어지지 않게).
+export async function deleteLabelDesign(id: string): Promise<{ error: string | null }> {
+  await requirePermission('labels:edit');
+  const supabase = await createClient();
+  const { designs, activeId } = await loadLabelDesigns(supabase);
+  if (id === activeId) return { error: '사용 중인 디자인은 지울 수 없습니다. 다른 디자인을 사용 중으로 바꾼 뒤 지워주세요.' };
+  if (designs.length <= 1) return { error: '마지막 디자인은 지울 수 없습니다.' };
+  const { error } = await supabase.from('label_designs').delete().eq('id', id);
+  if (error) return { error: error.message };
+  revalidatePath('/labels');
+  return { error: null };
+}
+
+export async function activateLabelDesign(id: string): Promise<{ error: string | null }> {
+  await requirePermission('labels:edit');
+  const supabase = await createClient();
+  const { designs } = await loadLabelDesigns(supabase);
+  if (!designs.some((d) => d.id === id)) return { error: '디자인을 찾지 못했습니다.' };
+  const error = await setActiveDesign(supabase, id);
+  if (error) return { error };
+  revalidatePath('/labels');
+  revalidatePath('/packing-log');
+  return { error: null };
+}
+
+async function setActiveDesign(supabase: Awaited<ReturnType<typeof createClient>>, id: string): Promise<string | null> {
+  const { error } = await supabase.from('app_settings').upsert({ key: LABEL_ACTIVE_DESIGN_KEY, value: id, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+  return error ? error.message : null;
 }
 
 // 프린터 출력 여백 저장(라벨 종류와 무관하게 프린터 하나에 하나).

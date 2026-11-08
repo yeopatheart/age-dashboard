@@ -104,6 +104,7 @@ export function LabelView({
   return (
     <div style={{ position: 'relative', width: u(template.widthMm), height: u(template.heightMm), background: '#fff', color: '#000', overflow: 'hidden', fontFamily: 'inherit' }}>
       {template.elements.map((el) => {
+        if (el.type === 'fold') return null; // 접는선은 인쇄하지 않는다(위치 표시용 항목)
         const box: React.CSSProperties = { position: 'absolute', left: u(el.x), top: u(el.y), width: u(el.w), height: u(el.h) };
         if (el.type === 'line') {
           return <div key={el.id} style={{ ...box, background: '#000' }}></div>;

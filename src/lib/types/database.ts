@@ -171,13 +171,13 @@ type PackingRecommendation = {
 };
 
 // 송장 라벨(0030): 라벨 디자인, 박스별 바코드, 출력·스캔 이력. elements의 모양은 src/lib/labels/template.ts의 LabelElement[].
-type LabelTemplateRow = {
-  kind: "label" | "top" | "side"; // 'label' = 모서리에 감아 붙이는 한 장짜리(0035). top/side는 예전 두 종류 디자인(쓰지 않는다)
+type LabelDesignRow = {
+  id: string;
+  name: string;
   width_mm: number;
   height_mm: number;
-  top_height_mm: number | null;
-  side_width_mm: number | null;
   elements: unknown;
+  created_at: string;
   updated_at: string;
 };
 type BoxLabel = {
@@ -496,9 +496,9 @@ export type Database = {
         PackingModelVersion,
         Pick<PackingModelVersion, "version" | "record_count" | "single_box_count" | "model"> & { trained_at?: string }
       >;
-      label_templates: TableDef<
-        LabelTemplateRow,
-        Pick<LabelTemplateRow, "kind" | "width_mm" | "height_mm" | "elements"> & { top_height_mm?: number | null; side_width_mm?: number | null; updated_at?: string }
+      label_designs: TableDef<
+        LabelDesignRow,
+        Pick<LabelDesignRow, "name" | "width_mm" | "height_mm" | "elements"> & { id?: string; created_at?: string; updated_at?: string }
       >;
       box_labels: TableDef<
         BoxLabel,

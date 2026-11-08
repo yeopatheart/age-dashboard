@@ -3,13 +3,42 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
 import { loadAppSettings } from '@/lib/settings-server';
 import { normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
-import { LABEL_TEMPLATE_KEY, buildTemplate, type LabelData, type LabelTemplate } from './template';
+import { rowsOrMissing } from '@/lib/supabase/missing-table';
+import { DEFAULT_TEMPLATE, buildTemplate, type LabelData, type LabelTemplate } from './template';
 
 type Client = SupabaseClient<Database>;
 
+// 사용 중인 디자인의 id를 저장하는 app_settings 키
+export const LABEL_ACTIVE_DESIGN_KEY = 'labelActiveDesign';
+
+export interface LabelDesign {
+  id: string;
+  name: string;
+  template: LabelTemplate;
+}
+
+// 저장된 디자인 전부(만든 순서)와 사용 중인 디자인 id. 사용 중 지정이 없거나 지워진 디자인을 가리키면 첫 디자인이 사용 중이다.
+// 테이블이 없으면(마이그레이션 0050 전) missing에 테이블 이름을 담아 돌려준다. 그 밖의 오류는 던진다.
+export async function loadLabelDesigns(supabase: Client): Promise<{ designs: LabelDesign[]; activeId: string | null; missing: string | null }> {
+  const { rows, missing } = await rowsOrMissing(
+    (async () => {
+      const { data, error } = await supabase.from('label_designs').select('id, name, width_mm, height_mm, elements').order('created_at').order('id');
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    })(),
+  );
+  if (missing) return { designs: [], activeId: null, missing };
+  const designs = rows.map((r) => ({ id: r.id, name: r.name, template: buildTemplate(r) }));
+  const { data: setting } = await supabase.from('app_settings').select('value').eq('key', LABEL_ACTIVE_DESIGN_KEY).maybeSingle();
+  const saved = typeof setting?.value === 'string' ? setting.value : null;
+  const activeId = designs.find((d) => d.id === saved)?.id ?? designs[0]?.id ?? null;
+  return { designs, activeId, missing: null };
+}
+
+// 출력·미리보기에 쓰는 디자인: 사용 중인 디자인. 저장된 디자인이 없으면 코드의 기본 배치다.
 export async function loadLabelTemplate(supabase: Client): Promise<LabelTemplate> {
-  const { data } = await supabase.from('label_templates').select('width_mm, height_mm, top_height_mm, side_width_mm, elements').eq('kind', LABEL_TEMPLATE_KEY).maybeSingle();
-  return buildTemplate(data);
+  const { designs, activeId } = await loadLabelDesigns(supabase);
+  return designs.find((d) => d.id === activeId)?.template ?? DEFAULT_TEMPLATE;
 }
 
 // 박스 한 개(순번 seq)의 라벨 상태. printCount = 지금까지 출력(재출력 포함)한 횟수.
