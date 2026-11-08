@@ -4,7 +4,8 @@ import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { ensureRecommendations, getTodayModel, orderSignature, type LiveOrderItem, type RecommendationState } from '@/lib/packing/server';
 import { PackingLogClient, type PackingBusiness } from './packing-log-client';
 import { requireMenu } from '@/lib/permissions/access';
-import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
+import { fetchAll, mapChunks, selectAll } from '@/lib/supabase/fetch-all';
+import { labelPrintStatus } from '@/lib/label-status';
 import { todayKST } from '@/lib/order-date';
 
 export default async function PackingLogPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
@@ -84,6 +85,23 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
       : Promise.resolve(new Map<string, RecommendationState>()),
   ]);
 
+  // 라벨 출력 여부: 제출한 업체 카드의 박스 라벨 중 출력 이력이 있는 순번. 카드 안 라벨 영역과 같은 기준(box_labels + 'print' 이력)이다.
+  const submittedDailyIds = dailyRows.filter((d) => recordByDaily.has(d.id)).map((d) => d.id);
+  const labelRows = await mapChunks(submittedDailyIds, 100, async (chunk) => {
+    const { data, error } = await supabase.from('box_labels').select('id, daily_business_id, seq').in('daily_business_id', chunk).limit(5000);
+    if (error) throw new Error(`라벨 조회 실패: ${error.message}`);
+    return data ?? [];
+  });
+  const printedLabelIds = new Set(
+    await mapChunks(labelRows.map((l) => l.id), 100, async (chunk) => {
+      const { data, error } = await supabase.from('box_label_events').select('label_id').eq('event', 'print').in('label_id', chunk).limit(5000);
+      if (error) throw new Error(`라벨 출력 이력 조회 실패: ${error.message}`);
+      return (data ?? []).map((e) => e.label_id);
+    }),
+  );
+  const printedSeqsByDaily = new Map<string, number[]>();
+  for (const l of labelRows) if (printedLabelIds.has(l.id)) printedSeqsByDaily.set(l.daily_business_id, [...(printedSeqsByDaily.get(l.daily_business_id) ?? []), l.seq]);
+
   const splitBusinessIds = businessIdsInBothRounds(dailyRows.map((d) => ({ businessId: d.business_id, round: d.round })));
   const rows: PackingBusiness[] = dailyRows.map((d) => {
     const business = businessById.get(d.business_id);
@@ -111,6 +129,8 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
           orderMulbong: i.is_mulbong && !i.has_aerator,
         })),
       recommendation: recommendations.get(d.id)?.current ?? null,
+      // 택배 터미널과 미제출 업체는 라벨 표시를 하지 않는다.
+      labelStatus: record && !(!!d.terminal_id && parcelTerminalIds.has(d.terminal_id)) ? labelPrintStatus(packedBoxes.filter((b) => b.record_id === record.id).length, printedSeqsByDaily.get(d.id) ?? []) : null,
       // 미제출: 추천을 만든 뒤 주문이 바뀜 / 제출: 제출한 뒤 주문이 바뀜 → 박스를 다시 확인해야 한다
       orderChanged: record
         ? !!record.order_signature && record.order_signature !== orderSignature(liveItemsOf(d.id))
