@@ -687,15 +687,6 @@ function PoolItem({
         </span>
       </div>
       <div className="pk-pool-opts">
-        {boxes.length > 0 && (
-          <label>
-            {/* 드래그가 어려운 폰이나 키보드에서는 여기서 박스를 골라 바로 담는다(담을 수량 칸의 값을 따른다) */}
-            <select className="pk-place" value="" aria-label={`${item.name} 박스에 담기`} onChange={(e) => e.target.value && onPlace(e.target.value)}>
-              <option value="">박스에 담기…</option>
-              {boxes.map((b) => <option key={b.uid} value={b.uid}>{b.label}</option>)}
-            </select>
-          </label>
-        )}
         {remaining > 1 && (
           <label>
             담을 수량{' '}
@@ -707,6 +698,15 @@ function PoolItem({
           <input className="pk-mini" type="number" min="0" step="any" placeholder="선택" value={weight} onChange={(e) => onWeight(e.target.value)} />
         </label>
         {item.sizeRequest && <span>({item.sizeRequest})</span>}
+        {boxes.length > 0 && (
+          <label>
+            {/* 수량·실측을 먼저 입력한 뒤 마지막에 박스를 골라 담는 순서다(드래그가 어려운 폰·키보드용). 고르는 순간 위 칸의 값으로 담긴다 */}
+            <select className="pk-place" value="" aria-label={`${item.name} 박스에 담기`} onChange={(e) => e.target.value && onPlace(e.target.value)}>
+              <option value="">담을 박스 선택…</option>
+              {boxes.map((b) => <option key={b.uid} value={b.uid}>{b.label}</option>)}
+            </select>
+          </label>
+        )}
       </div>
     </div>
   );
