@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
 import { mergeLabelText, normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
 import { LABEL_PRESETS, LABEL_TEMPLATE_KEY, buildTemplate, parseElements, type LabelData, type LabelPresetKey, type LabelTemplate } from '@/lib/labels/template';
+import { printableSeqError } from '@/lib/packing/box-rules';
 import { LABEL_ACTIVE_DESIGN_KEY, LABEL_MARGIN_KEY, LABEL_ROTATE_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelDesigns, loadLabelRotate, loadLabelTemplate, type CardLabelBase, type CardLabelInfo, type LabelDesign } from '@/lib/labels/server';
 import { requirePermission } from '@/lib/permissions/access';
 
@@ -161,6 +162,14 @@ export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: 
     supabase.from('box_labels').select('id, seq, barcode').eq('daily_business_id', input.dailyBusinessId),
   ]);
   if (!base) return fail('업체 주문을 찾지 못했습니다.');
+
+  // 라벨은 제출한 박스에 대해서만 출력한다(제출 전이나 제출한 박스 수보다 큰 번호는 막는다).
+  const { data: record } = await supabase.from('packing_records').select('id').eq('daily_business_id', input.dailyBusinessId).maybeSingle();
+  const { count: savedBoxCount } = record
+    ? await supabase.from('packing_boxes').select('id', { count: 'exact', head: true }).eq('record_id', record.id)
+    : { count: 0 };
+  const seqError = printableSeqError(savedBoxCount ?? 0, seqs);
+  if (seqError) return fail(seqError);
 
   const labelBySeq = new Map((existing ?? []).map((l) => [l.seq, l]));
   const missing = seqs.filter((s) => !labelBySeq.has(s));

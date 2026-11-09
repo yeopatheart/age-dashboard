@@ -19,6 +19,7 @@ import {
 } from '@dnd-kit/core';
 import { BarChart3, CircleDashed, ClipboardList, GripVertical, Package, PackageCheck, Plus, Printer, PrinterCheck, PrinterX, Trash2, X } from 'lucide-react';
 import type { RecommendationView, StoredPlan } from '@/lib/packing/server';
+import { emptyBoxMessage, firstEmptyBoxIndex, removalShiftsPrintedLabels } from '@/lib/packing/box-rules';
 import { submitPacking, assignItemsToBoxes, deletePackingRecord } from './actions';
 import { LabelPanel } from './label-panel';
 import { useCan } from '@/components/permissions-context';
@@ -168,6 +169,8 @@ export function PackingLogClient({
   const rankOf = (row: PackingBusiness) => Math.min(ranks[row.id] ?? 0, Math.max(0, (row.recommendation?.candidates.length ?? 1) - 1));
   const baseBoxes = (row: PackingBusiness, rank: number): DraftBox[] => {
     if (row.submitted) {
+      // 제출한 뒤 주문에서 취소·삭제된 상품은 박스에서 뺀다(남겨 두면 "주문에 없는 상품이 포함돼 있습니다"로 재제출이 막힌다).
+      const liveIds = new Set(row.items.map((i) => i.id));
       return row.submitted.boxes.map((b, index) => {
         const type = b.boxId ? boxTypeById.get(b.boxId) : undefined;
         return {
@@ -176,7 +179,7 @@ export function PackingLogClient({
           name: b.boxName,
           dims: type ? dimsOf(type) : null,
           isMulbong: type?.is_mulbong_box ?? false,
-          items: b.items,
+          items: b.items.filter((i) => liveIds.has(i.orderItemId)),
         };
       });
     }
@@ -215,7 +218,9 @@ export function PackingLogClient({
     [selected, draft],
   );
   const hasDeletedBox = !!draft?.boxes.some((b) => b.boxId === null);
-  const canSubmit = !readOnly && !!draft && draft.boxes.length > 0 && unplaced.length === 0 && !hasDeletedBox && !busy && (selected?.items.length ?? 0) > 0 && (!selected?.submitted || modified);
+  // 빈 박스는 제출할 수 없다(서버도 막는다). 예전에 제출해 둔 빈 박스도 여기서 걸러져 다시 제출할 때 지우게 된다.
+  const emptyBoxAt = draft ? firstEmptyBoxIndex(draft.boxes) : -1;
+  const canSubmit = !readOnly && !!draft && draft.boxes.length > 0 && unplaced.length === 0 && !hasDeletedBox && emptyBoxAt < 0 && !busy && (selected?.items.length ?? 0) > 0 && (!selected?.submitted || modified);
   const submitHint = !draft
     ? ''
     : readOnly
@@ -226,7 +231,9 @@ export function PackingLogClient({
         ? '삭제된 박스가 있습니다. 해당 박스를 지우고 다른 박스를 추가해주세요'
         : unplaced.length > 0
           ? `아직 담지 않은 상품 ${unplaced.length}개`
-          : '';
+          : emptyBoxAt >= 0
+            ? emptyBoxMessage(emptyBoxAt)
+            : '';
 
   // ─── 담기/옮기기/빼기 ─────────────────────────────────────────────────────
   const assign = (itemId: string, toUid: string, qty: number, fromUid?: string) =>
@@ -255,7 +262,14 @@ export function PackingLogClient({
       ...d,
       boxes: [...d.boxes, { uid: newUid(), boxId: type.id, name: type.name, dims: dimsOf(type), isMulbong: type.is_mulbong_box, items: [] }],
     }));
-  const removeBox = (uid: string) => updateDraft((d) => ({ ...d, boxes: d.boxes.filter((b) => b.uid !== uid) }));
+  const removeBox = (uid: string) => {
+    if (draft && selected) {
+      const at = draft.boxes.findIndex((b) => b.uid === uid);
+      const shifts = removalShiftsPrintedLabels(selected.submitted?.boxes.length ?? 0, at, selected.labelStatus?.printed ?? 0);
+      if (shifts && !window.confirm('이미 라벨을 출력한 업체입니다. 가운데 박스를 지우면 뒤 박스의 번호가 앞당겨져 붙여 둔 스티커와 어긋납니다. 그래도 지울까요?')) return;
+    }
+    updateDraft((d) => ({ ...d, boxes: d.boxes.filter((b) => b.uid !== uid) }));
+  };
 
   const parseMove = (d: Draft, item: PackingItem) => {
     const remaining = remainingOf(d, item);
@@ -538,7 +552,7 @@ export function PackingLogClient({
                   )}
                 </div>
 
-                {can('packing:print') && !selected.parcel && <LabelPanel key={selected.id} dailyBusinessId={selected.id} boxCount={draft.boxes.length} />}
+                {can('packing:print') && !selected.parcel && <LabelPanel key={selected.id} dailyBusinessId={selected.id} boxCount={selected.submitted?.boxes.length ?? 0} />}
               </section>
 
               <DragOverlay>
