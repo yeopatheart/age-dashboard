@@ -4,9 +4,11 @@ import { useMemo, useState } from 'react';
 import { RotateCcw, Settings as SettingsIcon } from 'lucide-react';
 import { AdminHeader, Toggle, useNotice } from '@/components/admin/admin-kit';
 import { DEFAULT_SETTINGS, type AppSettings } from '@/lib/app-settings';
+import { shareTemplateError, type ScanShareTemplate } from '@/lib/scan-share-template';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { reapplySizeSpecs, saveSettings } from './actions';
 import { useCan } from '@/components/permissions-context';
+import { ScanShareCard } from './scan-share-card';
 
 const toList = (text: string) => text.split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -23,6 +25,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
     contactPhone: initial.contactPhone,
   });
   const [allowPast, setAllowPast] = useState(initial.allowPastOrderEdit);
+  const [scanShare, setScanShare] = useState<ScanShareTemplate>(initial.scanShare);
   const [sample, setSample] = useState('2.5kg내외, 피빼기');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +42,9 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       allowPastOrderEdit: allowPast,
       companyName: form.companyName.trim(),
       contactPhone: form.contactPhone.trim(),
+      scanShare,
     }),
-    [form, allowPast],
+    [form, allowPast, scanShare],
   );
   // 입력한 값이 숫자가 아니면 미리보기에는 기본값을 쓴다(저장할 때는 서버가 같은 규칙으로 걸러낸다).
   const previewCfg: AppSettings = {
@@ -54,6 +58,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const numbersValid = [draft.sizeTolerancePct, draft.earlyRangeKg, draft.perKgTolerancePct].every((n) => Number.isFinite(n) && n >= 0);
+  const shareValid = shareTemplateError(scanShare) === null; // 모르는 변수 등이 있으면 저장 버튼을 막는다(이유는 카드에 표시)
 
   const save = async () => {
     setBusy(true);
@@ -62,7 +67,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
     const result = await saveSettings(draft);
     setBusy(false);
     if (result.error) return setError(result.error);
-    setNotice('설정을 저장했습니다. 새로 입력하는 주문부터 적용됩니다.');
+    setNotice('설정을 저장했습니다. 주문 관련 값은 새로 입력하는 주문부터, 상차 완료 메시지는 바로 적용됩니다.');
   };
   const reset = () => {
     setForm({
@@ -76,6 +81,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       contactPhone: DEFAULT_SETTINGS.contactPhone,
     });
     setAllowPast(DEFAULT_SETTINGS.allowPastOrderEdit);
+    setScanShare(DEFAULT_SETTINGS.scanShare);
   };
   const reapply = async () => {
     // 과거 주문까지 모두 다시 계산하므로 되돌릴 수 없다는 점을 먼저 알리고 확인받는다.
@@ -167,6 +173,8 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
         </div>
       </section>
 
+      <ScanShareCard value={scanShare} onChange={setScanShare} disabled={!canEdit} />
+
       <section className="st-card">
         <h2 className="st-title">과거 날짜 편집</h2>
         <p className="st-desc">켜면 오늘 이전 날짜의 주문도 오늘과 똑같이 입력·수정·취소·삭제할 수 있고, 박스 할당도 고칠 수 있습니다. 주문 입력 화면에는 날짜 선택칸이 생깁니다. 미래 날짜는 항상 막힙니다.</p>
@@ -182,7 +190,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
         <span className="ak-spacer" />
         {error && <span className="ak-error">{error}</span>}
         {notice && <span className="ak-notice">{notice}</span>}
-        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !numbersValid}>저장</button>
+        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !numbersValid || !shareValid}>저장</button>
       </div>
 
       <style>{`

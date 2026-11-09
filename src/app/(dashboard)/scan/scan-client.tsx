@@ -10,6 +10,7 @@ import { playTone, unlockAudio } from '@/lib/sound/tones';
 import { cleanShareText } from '@/lib/share-text';
 import { buildLoadedListText, NO_TERMINAL, type PackageCount } from '@/lib/scan-share-text';
 import { undoneSummary, type UndoneBox } from '@/lib/scan-text';
+import type { ScanShareTemplate } from '@/lib/scan-share-template';
 
 export interface ScanCard {
   id: string;
@@ -75,7 +76,7 @@ function RecentList({ items }: { items: RecentItem[] }) {
   );
 }
 
-export function ScanClient({ orderDate, today, cards }: { orderDate: string; today: string; cards: ScanCard[] }) {
+export function ScanClient({ orderDate, today, cards, shareTemplate }: { orderDate: string; today: string; cards: ScanCard[]; shareTemplate: ScanShareTemplate }) {
   const can = useCan();
   const canScan = can('scan:scan');
   const canUndo = can('scan:undo');
@@ -281,8 +282,8 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       map.set(key, t);
     }
     // 터미널마다 퀵 기사님께 따로 보낼 상차 완료 글(상차된 박스가 없으면 null)
-    return [...map.entries()].map(([name, v]) => ({ name, ...v, text: buildLoadedListText(orderDate, cards, name) }));
-  }, [cards, orderDate]);
+    return [...map.entries()].map(([name, v]) => ({ name, ...v, text: buildLoadedListText(orderDate, cards, name, shareTemplate) }));
+  }, [cards, orderDate, shareTemplate]);
   const totalLoaded = cards.reduce((s, c) => s + c.loaded, 0);
   const totalBoxes = cards.reduce((s, c) => s + c.total, 0);
   const visibleCards = onlyPending ? cards.filter((c) => c.loaded < c.total) : cards;

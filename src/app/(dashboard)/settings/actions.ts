@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import { mergeSettings, type AppSettings } from '@/lib/app-settings';
+import { shareTemplateError } from '@/lib/scan-share-template';
 import { parseSizeSpec } from '@/lib/size-spec';
 import { requirePermission } from '@/lib/permissions/access';
 
@@ -12,12 +13,16 @@ export async function saveSettings(input: AppSettings): Promise<{ error: string 
   await requirePermission('settings:edit');
   const supabase = await createClient();
   const settings = mergeSettings(input as unknown as Record<string, unknown>);
+  // 상차 완료 메시지 형식: 모르는 변수·짝이 안 맞는 중괄호·너무 긴 글은 저장하지 않고 이유를 알려 준다.
+  const templateError = shareTemplateError(settings.scanShare);
+  if (templateError) return { error: templateError, settings };
   const rows = Object.entries(settings).map(([key, value]) => ({ key, value, updated_at: new Date().toISOString() }));
   const { error } = await supabase.from('app_settings').upsert(rows, { onConflict: 'key' });
   if (error) return { error: error.message, settings };
   revalidatePath('/settings');
   revalidatePath('/dashboard');
   revalidatePath('/orders/new');
+  revalidatePath('/scan');
   return { error: null, settings };
 }
 
