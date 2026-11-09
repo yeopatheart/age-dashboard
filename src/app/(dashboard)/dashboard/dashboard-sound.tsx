@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { Bell } from 'lucide-react';
+import { Bell, BellOff, BellRing } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { useLiveRefresh } from '@/lib/realtime/use-live-refresh';
@@ -71,6 +71,7 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
   const audioRunning = useSyncExternalStore(subscribeAudioState, isAudioRunning, () => false);
   const [recent, setRecent] = useState<RecentEvent[]>([]);
   const [listOpen, setListOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false); // 알림 버튼을 누르면 버튼 아래로 떠오르는 설정 패널(툴바 크기는 변하지 않는다)
 
   // 타이머 안에서 최신 설정·소리 여부를 읽기 위한 사본(렌더 중이 아니라 이펙트에서 갱신한다).
   const live = useRef({ soundOn, settings });
@@ -168,6 +169,26 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
 
   const hhmm = (ms: number) => new Date(ms).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
   const urgentRecent = recent.some((e) => e.urgent);
+  const closeMenu = () => {
+    setMenuOpen(false);
+    clearTimeout(confirmTimer.current);
+    setConfirmOff(false); // 열어 둔 채 닫으면 "정말 끄기?" 확인도 풀어 둔다
+  };
+
+  // 버튼 하나로 상태를 구분한다: 꺼짐(회색·벨 꺼짐) / 켜짐·정상(초록·울리는 벨) / 켜짐이지만 소리가 없거나 연결 중(노랑) / 끊김·오래됨(빨강).
+  const problem = mode && (status === 'down' || stale);
+  const connecting = mode && status === 'connecting';
+  const quiet = mode && !soundOn; // 켜져 있지만 소리가 나지 않음(이 기기 소리 끔 또는 주소의 &sound=off)
+  const tone: 'off' | 'ok' | 'warn' | 'bad' = !mode ? 'off' : problem ? 'bad' : connecting || quiet ? 'warn' : 'ok';
+  const BellIcon = tone === 'off' ? BellOff : tone === 'ok' ? BellRing : Bell;
+  const TONE_CLASS = {
+    off: 'border-slate-200 bg-white text-slate-400 hover:bg-slate-100 hover:text-slate-600',
+    ok: 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
+    warn: 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100',
+    bad: 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
+  } as const;
+  const statusText = status === 'live' ? '실시간' : status === 'down' ? '끊김' : '연결 중';
+  const bellLabel = !mode ? '실시간 알림 꺼짐' : `실시간 알림 켜짐 — ${statusText}${stale ? '(오래됨)' : ''}${quiet ? ', 소리 꺼짐' : ''}`;
 
   // 주문표 위쪽 툴바 안에 들어가는 컨트롤이다(dashboard-client가 툴바 오른쪽에 놓는다). 화면에 떠 있게(fixed) 두면 표의 맨 아래 행을 가리고,
   // TV처럼 한 화면에 고정해서 보는 모드에서는 스크롤로도 피할 수 없어서 툴바로 옮겼다. 연결이 끊겼을 때의 전체 폭 경고 띠만 위에 고정한다.
@@ -226,29 +247,67 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
         </div>
       )}
 
-      {!mode ? (
+      <div className="relative">
         <button
           type="button"
-          onClick={turnOn}
-          className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
-          title="실시간 알림 켜기 — 다른 기기에서 주문이 바뀌면 화면을 바로 갱신하고 소리로 알려 줍니다"
-          aria-label="실시간 알림 켜기"
+          onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
+          aria-expanded={menuOpen}
+          aria-haspopup="dialog"
+          aria-label={bellLabel}
+          title={`${bellLabel} (눌러서 설정)`}
+          className={`w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ${TONE_CLASS[tone]}`}
         >
-          <Bell className="w-4 h-4" />
+          <BellIcon className="w-4 h-4" />
         </button>
-      ) : (
-        <div
-          title="이 탭이 뒤로 가거나 PC가 절전하면 브라우저가 페이지를 멈춰 소리·갱신이 멈출 수 있습니다. 칠판은 별도 창으로 띄워 두세요."
-          className={`flex items-center gap-1.5 rounded-lg border pl-2.5 pr-1 h-8 text-xs font-bold ${stale || status === 'down' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white border-slate-200 text-slate-600'}`}
-        >
-          <span className={`inline-block h-2 w-2 rounded-full ${status === 'live' && !stale ? 'bg-emerald-500' : status === 'down' || stale ? 'bg-red-500' : 'bg-amber-400'}`} />
-          <span>{status === 'live' ? '실시간' : status === 'down' ? '끊김' : '연결 중'}</span>
-          <span className="font-medium">· {lastRefreshAt ? `갱신 ${hhmm(lastRefreshAt)}` : '갱신 대기'}{stale ? ' (오래됨)' : ''}</span>
-          <button type="button" onClick={toggleMuted} aria-pressed={!muted} className="px-2 h-6 rounded-md hover:bg-slate-100">소리 {soundOn ? '켬' : '끔'}</button>
-          <Link href="/dashboard/sound-test" className="px-2 h-6 inline-flex items-center rounded-md hover:bg-slate-100">설정</Link>
-          <button type="button" onClick={requestOff} className={`px-2 h-6 rounded-md ${confirmOff ? 'bg-red-600 text-white' : 'hover:bg-slate-100'}`}>{confirmOff ? '정말 끄기?' : '끄기'}</button>
-        </div>
-      )}
+        {menuOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={closeMenu} />
+            <div role="dialog" aria-label="실시간 알림 설정" className="absolute right-0 top-10 z-50 w-72 rounded-xl bg-white shadow-lg border border-slate-200 p-3 text-sm">
+              {!mode ? (
+                <>
+                  <p className="font-bold text-slate-800">실시간 알림 꺼짐</p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-500">켜면 다른 기기에서 주문이 바뀔 때 이 화면을 바로 갱신하고, 소리로 알려 줍니다. 칠판으로 쓰는 기기에서 켜 두세요(기기마다 따로 저장됩니다).</p>
+                  <button type="button" onClick={turnOn} className="mt-3 h-9 w-full rounded-lg bg-[#003057] text-white text-sm font-bold hover:opacity-90">
+                    실시간 알림 켜기
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className={`flex items-center gap-2 font-bold ${problem ? 'text-red-700' : 'text-slate-800'}`}>
+                    <span className={`inline-block h-2 w-2 rounded-full ${status === 'live' && !stale ? 'bg-emerald-500' : problem ? 'bg-red-500' : 'bg-amber-400'}`} />
+                    <span>{statusText}</span>
+                    <span className="text-xs font-medium text-slate-500">· {lastRefreshAt ? `갱신 ${hhmm(lastRefreshAt)}` : '갱신 대기'}{stale ? ' (오래됨)' : ''}</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="font-bold text-slate-700">소리</span>
+                    <button
+                      type="button"
+                      onClick={toggleMuted}
+                      role="switch"
+                      aria-checked={!muted}
+                      className={`h-8 w-14 rounded-full border text-xs font-bold ${!muted ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-slate-100 text-slate-500'}`}
+                    >
+                      {muted ? '끔' : '켬'}
+                    </button>
+                  </div>
+                  {searchParams.get('sound') === 'off' && <p className="mt-1 text-xs text-slate-500">이 창은 주소에 &amp;sound=off가 있어 소리가 나지 않습니다.</p>}
+                  <Link href="/dashboard/sound-test" onClick={closeMenu} className="mt-3 flex h-9 items-center justify-center rounded-lg border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                    소리·알림 설정
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={requestOff}
+                    className={`mt-2 h-9 w-full rounded-lg border text-sm font-bold ${confirmOff ? 'border-red-600 bg-red-600 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    {confirmOff ? '정말 끄기? (화면 갱신도 멈춥니다)' : '실시간 알림 끄기'}
+                  </button>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-400">이 탭이 뒤로 가거나 PC가 절전하면 브라우저가 페이지를 멈춰 소리·갱신이 멈출 수 있습니다. 칠판은 별도 창으로 띄워 두세요.</p>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
     </>
   );
 }
