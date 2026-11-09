@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import { editableDateError, todayKST } from '@/lib/order-date';
 import { assignToBoxes, trainModel, type PackingItem } from '@/lib/packing/model';
+import { emptyBoxMessage, firstEmptyBoxIndex } from '@/lib/packing/box-rules';
 import { compareWithRecommendation, getTodayModel, orderSignature } from '@/lib/packing/server';
 import { requirePermission } from '@/lib/permissions/access';
 
@@ -29,6 +30,8 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   const userId = claims?.claims.sub ?? null;
 
   if (input.boxes.length === 0) return { error: '박스를 하나 이상 추가해주세요.' };
+  const emptyAt = firstEmptyBoxIndex(input.boxes);
+  if (emptyAt >= 0) return { error: emptyBoxMessage(emptyAt) };
 
   const { data: daily } = await supabase
     .from('daily_businesses')

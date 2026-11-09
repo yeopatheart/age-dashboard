@@ -193,7 +193,7 @@ export function LabelPanelView({
       {boxCount >= 2 && <MergeEditor boxCount={boxCount} groups={groups} disabled={!!busyKey} onChange={onGroupsChange} />}
 
       {boxCount === 0 ? (
-        <p className="lp-empty">박스를 먼저 할당하면 라벨을 출력할 수 있습니다.</p>
+        <p className="lp-empty">박스 할당을 제출하면 라벨을 출력할 수 있습니다.</p>
       ) : (
         <div className="lp-boxes">
           {seqs.map((seq) => {
