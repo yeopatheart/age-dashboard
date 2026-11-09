@@ -9,6 +9,7 @@ import { DateNav } from '@/components/date-nav';
 import { Segmented } from '@/components/segmented';
 import { STAGES, STAGE_COLOR, STAGE_LABEL, stageDetail, stageOf, type Stage } from '@/lib/overview';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
+import { useAutoRefresh } from '@/lib/realtime/use-live-refresh';
 
 // 휴대폰(768px 이하)용 대시보드. PC의 "고객 × 상품" 표를 가로로 밀어 보는 대신, 고객 한 곳이 카드 하나다.
 //  - 맨 위(고정): 날짜 이동, 전체 진행 요약, 터미널 칩(필터), 상태 필터. 기본은 "미완료"만 보인다.
@@ -110,6 +111,8 @@ export function DashboardMobile(props: DashboardMobileProps) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const [openProducts, setOpenProducts] = useState<Set<string>>(new Set());
   const [sheetItemId, setSheetItemId] = useState<string | null>(null);
+  // 폰에는 실시간 연결과 소리가 없다. 화면이 보이는 동안 30초마다(그리고 다른 앱에서 돌아왔을 때) 저절로 새로 받아 형이 바꾼 내용을 따라가고, 마지막 갱신 시각을 보여 준다.
+  const refreshedAt = useAutoRefresh(30_000);
 
   const segmentRows = segment === 'main' ? mainRows : separateRows;
   const itemsByRow = new Map<string, OrderItem[]>();
@@ -226,7 +229,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
         <div className="dm-progress" role="status">
           <strong>완료 {counts.done}/{counts.all}</strong>
           <div className="dm-bar"><span style={{ width: `${pct}%` }} /></div>
-          <span>상품 {totals.done}/{totals.live} · {pct}%</span>
+          <span>상품 {totals.done}/{totals.live} · {pct}%{refreshedAt ? ` · 갱신 ${new Date(refreshedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}` : ''}</span>
         </div>
         <div className="dm-filters">
           <div className="dm-seg-wrap">

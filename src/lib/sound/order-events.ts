@@ -1,33 +1,37 @@
 // 주문 목록 화면이 새 데이터를 받을 때마다 이전 화면과 비교(diff)해서 "무슨 일이 일어났는지"를 이벤트로 바꾸고,
 // 이벤트를 소리 계획(톤 + 읽을 문구)으로 바꾼다. 둘 다 화면·소리와 무관한 순수 함수라서 따로 검증할 수 있다.
 // change_status 컬럼에 기대지 않고 품목 id 기준으로 직접 비교한다(상태 값이 언제 초기화되는지에 영향받지 않는다).
-import { isCardComplete, type OrderItem, type OrderRow } from '@/lib/orders';
-import type { ToneName } from './tones';
+import { isCardComplete, type OrderItem, type OrderRow } from '../orders.ts'; // 상대 경로+.ts: 단위 테스트(node --test)가 @ 별칭을 못 푼다
+import type { ToneName } from './tones.ts';
 
 export type OrderEventKind =
   | 'packed-item-changed' // 이미 포장 완료한 품목이 바뀌거나 취소됨 — 가장 위험(포장을 다시 풀어야 할 수 있다)
   | 'item-cancelled'
   | 'order-removed'
   | 'item-added'
+  | 'item-restored' // 취소했던 품목을 다시 살림
   | 'qty-changed'
   | 'order-new'
   | 'unshipped'
   | 'item-modified'
+  | 'order-modified' // 업체 카드의 메모·터미널·이름이 바뀜
   | 'card-complete'
   | 'item-packed';
 
 // 앞일수록 급하다(한 번에 여러 이벤트가 오면 가장 앞 종류의 톤을 낸다).
-export const EVENT_PRIORITY: OrderEventKind[] = ['packed-item-changed', 'item-cancelled', 'order-removed', 'item-added', 'qty-changed', 'order-new', 'unshipped', 'item-modified', 'card-complete', 'item-packed'];
+export const EVENT_PRIORITY: OrderEventKind[] = ['packed-item-changed', 'item-cancelled', 'order-removed', 'item-added', 'item-restored', 'qty-changed', 'order-new', 'unshipped', 'item-modified', 'order-modified', 'card-complete', 'item-packed'];
 
 export const EVENT_LABEL: Record<OrderEventKind, string> = {
   'packed-item-changed': '포장된 품목 변경',
   'item-cancelled': '취소·삭제',
   'order-removed': '주문 삭제',
   'item-added': '품목 추가',
+  'item-restored': '취소 복구',
   'qty-changed': '수량 변경',
   'order-new': '새 주문',
   unshipped: '미출고',
   'item-modified': '상품 수정',
+  'order-modified': '업체 정보 수정',
   'card-complete': '업체 포장 완료',
   'item-packed': '포장 체크',
 };
@@ -37,10 +41,12 @@ const TONE_OF: Record<OrderEventKind, ToneName> = {
   'item-cancelled': 'cancel',
   'order-removed': 'cancel',
   'item-added': 'added',
+  'item-restored': 'added',
   'qty-changed': 'changed',
   'order-new': 'new-order',
   unshipped: 'unshipped',
   'item-modified': 'changed',
+  'order-modified': 'changed',
   'card-complete': 'complete',
   'item-packed': 'tick',
 };
@@ -53,8 +59,9 @@ export interface OrderEvent {
 }
 
 export interface OrderSnapshot {
-  rows: Pick<OrderRow, 'dailyBusinessId' | 'businessName' | 'round'>[];
-  items: Pick<OrderItem, 'id' | 'dailyBusinessId' | 'productName' | 'quantity' | 'unit' | 'isMulbong' | 'hasAerator' | 'sizeRequest' | 'isPacked' | 'unshippedQuantity' | 'changeStatus'>[];
+  rows: Pick<OrderRow, 'dailyBusinessId' | 'businessName' | 'round' | 'memo' | 'terminal'>[];
+  // measuredWeightKg는 일부러 뺀다: 박스 할당 제출이 바꾸는 값이라 주문 변경이 아닌데도 울리게 된다.
+  items: Pick<OrderItem, 'id' | 'dailyBusinessId' | 'productName' | 'quantity' | 'unit' | 'secondaryWeightKg' | 'isMulbong' | 'hasAerator' | 'sizeRequest' | 'isPacked' | 'unshippedQuantity' | 'changeStatus'>[];
 }
 
 export function diffOrders(prev: OrderSnapshot, next: OrderSnapshot): OrderEvent[] {
@@ -93,7 +100,11 @@ export function diffOrders(prev: OrderSnapshot, next: OrderSnapshot): OrderEvent
       if (p.changeStatus !== 'cancelled') events.push({ kind: p.isPacked ? 'packed-item-changed' : 'item-cancelled', ...base });
       continue;
     }
-    if (p.quantity !== n.quantity || p.unit !== n.unit) {
+    if (p.changeStatus === 'cancelled') {
+      events.push({ kind: 'item-restored', ...base });
+      continue;
+    }
+    if (p.quantity !== n.quantity || p.unit !== n.unit || p.secondaryWeightKg !== n.secondaryWeightKg) {
       events.push({ kind: p.isPacked ? 'packed-item-changed' : 'qty-changed', ...base });
     } else if (p.unshippedQuantity !== n.unshippedQuantity) {
       events.push({ kind: 'unshipped', ...base });
@@ -107,6 +118,15 @@ export function diffOrders(prev: OrderSnapshot, next: OrderSnapshot): OrderEvent
   for (const p of prev.items) {
     if (nextItems.has(p.id) || removedBusinesses.has(p.dailyBusinessId)) continue;
     events.push({ kind: p.isPacked ? 'packed-item-changed' : 'item-cancelled', business: businessName(p.dailyBusinessId), product: p.productName });
+  }
+
+  // 업체 카드 자체의 수정: 메모·터미널·이름(방금 만들어졌거나 지워진 카드는 위에서 이미 알렸다).
+  for (const n of next.rows) {
+    const p = prevRows.get(n.dailyBusinessId);
+    if (!p) continue;
+    if ((p.memo ?? '') !== (n.memo ?? '') || p.terminal !== n.terminal || p.businessName !== n.businessName) {
+      events.push({ kind: 'order-modified', business: n.businessName, round: n.round });
+    }
   }
 
   // 업체 전체 포장 완료: 이전에는 끝나지 않았고 지금은 끝난 카드(방금 만들어진 카드는 제외).
@@ -131,8 +151,10 @@ const SUMMARY_LABEL: Partial<Record<OrderEventKind, string>> = {
   'order-new': '새 주문',
   'order-removed': '주문 삭제',
   'item-added': '추가',
+  'item-restored': '복구',
   'qty-changed': '수정',
   'item-modified': '수정',
+  'order-modified': '수정',
   unshipped: '미출고',
   'item-cancelled': '취소',
   'card-complete': '포장 완료',
@@ -148,10 +170,12 @@ export function spokenEvent(e: OrderEvent): string {
     case 'item-cancelled': return `취소. ${who}`;
     case 'order-removed': return `주문 삭제. ${e.business}`;
     case 'item-added': return `품목 추가. ${who}`;
+    case 'item-restored': return `취소 복구. ${who}`;
     case 'qty-changed': return `수량 변경. ${who}`;
     case 'order-new': return e.round && e.round > 1 ? `${e.round}차 새 주문. ${e.business}` : `새 주문. ${e.business}`;
     case 'unshipped': return `미출고. ${who}`;
     case 'item-modified': return `상품 수정. ${who}`;
+    case 'order-modified': return `업체 정보 수정. ${e.business}`;
     case 'card-complete': return `${e.business}. 포장 완료`;
     case 'item-packed': return '';
   }
@@ -165,10 +189,12 @@ export function describeEvent(e: OrderEvent): string {
     case 'item-cancelled': return `취소, ${who}`;
     case 'order-removed': return `주문 삭제, ${e.business}`;
     case 'item-added': return `품목 추가, ${who}`;
+    case 'item-restored': return `취소 복구, ${who}`;
     case 'qty-changed': return `수량 변경, ${who}`;
     case 'order-new': return e.round && e.round > 1 ? `${e.round}차 새 주문, ${e.business}` : `새 주문, ${e.business}`;
     case 'unshipped': return `미출고, ${who}`;
     case 'item-modified': return `상품 수정, ${who}`;
+    case 'order-modified': return `업체 정보 수정, ${e.business}`;
     case 'card-complete': return `${e.business} 포장 완료`;
     case 'item-packed': return `포장 체크, ${who}`;
   }

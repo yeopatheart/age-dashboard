@@ -10,13 +10,14 @@ import { useSoundSettings } from '@/lib/sound/settings';
 import { getAudioContext, isAudioRunning, playTone, subscribeAudioState, unlockAudio } from '@/lib/sound/tones';
 import { primeVoice } from '@/lib/sound/voice';
 
-// 실시간 알림 = 실시간 갱신 + 변경 소리·목록. 칠판 기기에서만 켠다(기기마다 따로 저장). 입력하는 PC·휴대폰에서는 켜지 않으므로
-// 내가 고친 주문이 나에게 울리거나 입력 중 화면이 바뀌는 일이 없다. 같은 브라우저의 두 창은 설정을 공유하므로
-// 한쪽 칠판 창의 주소에 `&sound=off`를 붙이면 그 창만 조용히 갱신만 한다.
+// 실시간 알림 = 실시간 갱신 + 변경 소리·목록. 켠 기기에서만 동작한다(기기마다 따로 저장, 기본은 꺼짐).
+// 입력하는 PC에서도 켤 수 있고, 그 PC에서 내가 고친 주문도 똑같이 울린다(같은 화면에서 일어난 변경과 다른 기기의 변경을 구분하지 않는다).
+// 같은 브라우저의 두 창은 설정을 공유하므로 한쪽 창의 주소에 `&sound=off`를 붙이면 그 창만 조용히 갱신만 한다.
+// 휴대폰 화면에는 이 컴포넌트가 없다. 폰은 소리 없이 30초마다 새로 받는다(dashboard-mobile의 useAutoRefresh).
 const BURST_QUIET_MS = 1500; // 이벤트가 이 시간 동안 더 오지 않으면 모아서 한 번에 알린다
 const BURST_MAX_MS = 4000; // 계속 오더라도 이 시간이 지나면 일단 알린다
 const RECENT_LIMIT = 12;
-const STALE_MS = 10 * 60_000; // 마지막 갱신이 이 시간보다 오래되면 낡은 화면으로 본다
+const STALE_MS = 3 * 60_000; // 마지막 갱신이 이 시간보다 오래되면 낡은 화면으로 본다(안전 새로고침이 1분 간격이라 그보다 충분히 길게)
 
 interface RecentEvent {
   at: number;
