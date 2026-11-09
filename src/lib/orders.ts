@@ -23,6 +23,12 @@ export function roundLabel(round: OrderRound): string {
   return `${round}차`;
 }
 
+// 박스 라벨·상차 스캔처럼 업체명만 보이는 곳에서 1차·2차 카드를 구분하는 이름. 같은 날 1·2차가 둘 다 있는 업체만 "이름 2차"로 쓴다
+// (한 차수뿐이면 구분할 필요가 없어 라벨 글자를 아낀다). DB 값이 1·2가 아니면 1차로 본다.
+export function nameWithRound(name: string, round: number, split: boolean): string {
+  return split ? `${name} ${roundLabel(round === 2 ? 2 : 1)}` : name;
+}
+
 export interface OrderRow {
   dailyBusinessId: string;
   businessId: string;

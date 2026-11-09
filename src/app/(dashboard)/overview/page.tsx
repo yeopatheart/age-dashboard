@@ -64,11 +64,11 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const businessName = new Map(businesses.map((b) => [b.id, b.name]));
   const terminalById = new Map((terminals ?? []).map((t) => [t.id, t]));
   const split = businessIdsInBothRounds(dailyRows.map((d) => ({ businessId: d.business_id, round: d.round })));
-  const cards = dailyRows.map((d, index) => {
+  const cards = dailyRows.map((d) => {
     const terminal = d.terminal_id ? terminalById.get(d.terminal_id) : undefined;
     const input: OverviewCardInput = {
       id: d.id,
-      number: index + 1,
+      number: d.business_number, // 박스 라벨·QR의 업체 번호와 같은 번호(화면 순서가 아니다)
       name: d.display_name ?? businessName.get(d.business_id) ?? '',
       terminal: terminal?.name ?? '',
       separate: terminal?.is_separate ?? false,

@@ -304,7 +304,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
                 <>
                 <div className="dm-card-top">
                   <button className="dm-card-head" onClick={() => toggleOpen(row.dailyBusinessId)} aria-expanded={open}>
-                    <span className="dm-no">{segmentRows.indexOf(row) + 1}</span>
+                    <span className="dm-no">{row.businessNumber}</span>
                     <span className="dm-title">
                       <span className={`dm-term ${badge.className}`} style={badge.style}>{row.terminal || '-'}</span>
                       <span className="dm-name">
@@ -451,7 +451,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
         .dm-card { background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
         .dm-card-done { background: #f0fdf4; border-color: #86efac; }
         .dm-card-top { display: flex; align-items: flex-start; }
-        .dm-no { flex: none; width: 22px; height: 22px; border-radius: 999px; background: #f1f5f9; color: #64748b; display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 800; font-variant-numeric: tabular-nums; }
+        .dm-no { flex: none; min-width: 22px; padding: 0 3px; height: 22px; border-radius: 999px; background: #f1f5f9; color: #64748b; display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 800; font-variant-numeric: tabular-nums; }
         .dm-card-done .dm-no { background: #dcfce7; color: #166534; }
         .dm-grip { flex: none; width: 40px; height: 44px; margin-right: 0.2rem; display: grid; place-items: center; background: none; border: 0; color: #94a3b8; touch-action: none; cursor: grab; border-radius: 10px; }
         .dm-grip:active { background: #f1f5f9; color: #475569; }

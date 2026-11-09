@@ -15,6 +15,7 @@ export interface ScanCard {
   id: string;
   number: number;
   business: string;
+  roundLabel: string | null; // 같은 날 1·2차가 둘 다 있는 업체만(목록에서 같은 이름의 카드를 구분한다)
   terminal: string;
   loaded: number;
   total: number;
@@ -82,6 +83,9 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         const b = result.box;
         const at = b.loadedAt ? new Date(b.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
         next = { tone: 'dup', title: '이미 상차된 박스', detail: `${b.business} ${b.boxNo}번${at ? ` · ${at}에 처리됨` : ''}`, labelId: b.labelId, box: { business: b.business, boxNo: b.boxNo, mergedSeqs: b.mergedSeqs }, progress: { loaded: b.loadedCount, total: b.totalCount } };
+      } else if (result.status === 'past') {
+        const [, month, day] = result.date.split('-');
+        next = { tone: 'bad', title: `${Number(month)}/${Number(day)} 날짜의 라벨입니다`, detail: `오늘(${today}) 박스가 아니라서 상차하지 않았습니다 · ${result.code}` };
       } else {
         next = { tone: 'bad', title: result.status === 'invalid' ? '우리 라벨이 아닙니다' : '출력된 적 없는 번호', detail: result.code };
       }
@@ -90,7 +94,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       setRecent((prev) => [{ time, text: next.title, tone: next.tone }, ...prev].slice(0, 8));
       beep(next.tone);
     },
-    [beep],
+    [beep, today],
   );
 
   const submitCode = useCallback(
@@ -365,7 +369,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
               {visibleCards.map((c) => (
                 <li key={c.id} className={c.loaded === c.total ? 'sc-done' : ''}>
                   <span className="sc-tag">{c.terminal || '-'}</span>
-                  <span className="sc-name">{c.business}</span>
+                  <span className="sc-name">{c.business}{c.roundLabel ? ` ${c.roundLabel}` : ''}</span>
                   <span className="sc-prog">{c.loaded}/{c.total}</span>
                 </li>
               ))}
