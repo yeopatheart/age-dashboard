@@ -17,7 +17,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { BarChart3, ClipboardList, GripVertical, Package, Plus, Trash2, X } from 'lucide-react';
+import { BarChart3, CircleDashed, ClipboardList, GripVertical, Package, PackageCheck, Plus, Printer, PrinterCheck, PrinterX, Trash2, X } from 'lucide-react';
 import type { RecommendationView, StoredPlan } from '@/lib/packing/server';
 import { submitPacking, assignItemsToBoxes, deletePackingRecord } from './actions';
 import { LabelPanel } from './label-panel';
@@ -405,14 +405,20 @@ export function PackingLogClient({
                   <span className="pk-biz-name">{r.businessName}{r.roundLabel && ` (${r.roundLabel})`}</span>
                   {isModified(r) && <span className="pk-editing" title="수정한 내용이 아직 제출되지 않았습니다">수정 중</span>}
                   {r.orderChanged && <span className="pk-changed" title={r.submitted ? '제출한 뒤 주문이 바뀌었습니다' : '추천을 만든 뒤 주문이 바뀌었습니다'}>주문 변경</span>}
-                  {r.submitted ? <span className="ak-tag ak-tag-on">제출 · 박스 {r.submitted.boxes.length}</span> : <span className="ak-tag ak-tag-off">미기록</span>}
+                  <span className="pk-chips">
+                  {r.submitted ? (
+                    <span className="ak-tag ak-tag-on pk-ico" title={`제출 · 박스 ${r.submitted.boxes.length}개`} aria-label={`제출, 박스 ${r.submitted.boxes.length}개`}><PackageCheck size={14} aria-hidden />{r.submitted.boxes.length}</span>
+                  ) : (
+                    <span className="ak-tag ak-tag-off pk-ico" title="미기록" aria-label="미기록"><CircleDashed size={14} aria-hidden /></span>
+                  )}
                   {r.labelStatus && r.labelStatus.total > 0 && (
                     r.labelStatus.printed === 0
-                      ? <span className="ak-tag ak-tag-off">라벨 미출력</span>
+                      ? <span className="ak-tag ak-tag-off pk-ico" title="라벨 미출력" aria-label="라벨 미출력"><PrinterX size={14} aria-hidden /></span>
                       : r.labelStatus.printed < r.labelStatus.total
-                        ? <span className="ak-tag pk-label-part" title="아직 출력하지 않은 박스 라벨이 있습니다">라벨 {r.labelStatus.printed}/{r.labelStatus.total}</span>
-                        : <span className="ak-tag ak-tag-on">라벨 {r.labelStatus.printed}/{r.labelStatus.total}</span>
+                        ? <span className="ak-tag pk-label-part pk-ico" title={`라벨 ${r.labelStatus.printed}/${r.labelStatus.total} 출력 (아직 출력하지 않은 박스가 있습니다)`} aria-label={`라벨 ${r.labelStatus.total}개 중 ${r.labelStatus.printed}개 출력`}><Printer size={14} aria-hidden />{r.labelStatus.printed}/{r.labelStatus.total}</span>
+                        : <span className="ak-tag ak-tag-on pk-ico" title={`라벨 ${r.labelStatus.total}/${r.labelStatus.total} 모두 출력`} aria-label={`라벨 ${r.labelStatus.total}개 모두 출력`}><PrinterCheck size={14} aria-hidden />{r.labelStatus.printed}/{r.labelStatus.total}</span>
                   )}
+                  </span>
                 </span>
                 <span className="pk-biz-sub">{r.terminal || '터미널 없음'} · 상품 {r.items.length}개</span>
               </button>
@@ -579,6 +585,8 @@ export function PackingLogClient({
         .pk-biz-on { border-color: var(--primary); background: var(--primary-light); }
         .pk-biz-top { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; flex-wrap: wrap; }
         .pk-biz-name { font-weight: 700; font-size: var(--fs-md); min-width: 0; overflow-wrap: anywhere; }
+        .pk-chips { display: inline-flex; align-items: center; gap: 0.3rem; flex: none; }
+        .pk-ico { display: inline-flex; align-items: center; gap: 0.2rem; }
         .pk-label-part { background: #fffbeb; border-color: #fcd34d; color: #b45309; }
         .pk-biz .ak-tag, .pk-biz .pk-changed, .pk-biz .pk-editing { white-space: nowrap; flex: none; }
         .pk-biz-sub { font-size: var(--fs-xs); color: var(--muted-foreground); }
