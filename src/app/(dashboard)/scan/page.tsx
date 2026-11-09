@@ -5,6 +5,7 @@ import { requireMenu } from '@/lib/permissions/access';
 import { todayKST } from '@/lib/order-date';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { packageCounts } from '@/lib/scan-share-text';
+import { loadAppSettings } from '@/lib/settings-server';
 
 // 상차 스캔 화면. 그날 발급된 박스 라벨을 업체 카드별·터미널별로 모아 "상차 몇 박스 / 전체 몇 박스"를 보여준다.
 export default async function ScanPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
@@ -14,11 +15,12 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
   const orderDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today ? date : today;
   const supabase = await createClient();
 
-  const [, { data: dailies, error }, { data: businesses }, { data: terminals }] = await Promise.all([
+  const [, { data: dailies, error }, { data: businesses }, { data: terminals }, settings] = await Promise.all([
     accessCheck,
     supabase.from('daily_businesses').select('id, business_id, terminal_id, business_number, round, sort_order, display_name, merge_groups').eq('order_date', orderDate).order('sort_order'),
     fetchAll((from, to) => supabase.from('businesses').select('id, name').order('id').range(from, to), '업체 조회 실패: ').then((data) => ({ data })),
     supabase.from('terminals').select('id, name'),
+    loadAppSettings(supabase), // 터미널별 상차 완료 글의 형식(시스템 설정)
   ]);
   if (error) throw new Error(`상차 현황 조회 실패: ${error.message}`);
   const dailyRows = dailies ?? [];
@@ -47,5 +49,5 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
     ];
   });
 
-  return <ScanClient orderDate={orderDate} today={today} cards={cards} />;
+  return <ScanClient orderDate={orderDate} today={today} cards={cards} shareTemplate={settings.scanShare} />;
 }

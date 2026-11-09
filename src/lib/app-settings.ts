@@ -1,5 +1,7 @@
 // 시스템 설정(config)의 키, 기본값, 검증. 값은 app_settings 테이블(key/value jsonb)에 저장하고, 저장된 값이 없으면
 // 여기의 기본값을 쓴다. 서버/클라이언트 어디서나 쓸 수 있게 DB 접근은 이 파일에 넣지 않는다.
+import { DEFAULT_SCAN_SHARE_TEMPLATE, normalizeScanShareTemplate, type ScanShareTemplate } from './scan-share-template.ts';
+
 export interface AppSettings {
   // 요구사항 해석
   sizeTolerancePct: number; // "2.5kg내외"의 허용 오차(±%)
@@ -15,6 +17,8 @@ export interface AppSettings {
   // 송장 라벨에 찍는 상호와 연락처
   companyName: string;
   contactPhone: string;
+  // 상차 스캔에서 터미널별로 카카오톡에 보내는 상차 완료 글의 형식(문구 + {변수})
+  scanShare: ScanShareTemplate;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -27,6 +31,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   allowPastOrderEdit: false,
   companyName: '통영아재수산',
   contactPhone: '',
+  scanShare: DEFAULT_SCAN_SHARE_TEMPLATE,
 };
 
 const num = (v: unknown, fallback: number, min: number, max: number) => {
@@ -51,5 +56,6 @@ export function mergeSettings(stored: Record<string, unknown> | null | undefined
     allowPastOrderEdit: typeof s.allowPastOrderEdit === 'boolean' ? s.allowPastOrderEdit : d.allowPastOrderEdit,
     companyName: text(s.companyName, d.companyName),
     contactPhone: text(s.contactPhone, d.contactPhone),
+    scanShare: normalizeScanShareTemplate(s.scanShare),
   };
 }
