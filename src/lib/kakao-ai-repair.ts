@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { getAnthropicClient } from './anthropic-client';
 import { normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from './kakao-parser';
+import { isPlaceholderText } from './validate';
 
 // 정규식 파서가 "터미널/업체명/상품" 3분할 자체에 실패한 줄만 여기로 온다(줄 단위 fallback,
 // 상품 단위 사소한 오류는 기존처럼 needsReview로 사람이 고친다 — docs/decisions 참고).
@@ -21,7 +22,9 @@ const SYSTEM_PROMPT = `너는 통영 수산물 도매업체의 카카오톡 주�
 - "얼음"/"아이스팩"/"얼려서" 등이 포함되면 hasIcePack: true.
 - "재고"/"있는거" 등 재고 사용을 뜻하면 fromStock: true.
 확신이 서지 않는 값은 각 필드의 기본값(0이 아닌 경우 null 또는 false)을 사용해라. 절대 상품을 지어내지 마라 —
-원문에 없는 상품을 추가하지 말고, 정말 아무것도 못 알아보겠으면 products를 빈 배열로 반환해라.`;
+원문에 없는 상품을 추가하지 말고, 정말 아무것도 못 알아보겠으면 products를 빈 배열로 반환해라.
+원문에서 알 수 없는 값을 "<UNKNOWN>", "알 수 없음", "미상", "N/A" 같은 자리표시 글자로 채우지 마라.
+터미널명을 알 수 없으면 terminalName은 빈 문자열("")로 두고(업체의 기본 터미널을 쓴다), 업체명을 알 수 없으면 products를 빈 배열로 반환해라.`;
 
 const PRODUCT_SCHEMA = {
   type: 'object',
@@ -107,8 +110,12 @@ export async function repairFailedLine(
     const toolUse = response.content.find((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use');
     if (!toolUse || !isRepairedLine(toolUse.input)) return null;
 
-    const { terminalName, businessName, products: repairedProducts } = toolUse.input;
-    if (!terminalName.trim() || !businessName.trim() || repairedProducts.length === 0) return null;
+    const { products: repairedProducts } = toolUse.input;
+    // 자리표시 값("<UNKNOWN>" 등)을 업체명·상품명으로 확정하면 쓰레기 업체·상품이 마스터에 생기므로 이 줄은 AI 보정에서 버리고 정규식 결과로 돌아간다.
+    // 터미널은 비어 있어도 된다(주문 확정 때 업체의 기본 터미널을 쓴다).
+    const businessName = toolUse.input.businessName.trim();
+    const terminalName = isPlaceholderText(toolUse.input.terminalName) ? '' : toolUse.input.terminalName.trim();
+    if (isPlaceholderText(businessName) || repairedProducts.length === 0 || repairedProducts.some((p) => isPlaceholderText(p.productName))) return null;
 
     const products: ParsedProduct[] = repairedProducts.map((p) => ({
       raw: rawLine,

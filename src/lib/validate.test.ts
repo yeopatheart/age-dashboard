@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isIsoDate, nonNegativeNumberError, positiveNumberError, textError } from './validate.ts';
+import { isIsoDate, isPlaceholderText, nonNegativeNumberError, positiveNumberError, textError } from './validate.ts';
 
 test('isIsoDate accepts real dates only', () => {
   assert.equal(isIsoDate('2026-11-14'), true);
@@ -27,4 +27,13 @@ test('number validators reject NaN, Infinity, and out-of-range values', () => {
   assert.equal(positiveNumberError(0.5, '수량'), null);
   assert.equal(nonNegativeNumberError(0, '무게'), null);
   assert.notEqual(nonNegativeNumberError(-0.1, '무게'), null);
+});
+
+test('isPlaceholderText catches filler values the AI writes for unknown fields', () => {
+  for (const v of ['', '  ', '<UNKNOWN>', '<unknown>', '[unknown]', '(알 수 없음)', 'UNKNOWN', 'N/A', 'null', '미상', '알 수 없음', '없음', '?', '???', '-', '—']) {
+    assert.equal(isPlaceholderText(v), true, `expected placeholder: ${JSON.stringify(v)}`);
+  }
+  for (const v of ['마린호텔', '스시집', '대구', '활고등어', '해월일식', '2호점', '미상수산', '알수없는횟집']) {
+    assert.equal(isPlaceholderText(v), false, `expected real value: ${JSON.stringify(v)}`);
+  }
 });

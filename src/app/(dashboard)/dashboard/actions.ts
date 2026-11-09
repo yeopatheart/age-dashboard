@@ -252,6 +252,20 @@ export async function cancelOrderItem(orderItemId: string): Promise<{ error: str
   return { error: null };
 }
 
+// 방금 취소한 상품을 되살린다(취소 직후의 "되돌리기"). 취소 상태인 줄만 바꾸고, 취소하기 전 상태(new/modified/none)로 돌려놓는다.
+export async function restoreOrderItem(orderItemId: string, previousStatus: 'new' | 'modified' | 'none'): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:delete');
+  if (!['new', 'modified', 'none'].includes(previousStatus)) return { error: '되돌릴 상태가 올바르지 않습니다.' };
+  const supabase = await createClient();
+  const guard = await itemDateError(supabase, orderItemId);
+  if (guard) return { error: guard };
+  const { data, error } = await supabase.from('order_items').update({ change_status: previousStatus }).eq('id', orderItemId).eq('change_status', 'cancelled').select('id');
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: '이미 취소 상태가 아니라서 되돌릴 것이 없습니다.' };
+  revalidatePath('/dashboard');
+  return { error: null };
+}
+
 export async function deleteOrderItem(orderItemId: string): Promise<{ error: string | null }> {
   await requirePermission('dashboard:delete');
   const supabase = await createClient();

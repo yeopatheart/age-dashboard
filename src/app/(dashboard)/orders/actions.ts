@@ -245,6 +245,29 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
       continue;
     }
 
+    // 읽지 못한 줄(형식이 깨졌고 AI 보정도 못 한 줄, 상품이 하나도 없는 줄)은 조용히 사라지지 않게 원문 그대로 "자동 제외" 행으로 보여 준다.
+    if (line.products.length === 0) {
+      suggestions.push({
+        ...base,
+        key: `${line.raw}__unreadable`,
+        businessNameRaw: line.raw,
+        terminalName: '',
+        matchedBusinessId: null,
+        matchedBusinessName: null,
+        isNewTerminal: false,
+        isNewBusiness: false,
+        product: blankProduct(line.raw, line.raw),
+        kind: 'no_change',
+        existingOrderItemId: null,
+        needsReview: true,
+        blocking: true,
+        sizeSpecText: [],
+        sizeSpecUnparsed: [],
+        reviewReason: '읽지 못한 줄입니다 (터미널/ 업체명/ 상품 형식으로 적어주세요)',
+      });
+      continue;
+    }
+
     line.products.forEach((product, idx) => {
       // 같은 상품도 물봉·기포기·일반은 준비 방식이 달라 별개 줄이다(예: "보리새우 30미(일반, 물봉)"과 "(일반, 기포기)"). 취소는 상품명만으로 찾는다.
       const existing = existingItems.find((i) => i.product_name_raw === product.productName && (product.isCancel || prepOf({ isMulbong: i.is_mulbong, hasAerator: i.has_aerator }) === prepOf(product)));
