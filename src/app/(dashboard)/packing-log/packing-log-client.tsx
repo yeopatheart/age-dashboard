@@ -391,20 +391,23 @@ export function PackingLogClient({
 
   return (
     <div className="pk-root">
-      <div className="page-header">
-        <div className="page-header-icon"><ClipboardList size={20} /></div>
-        <div>
-          <h1 className="page-title">박스 할당 / 라벨 출력</h1>
-          <p className="page-sub">추천된 박스와 담길 상품을 확인하세요. 맞으면 &ldquo;맞아요. 제출할게요.&rdquo;, 다르면 &ldquo;수정할게요.&rdquo;를 눌러 박스와 상품을 고친 뒤 제출하세요. 제출한 기록은 추천의 정확도 측정과 학습에 쓰입니다.</p>
+      {/* PC에서는 제목 줄과 날짜·필터 줄을 한 줄로 합쳐 작업 영역이 위로 올라오게 한다(휴대폰은 제목 줄이 숨겨지고 도구줄만 남는다). */}
+      <div className="pk-top">
+        <div className="page-header">
+          <div className="page-header-icon"><ClipboardList size={20} /></div>
+          <div>
+            <h1 className="page-title">박스 할당 / 라벨 출력</h1>
+            <p className="page-sub">추천 박스를 확인해 제출하고, 제출한 박스의 라벨을 출력합니다. 제출한 기록은 추천의 정확도 측정과 학습에 쓰입니다.</p>
+          </div>
         </div>
-      </div>
 
-      <div className="ak-toolbar">
-        <DateNav value={orderDate} today={today} onChange={go} label="박스 할당 날짜" />
-        <span className="ak-count">업체 {rows.length}곳 · 제출 {doneCount}곳</span>
-        <span className="ak-spacer" />
-        <Link href="/packing-log/accuracy" className="ak-btn"><BarChart3 size={14} /> 추천 정확도</Link>
-        <label className="pk-check"><input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} /> 미기록 업체만</label>
+        <div className="ak-toolbar">
+          <DateNav value={orderDate} today={today} onChange={go} label="박스 할당 날짜" />
+          <span className="ak-count">업체 {rows.length}곳 · 제출 {doneCount}곳</span>
+          <span className="ak-spacer" />
+          <Link href="/packing-log/accuracy" className="ak-btn"><BarChart3 size={14} /> 추천 정확도</Link>
+          <label className="pk-check"><input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} /> 미기록 업체만</label>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -650,6 +653,29 @@ export function PackingLogClient({
         .pk-warn { font-size: var(--fs-xs); font-weight: 800; color: #b45309; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 999px; padding: 0 0.35rem; }
         .pk-foot { display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 1.1rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
         .pk-submit { height: 2.5rem; padding: 0 1.4rem; font-size: var(--fs-md); }
+        /* PC(901px 이상)에서만 압축한다: 제목 줄과 도구줄을 한 줄로, 작업 영역의 여백·높이를 줄여 업체를 골라도 스크롤이 거의 생기지 않게 한다. 휴대폰은 손으로 누르기 좋은 기존 크기를 쓴다. */
+        .pk-top { display: flex; align-items: center; gap: 0.5rem 1rem; flex-wrap: wrap; }
+        .pk-top .page-header { flex: 1 1 22rem; min-width: 0; align-items: center; }
+        .pk-top .ak-toolbar { margin-left: auto; }
+        @media (max-width: 900px) { .pk-top .ak-toolbar { flex: 1 1 100%; margin-left: 0; } }
+        @media (min-width: 901px) {
+          .pk-top .page-header-icon { width: 36px; height: 36px; border-radius: 10px; }
+          .pk-top .page-sub { margin-top: 0.1rem; line-height: 1.3; }
+          .pk-top .ak-toolbar { background: transparent; border: 0; box-shadow: none; padding: 0; }
+          .pk-list { max-height: calc(100vh - 9rem); }
+          .pk-work-head { padding: 0.5rem 1rem; }
+          .pk-rec { padding: 0.4rem 1rem; }
+          .pk-tab { padding: 0.25rem 0.75rem; font-size: var(--fs-sm); border-radius: 10px; }
+          .pk-board { padding: 0.65rem 1rem; gap: 0.75rem; min-height: 0; }
+          .pk-boxes { gap: 0.5rem; }
+          .pk-slots { gap: 0.6rem; grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr)); }
+          .pk-slot { min-height: 6rem; }
+          .pk-foot { padding: 0.5rem 1rem; }
+          .pk-slot-head { padding: 0.45rem 0.6rem; gap: 0.25rem; }
+          .pk-slot-body { padding: 0.4rem; gap: 0.25rem; }
+          .pk-chip { padding: 0.2rem 0.45rem; }
+          .pk-big { min-height: 2.75rem; padding: 0 1.3rem; font-size: var(--fs-lg); border-radius: 12px; }
+        }
         /* 작업 영역 폭이 좁으면(태블릿/좁은 창) 상품 영역을 박스 영역 위로 쌓는다. */
         @container (max-width: 52rem) { .pk-board { grid-template-columns: 1fr; } }
         @media (max-width: 900px) { .pk-layout { grid-template-columns: 1fr; } .pk-board { grid-template-columns: 1fr; } .pk-list { max-height: none; flex-direction: row; overflow-x: auto; padding-bottom: 0.25rem; } .pk-biz { flex: none; width: 12.5rem; } .pk-biz-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 100%; } }
