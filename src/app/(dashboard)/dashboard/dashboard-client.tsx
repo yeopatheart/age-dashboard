@@ -11,7 +11,7 @@ import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { DashboardMobile } from './dashboard-mobile';
 import { DashboardSound } from './dashboard-sound';
-import { useToast } from '@/components/toast';
+import { useToast, useUndoToast } from '@/components/toast';
 import {
   setProductHighlight,
   clearProductHighlights,
@@ -24,6 +24,7 @@ import {
   addOrderItemManual,
   updateOrderItemManual,
   cancelOrderItem,
+  restoreOrderItem,
   setItemUnshipped,
   deleteOrderItem,
   type ManualItemFields,
@@ -750,6 +751,7 @@ export function DashboardClient({
   // 칠판 모드(실시간 알림)를 켜도 수정은 막지 않는다 — 형이 입력하는 PC에서도 소리 알림을 켜고 쓴다(2026-11-07 현장 확인).
   const readOnly = (isPast && !allowPast) || !can('dashboard:edit');
   const [toastNode, showToast] = useToast();
+  const [undoNode, showUndo] = useUndoToast();
 
   // 칠판 창의 `&sound=off`(그 창만 소리 끔)는 모니터·날짜를 바꿔도 유지한다.
   const soundOffParam = searchParams.get('sound') === 'off' ? '&sound=off' : '';
@@ -1029,9 +1031,16 @@ export function DashboardClient({
     });
   };
 
+  // 취소는 확인 없이 바로 실행하되, 바로 뒤에 "되돌리기"를 보여 준다(오클릭 대비). 되돌리면 취소하기 전 상태로 돌아간다.
   const handleCancelItem = async (item: OrderItem) => {
+    const previous = item.changeStatus;
     const { error } = await cancelOrderItem(item.id);
-    if (error) showToast(error);
+    if (error) return showToast(error);
+    if (previous === 'cancelled') return;
+    showUndo(`${item.businessName} ${item.productName} 주문을 취소했습니다`, async () => {
+      const result = await restoreOrderItem(item.id, previous);
+      if (result.error) showToast(result.error);
+    });
   };
 
   const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; round: OrderRound }): Promise<string | null> => {
@@ -1112,6 +1121,7 @@ export function DashboardClient({
   const overlays = (
     <>
       {toastNode}
+      {undoNode}
       {addOrderModal && (
         <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={allRows.map((r) => ({ businessId: r.businessId, round: r.round, terminal: r.terminal }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
       )}

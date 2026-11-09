@@ -28,3 +28,14 @@ export function nonNegativeNumberError(value: number, label: string, max = 1_000
   if (value > max) return `${label}이(가) 너무 큽니다.`;
   return null;
 }
+
+// AI가 모르는 값을 "<UNKNOWN>"처럼 자리표시 글자로 채우는 것을 거른다. 빈 글자도 자리표시로 본다.
+// 꺾쇠·대괄호로 감싼 글자, unknown/n/a/null 같은 영어 표기, 미상·알 수 없음 같은 한글 표기, 기호만 있는 글자가 해당한다.
+const PLACEHOLDER_WORDS = new Set(['unknown', 'n/a', 'na', 'null', 'none', 'undefined', 'unspecified', '미상', '불명', '미확인', '알수없음', '없음', '모름']);
+export function isPlaceholderText(value: string): boolean {
+  const t = value.trim();
+  if (!t) return true;
+  if (/^[<\[({].*[>\])}]$/.test(t)) return true;
+  if (/^[\s?!.\-–—_/*~]+$/.test(t)) return true;
+  return PLACEHOLDER_WORDS.has(t.toLowerCase().replace(/\s+/g, ''));
+}

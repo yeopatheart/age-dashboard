@@ -2,6 +2,8 @@
 //
 // 현장 순서: 박스 할당 → 라벨 출력 → 포장 → 상차. 라벨 출력 전에는 포장을 시작하지 않는다.
 // 고객 카드 하나의 단계는 "처음으로 안 끝난 단계"다. 박스 단위인 라벨·상차는 박스 수와 비교해서 고객 단계로 올린다.
+// 단, 상차 스캔이 한 번이라도 있으면 포장 체크(상품 줄 체크)와 무관하게 상차 기준으로 본다: 현장에서는 박스를 싣는 것이 실제 출고이고,
+// 포장 체크를 빠뜨렸다고 상차까지 끝난 업체가 "포장 중"에 머물면 출고 완료 업체만 올라오는 정산에서 빠진다(누락된 체크는 설명에 따로 보인다).
 //  - 박스 할당 중: 박스 할당에서 아직 제출하지 않았다(박스 수를 모른다)
 //  - 라벨 출력 중: 박스 수만큼 라벨이 아직 안 나왔다
 //  - 포장 중: 라벨은 다 나왔고 상품 포장 체크가 안 끝났다
@@ -12,8 +14,8 @@
 // 그래서 박스 할당·라벨 출력 단계를 건너뛰고, 포장이 끝나면 더 진행할 단계가 없어 "출고 완료"로 본다(택배사 인계는 이 시스템에서 따로 관리하지 않는다).
 // 택배 외 별도 주문(직배송 등)은 기본 주문과 똑같이 박스 할당 → 라벨 출력 → 상차를 거친다.
 // 라벨 행(box_labels)은 라벨을 출력할 때 만들어지므로 행이 있으면 출력된 박스다.
-import { normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
-import { isCardComplete, isUndecidedQuantity, type OrderItem } from '@/lib/orders';
+import { normalizeMergeGroups, type MergeGroups } from './box-merge.ts'; // 상대 경로+.ts: 단위 테스트(node --test)가 @ 별칭을 못 푼다
+import { isCardComplete, isUndecidedQuantity, type OrderItem } from './orders.ts';
 
 export type BoxState = 'none' | 'printed' | 'loaded';
 export interface LabelRow {
@@ -57,10 +59,9 @@ export function stageOf(boxes: number | null, states: BoxState[], packed: boolea
   if (parcel) return packed ? 'done' : 'packing';
   if (boxes == null || boxes <= 0) return 'boxing';
   if (states.some((s) => s === 'none')) return 'labeling';
-  if (!packed) return 'packing';
   const loaded = states.filter((s) => s === 'loaded').length;
-  if (loaded === 0) return 'packed';
-  return loaded < states.length ? 'loading' : 'done';
+  if (loaded > 0) return loaded < states.length ? 'loading' : 'done';
+  return packed ? 'packed' : 'packing';
 }
 
 // 단계 옆에 붙이는 한 줄 설명(예: 라벨 2/3장, 상품 3/4줄 포장)
@@ -69,13 +70,15 @@ export function stageDetail(stage: Stage, c: { parcel: boolean; boxStates: BoxSt
   const n = c.boxStates.length;
   const printed = c.boxStates.filter((s) => s !== 'none').length;
   const loaded = c.boxStates.filter((s) => s === 'loaded').length;
+  // 상차까지 갔는데 포장 체크가 빠진 줄이 있으면 알려 준다(상차 기준으로 단계를 정하므로 누락이 가려지지 않게).
+  const unchecked = c.itemsDone < c.itemsLive ? ` · 포장 체크 ${c.itemsDone}/${c.itemsLive}줄` : '';
   switch (stage) {
     case 'boxing': return '박스 미정';
     case 'labeling': return `라벨 ${printed}/${n}장`;
     case 'packing': return `포장 ${c.itemsDone}/${c.itemsLive}줄`;
     case 'packed': return `상차 대기 · ${n}박스`;
-    case 'loading': return `상차 ${loaded}/${n}박스`;
-    case 'done': return `${n}박스 모두 상차`;
+    case 'loading': return `상차 ${loaded}/${n}박스${unchecked}`;
+    case 'done': return `${n}박스 모두 상차${unchecked}`;
   }
 }
 

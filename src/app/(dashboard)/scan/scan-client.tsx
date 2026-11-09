@@ -9,6 +9,7 @@ import { useCan } from '@/components/permissions-context';
 import { playTone, unlockAudio } from '@/lib/sound/tones';
 import { cleanShareText } from '@/lib/share-text';
 import { buildLoadedListText, NO_TERMINAL, type PackageCount } from '@/lib/scan-share-text';
+import { undoneSummary, type UndoneBox } from '@/lib/scan-text';
 
 export interface ScanCard {
   id: string;
@@ -25,6 +26,7 @@ interface Banner {
   title: string;
   detail: string;
   labelId?: string; // 방금 처리한 박스(되돌리기용)
+  box?: UndoneBox; // 방금 처리한 박스의 업체·번호·합포장(취소했을 때 무엇을 취소했는지 보여 주려고 함께 들고 있는다)
   seq?: number; // 몇 번째 결과인지(연속으로 같은 색이 나와도 새 스캔임을 알아보게 배너를 다시 그린다)
   count?: number; // 이번 접속에서 상차한 박스 수(성공했을 때만)
   progress?: { loaded: number; total: number }; // 이 업체의 상차 현황(박스를 찾았을 때만)
@@ -75,11 +77,11 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       let next: Banner;
       if (result.status === 'loaded') {
         const b = result.box;
-        next = { tone: 'ok', title: `${b.business} ${b.boxNo}번`, detail: `${b.terminal || '터미널 없음'}${b.mergedSeqs.length ? ` · 합포장 ${b.mergedSeqs.join('·')}번 함께 상차` : ''}`, labelId: b.labelId, progress: { loaded: b.loadedCount, total: b.totalCount }, done: b.loadedCount >= b.totalCount };
+        next = { tone: 'ok', title: `${b.business} ${b.boxNo}번`, detail: `${b.terminal || '터미널 없음'}${b.mergedSeqs.length ? ` · 합포장 ${b.mergedSeqs.join('·')}번 함께 상차` : ''}`, labelId: b.labelId, box: { business: b.business, boxNo: b.boxNo, mergedSeqs: b.mergedSeqs }, progress: { loaded: b.loadedCount, total: b.totalCount }, done: b.loadedCount >= b.totalCount };
       } else if (result.status === 'duplicate') {
         const b = result.box;
         const at = b.loadedAt ? new Date(b.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
-        next = { tone: 'dup', title: '이미 상차된 박스', detail: `${b.business} ${b.boxNo}번${at ? ` · ${at}에 처리됨` : ''}`, labelId: b.labelId, progress: { loaded: b.loadedCount, total: b.totalCount } };
+        next = { tone: 'dup', title: '이미 상차된 박스', detail: `${b.business} ${b.boxNo}번${at ? ` · ${at}에 처리됨` : ''}`, labelId: b.labelId, box: { business: b.business, boxNo: b.boxNo, mergedSeqs: b.mergedSeqs }, progress: { loaded: b.loadedCount, total: b.totalCount } };
       } else {
         next = { tone: 'bad', title: result.status === 'invalid' ? '우리 라벨이 아닙니다' : '출력된 적 없는 번호', detail: result.code };
       }
@@ -196,11 +198,26 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
     [],
   );
 
+  // "이미 상차된 박스" 배너의 취소 버튼은 실수로 누르기 쉬워서 4초 안에 한 번 더 눌러야 취소된다(방금 스캔한 박스의 되돌리기는 바로 실행).
+  const [armedSeq, setArmedSeq] = useState<number | null>(null);
+  const armTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(armTimer.current), []);
   const undo = async () => {
     if (!banner?.labelId) return;
+    if (banner.tone === 'dup' && armedSeq !== banner.seq) {
+      setArmedSeq(banner.seq ?? null);
+      clearTimeout(armTimer.current);
+      armTimer.current = setTimeout(() => setArmedSeq(null), 4000);
+      return;
+    }
+    clearTimeout(armTimer.current);
+    setArmedSeq(null);
     const result = await undoScan(banner.labelId);
-    if (result.error) return setBanner({ tone: 'bad', title: '되돌리지 못했습니다', detail: result.error });
-    setBanner({ tone: 'dup', title: '상차를 취소했습니다', detail: '이 박스는 다시 상차 전 상태입니다.' });
+    if (result.error) return setBanner({ tone: 'bad', title: '되돌리지 못했습니다', detail: result.error, seq: ++seq.current });
+    const done = banner.box ? undoneSummary(banner.box) : { title: '상차를 취소했습니다', detail: '이 박스는 다시 상차 전 상태입니다.' };
+    const time = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    setBanner({ tone: 'dup', title: done.title, detail: done.detail, seq: ++seq.current });
+    setRecent((prev) => [{ time, text: done.title, tone: 'dup' as const }, ...prev].slice(0, 8));
     last.current = null;
   };
 
@@ -300,7 +317,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
             <div className="sc-detail">{banner.detail}</div>
             {banner.count !== undefined && <div className="sc-count">이번 접속 {banner.count}번째 상차</div>}
             {banner.labelId && canUndo && (
-              <button className="sc-undo" onClick={undo}><Undo2 size={16} /> {banner.tone === 'dup' ? '상차를 취소할래요' : '잘못 스캔했어요 (되돌리기)'}</button>
+              <button className="sc-undo" onClick={undo}><Undo2 size={16} /> {banner.tone === 'dup' ? (armedSeq === banner.seq ? '정말 취소할까요? 한 번 더 누르세요' : '상차를 취소할래요') : '잘못 스캔했어요 (되돌리기)'}</button>
             )}
           </div>
         )}
