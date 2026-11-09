@@ -1230,7 +1230,6 @@ export function DashboardClient({
     // (12px/16px) — 여기서 음수 마진으로 상쇄하는 방식은 main-content의 overflow-y:auto가
     // overflow-x까지 auto로 끌어올리는 CSS 규칙과 부딪혀 표 오른쪽이 잘려 보이는 버그가 있었다.
     <div className="flex flex-col h-[calc(100vh-24px)] gap-2">
-      <DashboardSound rows={rawRows} items={serverItems} orderDate={orderDate} />
       <div className="flex justify-between items-center bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex-shrink-0 flex-wrap gap-x-2 gap-y-1.5">
         <div className="flex gap-2 items-center flex-wrap">
           <div className="flex items-center gap-1">
@@ -1243,13 +1242,6 @@ export function DashboardClient({
               className="text-sm font-bold text-slate-800 border border-slate-200 rounded-md px-2 py-1 bg-white"
             />
             <button onClick={() => shiftDate(1)} disabled={orderDate >= today} className="w-7 h-7 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent flex items-center justify-center" title="다음날"><ChevronRight className="w-4 h-4" /></button>
-            {isPast ? (
-              <>
-                <button onClick={() => setDate(today)} className="ml-1 px-2.5 py-1 rounded-md bg-[#003057] text-white text-xs font-bold">오늘</button>
-              </>
-            ) : (
-              <span className="ml-1 px-2 py-1 rounded-md bg-slate-100 text-xs font-bold text-slate-500">오늘</span>
-            )}
           </div>
           <div className="w-px h-4 bg-slate-200" />
           {terminalBoxTotals.map(({ terminal, boxes }) => (
@@ -1260,7 +1252,9 @@ export function DashboardClient({
           ))}
         </div>
 
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
+          {/* 실시간 알림 컨트롤(켜기·상태·소리·변경 목록). 화면에 떠 있으면 표의 맨 아래 행을 가려서 툴바 안에 둔다. */}
+          <DashboardSound rows={rawRows} items={serverItems} orderDate={orderDate} />
           {/* 모바일은 화면이 하나뿐이라 모니터 분할 자체가 의미 없다 — 전체보기만 강제되므로 */}
           {/* 선택 버튼도 노출하지 않는다(md 이상, 768px부터 노출 — 위 isMobile 판정 기준과 동일). */}
           <div className="hidden md:flex bg-slate-100 rounded-lg p-1 gap-0.5">
