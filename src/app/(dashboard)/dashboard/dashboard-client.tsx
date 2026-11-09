@@ -1432,11 +1432,11 @@ export function DashboardClient({
                           className="relative w-full h-full flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
                           title="끌어서 순서 변경"
                         >
-                          <span className="group-hover/row:invisible">{index + startIndex + 1}</span>
+                          <span className="group-hover/row:invisible">{row.businessNumber}</span>
                           <GripVertical className="absolute w-4 h-4 text-slate-500 invisible group-hover/row:visible" />
                         </div>
                       ) : (
-                        index + startIndex + 1
+                        row.businessNumber
                       )}
                     </div>
                     <div className="border-r border-slate-100 px-2 flex items-center justify-center">
@@ -1618,7 +1618,7 @@ export function DashboardClient({
               )}
               <DndContext id="separate-dnd" sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleSeparateDragEnd}>
               <SortableContext items={separateRows.map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
-              {separateRows.map((row, index) => {
+              {separateRows.map((row) => {
                 const rowItems = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence);
                 return (
                   <SortableRow
@@ -1630,7 +1630,7 @@ export function DashboardClient({
                   >
                     {(handle) => (
                     <>
-                    <span className="w-6 flex-shrink-0 text-center text-xs font-bold text-slate-400">{index + 1}</span>
+                    <span className="w-6 flex-shrink-0 text-center text-xs font-bold text-slate-400">{row.businessNumber}</span>
                     {handle && (
                       <div
                         ref={handle.ref}

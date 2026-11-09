@@ -2,7 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { isValidBoxBarcode } from '@/lib/labels/barcode';
+import { barcodeOrderDate, isValidBoxBarcode } from '@/lib/labels/barcode';
+import { nameWithRound } from '@/lib/orders';
+import { todayKST } from '@/lib/order-date';
 import { mergeGroupOf, normalizeMergeGroups } from '@/lib/box-merge';
 import { requirePermission } from '@/lib/permissions/access';
 
@@ -25,23 +27,27 @@ export type ScanResult =
   | { status: 'loaded'; box: ScannedBox } // 방금 상차 완료로 처리됨
   | { status: 'duplicate'; box: ScannedBox } // 이미 상차 완료된 박스를 다시 스캔함
   | { status: 'invalid'; code: string } // 우리 바코드 형식이 아님
-  | { status: 'unknown'; code: string }; // 형식은 맞지만 발급된 적 없는 번호
+  | { status: 'unknown'; code: string } // 형식은 맞지만 발급된 적 없는 번호
+  | { status: 'past'; code: string; date: string }; // 오늘이 아닌 날짜의 라벨(어제 스티커 등) — 상차하지 않는다
 
 // 스캔 결과 화면에 보여줄 정보를 모은다. 업체 카드·같은 카드의 라벨은 서로 무관해서 같이 읽고, 이름은 그 다음에 한 번에 읽는다.
 async function describe(supabase: Awaited<ReturnType<typeof createClient>>, label: { id: string; daily_business_id: string; seq: number; barcode: string; loaded_at: string | null }): Promise<ScannedBox> {
   const [{ data: daily }, { data: siblings }] = await Promise.all([
-    supabase.from('daily_businesses').select('business_id, terminal_id, display_name, merge_groups').eq('id', label.daily_business_id).maybeSingle(),
+    supabase.from('daily_businesses').select('business_id, terminal_id, display_name, merge_groups, order_date, round').eq('id', label.daily_business_id).maybeSingle(),
     supabase.from('box_labels').select('loaded_at').eq('daily_business_id', label.daily_business_id),
   ]);
-  const [{ data: business }, { data: terminal }] = await Promise.all([
+  const [{ data: business }, { data: terminal }, { data: sameDay }] = await Promise.all([
     daily ? supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle() : Promise.resolve({ data: null }),
     daily?.terminal_id ? supabase.from('terminals').select('name').eq('id', daily.terminal_id).maybeSingle() : Promise.resolve({ data: null }),
+    // 같은 날 같은 업체의 차수: 1·2차가 둘 다 있으면 결과 화면에 차수를 붙인다
+    daily ? supabase.from('daily_businesses').select('round').eq('order_date', daily.order_date).eq('business_id', daily.business_id) : Promise.resolve({ data: [] }),
   ]);
+  const split = new Set((sameDay ?? []).map((r) => r.round)).size > 1;
   const all = siblings ?? [];
   return {
     labelId: label.id,
     barcode: label.barcode,
-    business: daily?.display_name ?? business?.name ?? '',
+    business: nameWithRound(daily?.display_name ?? business?.name ?? '', daily?.round ?? 1, split),
     terminal: terminal?.name ?? '',
     boxNo: label.seq,
     loadedCount: all.filter((l) => l.loaded_at).length,
@@ -63,6 +69,12 @@ export async function scanBarcode(raw: string): Promise<ScanResult> {
   if (!isValidBoxBarcode(code)) {
     await requirePermission('scan:scan');
     return { status: 'invalid', code: code.slice(0, 20) || '빈 값' };
+  }
+  // 라벨 번호 앞 6자리가 주문일이다. 오늘이 아닌 날짜의 라벨(어제 스티커 등)은 상차하지 않는다(자정을 넘겨 상차하는 날은 없다는 현장 확인, 2026-11-09).
+  const labelDate = barcodeOrderDate(code);
+  if (labelDate !== todayKST()) {
+    await requirePermission('scan:scan');
+    return { status: 'past', code, date: labelDate };
   }
 
   // 권한 확인과 라벨 조회는 서로 무관하게 같이 보낸다(읽기만 하므로). 상태를 바꾸는 갱신은 권한 확인이 끝난 뒤에만 한다.

@@ -19,3 +19,8 @@ export function makeBoxBarcode(orderDate: string, businessNumber: number, seq: n
 export function isValidBoxBarcode(code: string): boolean {
   return /^\d{12}$/.test(code) && checkDigit(code.slice(0, 11)) === Number(code[11]);
 }
+
+// 번호 앞 6자리(YYMMDD)가 곧 주문일이다. 올바른 번호(isValidBoxBarcode)에서만 쓴다.
+export function barcodeOrderDate(code: string): string {
+  return `20${code.slice(0, 2)}-${code.slice(2, 4)}-${code.slice(4, 6)}`;
+}

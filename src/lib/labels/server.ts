@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
 import { loadAppSettings } from '@/lib/settings-server';
 import { normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
+import { nameWithRound } from '@/lib/orders';
 import { rowsOrMissing } from '@/lib/supabase/missing-table';
 import { DEFAULT_TEMPLATE, buildTemplate, type LabelData, type LabelTemplate } from './template';
 
@@ -78,13 +79,16 @@ export interface CardLabelBase {
 }
 
 export async function loadCardLabelBase(supabase: Client, dailyBusinessId: string): Promise<CardLabelBase | null> {
-  const { data: daily } = await supabase.from('daily_businesses').select('id, order_date, business_id, business_number, terminal_id, display_name, merge_groups').eq('id', dailyBusinessId).maybeSingle();
+  const { data: daily } = await supabase.from('daily_businesses').select('id, order_date, business_id, business_number, round, terminal_id, display_name, merge_groups').eq('id', dailyBusinessId).maybeSingle();
   if (!daily) return null;
-  const [{ data: business }, { data: terminal }, settings] = await Promise.all([
+  const [{ data: business }, { data: terminal }, settings, { data: sameDay }] = await Promise.all([
     supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle(),
     daily.terminal_id ? supabase.from('terminals').select('name, is_separate').eq('id', daily.terminal_id).maybeSingle() : Promise.resolve({ data: null }),
     loadAppSettings(supabase),
+    // 같은 날 같은 업체의 차수(1차·2차 둘 다 있으면 라벨 이름에 차수를 붙인다)
+    supabase.from('daily_businesses').select('round').eq('order_date', daily.order_date).eq('business_id', daily.business_id),
   ]);
+  const split = new Set((sameDay ?? []).map((r) => r.round)).size > 1;
   return {
     orderDate: daily.order_date,
     businessNumber: daily.business_number,
@@ -92,7 +96,7 @@ export async function loadCardLabelBase(supabase: Client, dailyBusinessId: strin
     data: {
       terminal: terminal?.name ?? '',
       separate: terminal?.is_separate ?? false,
-      business: daily.display_name ?? business?.name ?? '',
+      business: nameWithRound(daily.display_name ?? business?.name ?? '', daily.round, split),
       date: daily.order_date,
       company: settings.companyName,
       contact: settings.contactPhone,

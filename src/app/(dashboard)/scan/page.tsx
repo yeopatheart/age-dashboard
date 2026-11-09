@@ -3,6 +3,7 @@ import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { ScanClient, type ScanCard } from './scan-client';
 import { requireMenu } from '@/lib/permissions/access';
 import { todayKST } from '@/lib/order-date';
+import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { packageCounts } from '@/lib/scan-share-text';
 
 // 상차 스캔 화면. 그날 발급된 박스 라벨을 업체 카드별·터미널별로 모아 "상차 몇 박스 / 전체 몇 박스"를 보여준다.
@@ -28,6 +29,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
 
   const businessName = new Map((businesses ?? []).map((b) => [b.id, b.name]));
   const terminalName = new Map((terminals ?? []).map((t) => [t.id, t.name]));
+  const split = businessIdsInBothRounds(dailyRows.map((d) => ({ businessId: d.business_id, round: d.round })));
   const cards: ScanCard[] = dailyRows.flatMap((d) => {
     const own = (labels ?? []).filter((l) => l.daily_business_id === d.id);
     if (own.length === 0) return []; // 라벨을 출력한 적 없는 업체는 상차 현황에 올리지 않는다
@@ -36,6 +38,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
         id: d.id,
         number: d.business_number,
         business: d.display_name ?? businessName.get(d.business_id) ?? '',
+        roundLabel: split.has(d.business_id) ? roundLabel(d.round) : null,
         terminal: d.terminal_id ? terminalName.get(d.terminal_id) ?? '' : '',
         loaded: own.filter((l) => l.loaded_at).length,
         total: own.length,
