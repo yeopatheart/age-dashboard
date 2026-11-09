@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import { Bell } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { useLiveRefresh } from '@/lib/realtime/use-live-refresh';
@@ -10,7 +11,7 @@ import { useSoundSettings } from '@/lib/sound/settings';
 import { getAudioContext, isAudioRunning, playTone, subscribeAudioState, unlockAudio } from '@/lib/sound/tones';
 import { primeVoice } from '@/lib/sound/voice';
 
-// 실시간 알림 = 실시간 갱신 + 변경 소리·목록. 켠 기기에서만 동작한다(기기마다 따로 저장, 기본은 꺼짐).
+// 실시간 알림 = 실시간 갱신 + 변경 소리·목록. 켠 기기에서만 동작한다(기기마다 따로 저장, 기본은 꺼짐). 화면은 주문표 위 툴바 안에 들어간다.
 // 입력하는 PC에서도 켤 수 있고, 그 PC에서 내가 고친 주문도 똑같이 울린다(같은 화면에서 일어난 변경과 다른 기기의 변경을 구분하지 않는다).
 // 같은 브라우저의 두 창은 설정을 공유하므로 한쪽 창의 주소에 `&sound=off`를 붙이면 그 창만 조용히 갱신만 한다.
 // 휴대폰 화면에는 이 컴포넌트가 없다. 폰은 소리 없이 30초마다 새로 받는다(dashboard-mobile의 useAutoRefresh).
@@ -25,7 +26,7 @@ interface RecentEvent {
   urgent: boolean;
 }
 
-// 휴대폰 화면에는 붙이지 않는다(dashboard-client가 PC 화면에만 렌더한다).
+// 휴대폰 화면에는 붙이지 않는다(dashboard-client가 PC 화면의 툴바 안에만 렌더한다).
 export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { orderDate: string }) {
   const searchParams = useSearchParams();
   // 저장 키는 예전 이름(board-mode)을 그대로 쓴다: 바꾸면 이미 켜 둔 기기의 설정이 초기화된다.
@@ -165,6 +166,11 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
     if (ok) void playTone('test', settings.volume);
   };
 
+  const hhmm = (ms: number) => new Date(ms).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const urgentRecent = recent.some((e) => e.urgent);
+
+  // 주문표 위쪽 툴바 안에 들어가는 컨트롤이다(dashboard-client가 툴바 오른쪽에 놓는다). 화면에 떠 있게(fixed) 두면 표의 맨 아래 행을 가리고,
+  // TV처럼 한 화면에 고정해서 보는 모드에서는 스크롤로도 피할 수 없어서 툴바로 옮겼다. 연결이 끊겼을 때의 전체 폭 경고 띠만 위에 고정한다.
   return (
     <>
       {status === 'down' && (
@@ -173,68 +179,74 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
         </div>
       )}
 
-      {!mode && (
-        <button
-          type="button"
-          onClick={turnOn}
-          className="fixed bottom-3 right-3 z-40 h-8 px-3 rounded-full bg-slate-800/80 text-white text-xs font-bold hover:bg-slate-800"
-        >
-          실시간 알림 켜기
-        </button>
-      )}
-
-      {mode && (
-        <div title="이 탭이 뒤로 가거나 PC가 절전하면 브라우저가 페이지를 멈춰 소리·갱신이 멈출 수 있습니다. 칠판은 별도 창으로 띄워 두세요." className={`fixed bottom-3 right-3 z-40 flex items-center gap-2 rounded-full shadow border pl-4 pr-1 h-10 text-sm font-bold ${stale || status === 'down' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white/95 border-slate-200 text-slate-600'}`}>
-          <span className={`inline-block h-2.5 w-2.5 rounded-full ${status === 'live' && !stale ? 'bg-emerald-500' : status === 'down' || stale ? 'bg-red-500' : 'bg-amber-400'}`} />
-          <span>{status === 'live' ? '실시간' : status === 'down' ? '끊김' : '연결 중'}</span>
-          <span className="font-medium">· {lastRefreshAt ? `갱신 ${new Date(lastRefreshAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}` : '갱신 대기'}{stale ? ' (오래됨)' : ''}</span>
-          <button type="button" onClick={toggleMuted} aria-pressed={!muted} className="px-3 h-8 rounded-full hover:bg-slate-100">소리 {soundOn ? '켬' : '끔'}</button>
-          <Link href="/dashboard/sound-test" className="px-3 h-8 inline-flex items-center rounded-full hover:bg-slate-100">설정</Link>
-          <button type="button" onClick={requestOff} className={`px-3 h-8 rounded-full ${confirmOff ? 'bg-red-600 text-white' : 'hover:bg-slate-100'}`}>{confirmOff ? '정말 끄기?' : '끄기'}</button>
-        </div>
-      )}
-
       {soundOn && !audioRunning && (
-        <button
-          type="button"
-          onClick={turnOn}
-          className="fixed bottom-14 left-1/2 -translate-x-1/2 z-50 h-12 px-6 rounded-full bg-amber-500 text-white text-base font-bold shadow-lg"
-        >
+        <button type="button" onClick={turnOn} className="h-8 px-3 rounded-lg bg-amber-500 text-white text-xs font-bold shadow-sm hover:bg-amber-600">
           소리가 꺼져 있습니다 — 눌러서 켜기
         </button>
       )}
 
       {mode && recent.length > 0 && (
-        <div className="fixed bottom-3 left-3 z-40 flex flex-col items-start gap-2">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setListOpen((o) => !o)}
+            aria-expanded={listOpen}
+            className={`h-8 px-3 rounded-lg text-xs font-bold shadow-sm text-white ${urgentRecent ? 'bg-red-600 hover:bg-red-700' : 'bg-sky-600 hover:bg-sky-700'}`}
+          >
+            변경 {recent.length}건
+          </button>
           {listOpen && (
-            <ul className="w-80 max-h-72 overflow-y-auto rounded-xl bg-white shadow-lg border border-slate-200 p-2 space-y-1">
-              {recent.map((e, i) => (
-                <li key={`${e.at}-${i}`} className={`text-sm leading-snug rounded-md px-2 py-1 ${e.urgent ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700'}`}>
-                  <span className="text-xs text-slate-400 mr-1">{new Date(e.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>
-                  {e.text}
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setListOpen(false)} />
+              <div className="absolute right-0 top-10 z-50 w-80 max-h-[60vh] overflow-y-auto rounded-xl bg-white shadow-lg border border-slate-200 p-2">
+                <div className="flex items-center justify-between px-2 py-1">
+                  <span className="text-xs font-bold text-slate-700">최근 변경</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecent([]);
+                      setListOpen(false);
+                    }}
+                    className="text-xs font-bold text-slate-600 hover:text-slate-900"
+                  >
+                    모두 확인
+                  </button>
+                </div>
+                <ul className="space-y-1">
+                  {recent.map((e, i) => (
+                    <li key={`${e.at}-${i}`} className={`text-sm leading-snug rounded-md px-2 py-1 ${e.urgent ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700'}`}>
+                      <span className="text-xs text-slate-400 mr-1">{hhmm(e.at)}</span>
+                      {e.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
           )}
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => setListOpen((o) => !o)}
-              className={`h-9 px-4 rounded-full text-sm font-bold shadow text-white ${recent.some((e) => e.urgent) ? 'bg-red-600' : 'bg-sky-600'}`}
-            >
-              변경 {recent.length}건 보기
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setRecent([]);
-                setListOpen(false);
-              }}
-              className="h-9 px-4 rounded-full text-sm font-bold shadow bg-white border border-slate-300 text-slate-700"
-            >
-              모두 확인
-            </button>
-          </div>
+        </div>
+      )}
+
+      {!mode ? (
+        <button
+          type="button"
+          onClick={turnOn}
+          className="w-8 h-8 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100"
+          title="실시간 알림 켜기 — 다른 기기에서 주문이 바뀌면 화면을 바로 갱신하고 소리로 알려 줍니다"
+          aria-label="실시간 알림 켜기"
+        >
+          <Bell className="w-4 h-4" />
+        </button>
+      ) : (
+        <div
+          title="이 탭이 뒤로 가거나 PC가 절전하면 브라우저가 페이지를 멈춰 소리·갱신이 멈출 수 있습니다. 칠판은 별도 창으로 띄워 두세요."
+          className={`flex items-center gap-1.5 rounded-lg border pl-2.5 pr-1 h-8 text-xs font-bold ${stale || status === 'down' ? 'bg-red-50 border-red-300 text-red-700' : 'bg-white border-slate-200 text-slate-600'}`}
+        >
+          <span className={`inline-block h-2 w-2 rounded-full ${status === 'live' && !stale ? 'bg-emerald-500' : status === 'down' || stale ? 'bg-red-500' : 'bg-amber-400'}`} />
+          <span>{status === 'live' ? '실시간' : status === 'down' ? '끊김' : '연결 중'}</span>
+          <span className="font-medium">· {lastRefreshAt ? `갱신 ${hhmm(lastRefreshAt)}` : '갱신 대기'}{stale ? ' (오래됨)' : ''}</span>
+          <button type="button" onClick={toggleMuted} aria-pressed={!muted} className="px-2 h-6 rounded-md hover:bg-slate-100">소리 {soundOn ? '켬' : '끔'}</button>
+          <Link href="/dashboard/sound-test" className="px-2 h-6 inline-flex items-center rounded-md hover:bg-slate-100">설정</Link>
+          <button type="button" onClick={requestOff} className={`px-2 h-6 rounded-md ${confirmOff ? 'bg-red-600 text-white' : 'hover:bg-slate-100'}`}>{confirmOff ? '정말 끄기?' : '끄기'}</button>
         </div>
       )}
     </>
