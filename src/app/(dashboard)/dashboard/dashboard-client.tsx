@@ -1216,6 +1216,7 @@ export function DashboardClient({
           onUnshipped={setUnshippedModal}
           onCancelItem={(item) => void handleCancelItem(item)}
           onDeleteItem={(item) => setConfirmDelete({ type: 'item', itemId: item.id })}
+          onEditOrder={(row) => setEditOrderModal(row)}
           onDeleteOrder={(row) => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
           onReorder={handleMobileReorder}
           onAddOrder={() => setAddOrderModal(true)}

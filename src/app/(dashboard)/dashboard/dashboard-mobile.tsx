@@ -38,6 +38,8 @@ export interface DashboardMobileProps {
   onCancelItem: (item: OrderItem) => void;
   onDeleteItem: (item: OrderItem) => void;
   onDeleteOrder: (row: OrderRow) => void;
+  // 고객 카드의 표시 이름·터미널을 고치는 창을 연다(PC의 업체명 옆 연필과 같은 창).
+  onEditOrder: (row: OrderRow) => void;
   // 오늘 날짜에 고객(주문) 카드를 새로 추가하는 창을 연다(PC의 + 버튼과 같은 창)
   onAddOrder: () => void;
   // 카드를 끌어 순서를 바꿨을 때: 그 구분(기본/별도) 전체의 새 순서(id 배열)
@@ -372,6 +374,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
                     {!readOnly && (
                       <div className="dm-card-actions">
                         <button onClick={() => props.onAddItem(row)}><Plus size={16} /> 상품 추가</button>
+                        <button onClick={() => props.onEditOrder(row)}><Pencil size={16} /> 주문 수정</button>
                         {canDelete && <button className="dm-danger" onClick={() => props.onDeleteOrder(row)}><Trash2 size={16} /> 주문 삭제</button>}
                       </div>
                     )}
