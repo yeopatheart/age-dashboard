@@ -255,7 +255,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
                   <span className="dm-text-line">
                     <span className="dm-product-name">{p.label}</span>
                     {p.unshipped > 0 && <span className="dm-tag dm-tag-amber">미출고 {p.unshipped}</span>}
-                    <span className="dm-product-qty">{p.total}{p.unit}</span>
+                    {p.undecided > 0 ? <span className="dm-tag dm-tag-amber">수량 미정 {p.undecided}곳</span> : <span className="dm-product-qty">{p.total}{p.unit}</span>}
                   </span>
                   <ChevronDown size={18} className={`dm-chev ${open ? 'dm-chev-open' : ''}`} />
                 </button>

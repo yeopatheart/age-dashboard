@@ -58,7 +58,7 @@ function ProductSummaryPanel({
   availHeight?: number;
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
-  const signature = `${columns.map((c) => `${c.key}:${c.total}:${c.unshipped}`).join('|')}@${availHeight ?? ''}`;
+  const signature = `${columns.map((c) => `${c.key}:${c.total}:${c.unshipped}:${c.undecided}`).join('|')}@${availHeight ?? ''}`;
   // 품목·수량·높이가 바뀌면 가장 큰 크기부터 다시 시도한다.
   const [fit, setFit] = useState<{ signature: string; level: number }>({ signature: '', level: 0 });
   const level = availHeight === undefined ? 0 : fit.signature === signature ? fit.level : 0;
@@ -86,8 +86,14 @@ function ProductSummaryPanel({
           >
             <span className="font-bold break-keep leading-tight">{product.label}</span>
             <span className="font-black shrink-0 whitespace-nowrap leading-tight">
-              {product.total}{product.unit}
-              {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
+              {product.undecided > 0 ? (
+                <span className="rounded bg-amber-100 px-1 text-amber-700" title="주문에서 수량을 못 찾은 상품입니다. 주문을 수정해서 수량을 채워 주세요">미정 {product.undecided}곳</span>
+              ) : (
+                <>
+                  {product.total}{product.unit}
+                  {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
+                </>
+              )}
             </span>
           </div>
         ))}
@@ -1080,8 +1086,14 @@ export function DashboardClient({
       style={chipStyle(product.productName)}
     >
       <span className="text-xs font-bold">{product.label}</span>
-      <span className="text-xs font-black">{product.total}{product.unit}</span>
-      {product.unshipped > 0 && <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded px-1">미출고 {product.unshipped}</span>}
+      {product.undecided > 0 ? (
+        <span className="text-xs font-black text-amber-700 bg-amber-100 rounded px-1" title="주문에서 수량을 못 찾은 상품입니다. 주문을 수정해서 수량을 채워 주세요">미정 {product.undecided}곳</span>
+      ) : (
+        <>
+          <span className="text-xs font-black">{product.total}{product.unit}</span>
+          {product.unshipped > 0 && <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded px-1">미출고 {product.unshipped}</span>}
+        </>
+      )}
     </div>
   ));
   const productChips = renderChips(columns);
