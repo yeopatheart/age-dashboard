@@ -3,7 +3,7 @@ import '@/components/admin/admin.css';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
-import { AlertTriangle, Camera, CheckCircle2, Check, Copy, Keyboard, ScanLine, Share2, Undo2, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Camera, CheckCircle2, Check, ChevronDown, Copy, Keyboard, ScanLine, Share2, Undo2, X, XCircle } from 'lucide-react';
 import { scanBarcode, undoScan, type ScanResult } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { playTone, unlockAudio } from '@/lib/sound/tones';
@@ -34,16 +34,53 @@ interface Banner {
   done?: boolean; // 방금 이 업체의 마지막 박스까지 상차됨
 }
 
+// 최근 스캔 목록의 한 줄. 카메라가 켜져 있을 때는 맨 위 줄에서 방금 스캔을 되돌린다(labelId·box·seq는 되돌리기용).
+interface RecentItem {
+  time: string;
+  text: string;
+  tone: Banner['tone'];
+  labelId?: string;
+  box?: UndoneBox;
+  seq?: number;
+  undone?: boolean;
+}
+
 // 초록 조준선(정사각형, CSS .sc-guide). 카메라는 화면에 그려진 이 상자의 위치를 그대로 읽어 안쪽만 잘라서 읽는다 — 조준선 밖에 보이는 QR은 읽지 않는다.
 const SCAN_INTERVAL_MS = 80;
 const DUPLICATE_IGNORE_MS = 2500; // 카메라가 같은 QR을 연속으로 읽는 것을 무시하는 시간
+
+// 최근 스캔: 화면 맨 아래에 두고 기본은 접어 둔다. 제목 줄에 마지막 스캔 한 줄만 보이고, 눌러야 기록 전체가 펼쳐진다.
+// (방금 스캔을 되돌리는 버튼은 여기가 아니라 영상 바로 아래의 "마지막 스캔" 줄에 있다.)
+function RecentList({ items }: { items: RecentItem[] }) {
+  const [open, setOpen] = useState(false);
+  const latest = items[0];
+  return (
+    <section className="sc-card sc-recent-card">
+      <button type="button" className="sc-recent-toggle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <strong>최근 스캔</strong>
+        <span className={`sc-recent-last sc-r-${latest.tone}`}>{latest.text}{latest.undone ? ' (취소됨)' : ''}</span>
+        <ChevronDown size={18} className={open ? 'sc-chev sc-chev-open' : 'sc-chev'} aria-hidden />
+      </button>
+      {open && (
+        <ul className="sc-recent">
+          {items.map((r, i) => (
+            <li key={`${r.seq ?? 'x'}-${i}`} className={`sc-r-${r.tone}`}>
+              <span>{r.time}</span>
+              <em>{r.text}{r.undone ? ' (취소됨)' : ''}</em>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 export function ScanClient({ orderDate, today, cards }: { orderDate: string; today: string; cards: ScanCard[] }) {
   const can = useCan();
   const canScan = can('scan:scan');
   const canUndo = can('scan:undo');
   const [banner, setBanner] = useState<Banner | null>(null);
-  const [recent, setRecent] = useState<{ time: string; text: string; tone: Banner['tone'] }[]>([]);
+  const [recent, setRecent] = useState<RecentItem[]>([]);
   const [manual, setManual] = useState('');
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -90,8 +127,11 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         next = { tone: 'bad', title: result.status === 'invalid' ? '우리 라벨이 아닙니다' : '출력된 적 없는 번호', detail: result.code };
       }
       if (result.status === 'loaded') loadedCount.current += 1;
-      setBanner({ ...next, seq: ++seq.current, count: result.status === 'loaded' ? loadedCount.current : undefined });
-      setRecent((prev) => [{ time, text: next.title, tone: next.tone }, ...prev].slice(0, 8));
+      const bannerSeq = ++seq.current;
+      setBanner({ ...next, seq: bannerSeq, count: result.status === 'loaded' ? loadedCount.current : undefined });
+      // 이미 상차된 박스는 제목에 업체가 없어서, 기록에는 어느 박스인지 함께 적는다.
+      const text = result.status === 'duplicate' && next.box ? `${next.box.business} ${next.box.boxNo}번 · 이미 상차됨` : next.title;
+      setRecent((prev) => [{ time, text, tone: next.tone, labelId: next.labelId, box: next.box, seq: bannerSeq }, ...prev].slice(0, 8));
       beep(next.tone);
     },
     [beep, today],
@@ -191,7 +231,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       // 스캔하는 동안 화면이 꺼져 카메라가 멈추지 않게 한다(지원하지 않는 브라우저에서는 그냥 넘어간다).
       wakeLockRef.current = (await navigator.wakeLock?.request('screen').catch(() => null)) ?? null;
     } catch (e) {
-      setCameraError(e instanceof Error && e.name === 'NotAllowedError' ? '카메라 사용이 허용되지 않았습니다. 브라우저 주소창의 카메라 권한을 허용해주세요.' : '카메라를 시작하지 못했습니다. 아래 입력칸이나 블루투스 스캐너를 쓰세요.');
+      setCameraError(e instanceof Error && e.name === 'NotAllowedError' ? '카메라 사용이 허용되지 않았습니다. 브라우저 주소창의 카메라 권한을 허용해주세요.' : '카메라를 시작하지 못했습니다. 위 입력칸이나 블루투스 스캐너를 쓰세요.');
     }
   };
   useEffect(
@@ -206,24 +246,29 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
   const [armedSeq, setArmedSeq] = useState<number | null>(null);
   const armTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(armTimer.current), []);
-  const undo = async () => {
-    if (!banner?.labelId) return;
-    if (banner.tone === 'dup' && armedSeq !== banner.seq) {
-      setArmedSeq(banner.seq ?? null);
+  // 되돌릴 수 있는 방금 스캔(성공·이미 상차됨 결과이고 아직 되돌리지 않은 것). 맨 위 기록이 이 조건이 아니면 되돌릴 줄을 보이지 않는다.
+  const lastUndoable = recent[0]?.labelId && !recent[0].undone ? recent[0] : null;
+  // 되돌릴 대상은 결과 배너(카메라가 꺼져 있을 때)나 "마지막 스캔" 줄(카메라가 켜져 있을 때)이 넘겨 준다.
+  const undo = async (target: { labelId?: string; box?: UndoneBox; tone: Banner['tone']; seq?: number }) => {
+    if (!target.labelId) return;
+    if (target.tone === 'dup' && armedSeq !== target.seq) {
+      setArmedSeq(target.seq ?? null);
       clearTimeout(armTimer.current);
       armTimer.current = setTimeout(() => setArmedSeq(null), 4000);
       return;
     }
     clearTimeout(armTimer.current);
     setArmedSeq(null);
-    const result = await undoScan(banner.labelId);
+    const result = await undoScan(target.labelId);
     if (result.error) return setBanner({ tone: 'bad', title: '되돌리지 못했습니다', detail: result.error, seq: ++seq.current });
-    const done = banner.box ? undoneSummary(banner.box) : { title: '상차를 취소했습니다', detail: '이 박스는 다시 상차 전 상태입니다.' };
+    const done = target.box ? undoneSummary(target.box) : { title: '상차를 취소했습니다', detail: '이 박스는 다시 상차 전 상태입니다.' };
     const time = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     setBanner({ tone: 'dup', title: done.title, detail: done.detail, seq: ++seq.current });
-    setRecent((prev) => [{ time, text: done.title, tone: 'dup' as const }, ...prev].slice(0, 8));
+    // 되돌린 줄은 더 되돌릴 수 없게 표시하고, 취소했다는 기록을 맨 위에 남긴다.
+    setRecent((prev) => [{ time, text: done.title, tone: 'dup' as const }, ...prev.map((r) => (r.seq === target.seq ? { ...r, undone: true } : r))].slice(0, 8));
     last.current = null;
   };
+
 
   // 터미널별 합계와 아직 안 끝난 업체
   const terminals = useMemo(() => {
@@ -280,6 +325,19 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       {!isToday && <p className="sc-warn">{orderDate} 날짜의 상차 현황입니다. 오늘 상차를 스캔하려면 오늘 날짜로 돌아가세요.</p>}
 
       <section className="sc-card sc-scan">
+        <form
+          className="sc-manual"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitCode(manual);
+            setManual('');
+          }}
+        >
+          <Keyboard size={16} />
+          <input className="ak-input" value={manual} onChange={(e) => setManual(e.target.value)} inputMode="numeric" autoComplete="off" placeholder="라벨 번호 12자리 입력" />
+          <button className="ak-btn ak-btn-primary" type="submit" disabled={!canScan || !manual.trim()}>확인</button>
+        </form>
+
         {/* 카메라가 꺼져 있을 때는 영역 전체가 시작 버튼이다. 켜면 영상과 조준선이 나오고, 끄기 버튼은 모서리에 작게 둔다.
             video는 항상 그려 둔다(시작할 때 영상을 연결하려면 요소가 있어야 하고, 숨기면 일부 브라우저가 재생하지 않는다). */}
         <div className={`sc-video ${cameraOn ? '' : 'sc-video-off'}`}>
@@ -288,13 +346,15 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
             <>
               <div ref={guideRef} className="sc-guide" />
               <div className="sc-hint">라벨의 QR 코드를 초록 네모 안에 맞추세요</div>
-              {/* 스캔 결과를 영상 위에 크게 잠깐 보여 준다(라벨을 비추는 동안 아래 안내까지 시선을 옮기지 않아도 되게). 몇 초 뒤 저절로 사라지고, 자세한 결과와 되돌리기는 아래 안내에 남는다. */}
+              {/* 스캔 결과를 영상 아래쪽에 작은 띠로 잠깐 보여 준다(영상을 적게 가리게; 조준선 안의 QR은 띠와 상관없이 계속 읽힌다). 몇 초 뒤 저절로 사라지고 바로 다음 스캔으로 넘어간다. 방금 스캔을 되돌리는 버튼은 영상 바로 아래 "마지막 스캔" 줄에 있다. */}
               {banner?.seq !== undefined && (
                 <div key={banner.seq} className={`sc-flash sc-${banner.tone} ${banner.done ? 'sc-ok-done' : ''}`} aria-hidden="true">
-                  {banner.tone === 'bad' ? <XCircle size={44} /> : banner.tone === 'dup' ? <AlertTriangle size={44} /> : <CheckCircle2 size={44} />}
-                  <div className="sc-title">{banner.title}</div>
-                  {banner.progress && <div className="sc-progress"><strong>{banner.progress.loaded}/{banner.progress.total}</strong></div>}
-                  {banner.done && <div className="sc-detail">이 업체 상차 완료</div>}
+                  {banner.tone === 'bad' ? <XCircle size={26} /> : banner.tone === 'dup' ? <AlertTriangle size={26} /> : <CheckCircle2 size={26} />}
+                  <div className="sc-flash-text">
+                    <div className="sc-title">{banner.title}</div>
+                    {banner.done && <div className="sc-detail">이 업체 상차 완료</div>}
+                  </div>
+                  {banner.progress && <strong className="sc-flash-prog">{banner.progress.loaded}/{banner.progress.total}</strong>}
                 </div>
               )}
               <button className="sc-stop" onClick={stopCamera} aria-label="카메라 끄기"><X size={18} /></button>
@@ -308,9 +368,20 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         </div>
         {cameraError && <p className="ak-error">{cameraError}</p>}
 
-        {banner && (
-          <div key={banner.seq} className={`sc-banner sc-${banner.tone} ${banner.done ? 'sc-ok-done' : ''} ${cameraOn ? 'sc-compact' : ''} sc-pop`} aria-live="polite" role="status">
-            {banner.tone === 'bad' ? <XCircle size={cameraOn ? 28 : 40} /> : banner.tone === 'dup' ? <AlertTriangle size={cameraOn ? 28 : 40} /> : <CheckCircle2 size={cameraOn ? 28 : 40} />}
+        {/* 카메라가 켜져 있을 때 방금 스캔을 되돌리는 줄. 결과 띠는 금방 사라지므로 이 줄이 다음 스캔 전까지(시간 제한 없이) 남는다. 카메라를 끈 상태에서는 아래 결과 배너의 버튼을 쓴다. */}
+        {cameraOn && canUndo && lastUndoable && (
+          <div className="sc-last">
+            <span className={`sc-last-text sc-r-${lastUndoable.tone}`}>{lastUndoable.text}</span>
+            <button type="button" className="sc-undo sc-undo-inline" onClick={() => void undo(lastUndoable)}>
+              <Undo2 size={16} /> {lastUndoable.tone === 'dup' ? (armedSeq === lastUndoable.seq ? '정말 취소? 한 번 더' : '상차 취소') : '되돌리기'}
+            </button>
+          </div>
+        )}
+
+        {/* 카메라가 켜져 있을 때는 결과를 영상 위에만 보여 준다(같은 내용이 위아래로 겹쳐 자리를 차지하지 않게). 카메라를 끈 수기 입력에서만 아래 배너를 쓴다. */}
+        {banner && !cameraOn && (
+          <div key={banner.seq} className={`sc-banner sc-${banner.tone} ${banner.done ? 'sc-ok-done' : ''} sc-pop`} aria-live="polite" role="status">
+            {banner.tone === 'bad' ? <XCircle size={40} /> : banner.tone === 'dup' ? <AlertTriangle size={40} /> : <CheckCircle2 size={40} />}
             <div className="sc-title">{banner.title}</div>
             {banner.progress && (
               <div className="sc-progress">
@@ -321,27 +392,20 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
             <div className="sc-detail">{banner.detail}</div>
             {banner.count !== undefined && <div className="sc-count">이번 접속 {banner.count}번째 상차</div>}
             {banner.labelId && canUndo && (
-              <button className="sc-undo" onClick={undo}><Undo2 size={16} /> {banner.tone === 'dup' ? (armedSeq === banner.seq ? '정말 취소할까요? 한 번 더 누르세요' : '상차를 취소할래요') : '잘못 스캔했어요 (되돌리기)'}</button>
+              <button className="sc-undo" onClick={() => void undo(banner)}><Undo2 size={16} /> {banner.tone === 'dup' ? (armedSeq === banner.seq ? '정말 취소할까요? 한 번 더 누르세요' : '상차를 취소할래요') : '잘못 스캔했어요 (되돌리기)'}</button>
             )}
           </div>
         )}
 
-        <form
-          className="sc-manual"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void submitCode(manual);
-            setManual('');
-          }}
-        >
-          <Keyboard size={16} />
-          <input className="ak-input" value={manual} onChange={(e) => setManual(e.target.value)} inputMode="numeric" autoComplete="off" placeholder="라벨 번호 12자리 입력" />
-          <button className="ak-btn ak-btn-primary" type="submit" disabled={!canScan || !manual.trim()}>확인</button>
-        </form>
       </section>
 
       <section className="sc-card">
-        <h2>상차 현황 {totalBoxes > 0 && <span className="sc-total">{totalLoaded}/{totalBoxes}박스</span>}</h2>
+        <div className="sc-head">
+          <h2>상차 현황 {totalBoxes > 0 && <span className="sc-total">{totalLoaded}/{totalBoxes}박스</span>}</h2>
+          {cards.length > 0 && (
+            <label className="sc-check"><input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} /> 미완료 업체만</label>
+          )}
+        </div>
         {cards.length === 0 ? (
           <p className="ak-muted">이 날짜에 라벨을 출력한 업체가 없습니다. 박스 할당 화면에서 라벨을 출력하면 여기에 나타납니다.</p>
         ) : (
@@ -363,58 +427,48 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
                 </div>
               ))}
             </div>
-            <label className="sc-check"><input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} /> 상차가 끝나지 않은 업체만</label>
-            <ul className="sc-list">
-              {visibleCards.length === 0 && <li className="ak-muted">모든 업체의 상차가 끝났습니다.</li>}
-              {visibleCards.map((c) => (
-                <li key={c.id} className={c.loaded === c.total ? 'sc-done' : ''}>
-                  <span className="sc-tag">{c.terminal || '-'}</span>
-                  <span className="sc-name">{c.business}{c.roundLabel ? ` ${c.roundLabel}` : ''}</span>
-                  <span className="sc-prog">{c.loaded}/{c.total}</span>
-                </li>
-              ))}
-            </ul>
+            {visibleCards.length > 0 && (
+              <ul className="sc-list">
+                {visibleCards.map((c) => (
+                  <li key={c.id} className={c.loaded === c.total ? 'sc-done' : ''}>
+                    <span className="sc-tag">{c.terminal || '-'}</span>
+                    <span className="sc-name">{c.business}{c.roundLabel ? ` ${c.roundLabel}` : ''}</span>
+                    <span className="sc-prog">{c.loaded}/{c.total}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </>
         )}
       </section>
 
-      {recent.length > 0 && (
-        <section className="sc-card">
-          <h2>최근 스캔</h2>
-          <ul className="sc-recent">
-            {recent.map((r, i) => (
-              <li key={i} className={`sc-r-${r.tone}`}><span>{r.time}</span>{r.text}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {recent.length > 0 && <RecentList items={recent} />}
 
       <style>{`
         .sc-root { display: flex; flex-direction: column; gap: var(--space-block); max-width: 42rem; width: 100%; min-width: 0; }
         .sc-warn { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; border-radius: 12px; padding: 0.6rem 0.9rem; font-size: var(--fs-md); font-weight: 700; }
-        .sc-banner { border-radius: 18px; padding: 1.1rem 1rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; border: 3px solid transparent; }
+        .sc-banner { border-radius: 16px; padding: 0.8rem 0.9rem; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; text-align: center; border: 3px solid transparent; }
         .sc-pop { animation: sc-pop 0.28s ease-out; }
         @keyframes sc-pop { 0% { transform: scale(0.94); } 60% { transform: scale(1.03); } 100% { transform: scale(1); } }
         .sc-count { font-size: var(--fs-sm); font-weight: 700; opacity: 0.85; }
         .sc-ok { background: #dcfce7; border-color: #22c55e; color: #14532d; }
         .sc-ok-done { background: #bbf7d0; border-color: #15803d; }
         .sc-progress { display: flex; align-items: baseline; justify-content: center; gap: 0.5rem; }
-        .sc-progress strong { font-size: 2.4rem; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
+        .sc-progress strong { font-size: 1.8rem; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
         .sc-progress span { font-size: var(--fs-md); font-weight: 800; }
-        .sc-compact { padding: 0.7rem 0.8rem; gap: 0.3rem; }
-        .sc-compact .sc-title { font-size: var(--fs-xl); }
-        .sc-compact .sc-progress strong { font-size: 1.8rem; }
-        .sc-compact .sc-detail { font-size: var(--fs-md); }
         .sc-hint { position: absolute; top: 0.6rem; left: 0.6rem; right: 3.6rem; padding: 0.35rem 0.7rem; border-radius: 999px; background: rgba(15, 23, 42, 0.65); color: #fff; font-size: var(--fs-sm); font-weight: 700; text-align: center; pointer-events: none; word-break: keep-all; }
-        .sc-flash { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.8rem; text-align: center; border: 4px solid transparent; pointer-events: none; animation: sc-flash 2.4s ease-out forwards; }
-        .sc-flash .sc-title { font-size: 1.5rem; }
+        .sc-flash { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.8rem; text-align: left; border-width: 3px 0 0; border-style: solid; pointer-events: none; animation: sc-flash 2.4s ease-out forwards; }
+        .sc-flash-text { flex: 1; min-width: 0; }
+        .sc-flash .sc-title { font-size: var(--fs-lg); line-height: 1.2; }
+        .sc-flash .sc-detail { font-size: var(--fs-sm); }
+        .sc-flash-prog { flex: none; font-size: 1.6rem; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; }
         .sc-flash.sc-ok, .sc-flash.sc-dup, .sc-flash.sc-bad { opacity: 0.96; }
         @keyframes sc-flash { 0%, 70% { opacity: 0.96; } 100% { opacity: 0; visibility: hidden; } }
         @media (prefers-reduced-motion: reduce) { .sc-flash { animation-duration: 2.4s !important; } }
         .sc-dup { background: #fef9c3; border-color: #eab308; color: #713f12; }
         .sc-bad { background: #fee2e2; border-color: #ef4444; color: #7f1d1d; }
-        .sc-title { font-size: 1.7rem; font-weight: 900; line-height: 1.25; word-break: keep-all; }
-        .sc-detail { font-size: var(--fs-lg); font-weight: 600; word-break: keep-all; }
+        .sc-title { font-size: 1.4rem; font-weight: 900; line-height: 1.25; word-break: keep-all; }
+        .sc-detail { font-size: var(--fs-md); font-weight: 600; word-break: keep-all; }
         .sc-undo { margin-top: 0.4rem; min-height: 2.75rem; padding: 0 1.1rem; border-radius: 999px; border: 2px solid currentColor; background: rgba(255, 255, 255, 0.6); font-weight: 800; display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; }
         .sc-card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-card); display: flex; flex-direction: column; gap: var(--space-inner); box-shadow: var(--shadow-sm); }
         .sc-card h2 { font-size: var(--fs-lg); font-weight: 800; display: flex; align-items: center; gap: 0.5rem; }
@@ -451,7 +505,19 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         .sc-name { flex: 1; min-width: 0; font-weight: 800; word-break: keep-all; }
         .sc-prog { flex: none; font-weight: 900; }
         .sc-recent { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; font-size: var(--fs-md); font-weight: 600; }
-        .sc-recent span { color: var(--muted-foreground); margin-right: 0.5rem; font-variant-numeric: tabular-nums; }
+        .sc-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+        .sc-recent-card { padding: 0.5rem 0.7rem; gap: 0.4rem; }
+        .sc-last { display: flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; min-width: 0; }
+        .sc-last-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: var(--fs-md); }
+        .sc-recent-toggle { width: 100%; min-width: 0; min-height: 2.75rem; display: flex; align-items: center; gap: 0.5rem; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; font-size: var(--fs-md); }
+        .sc-recent-toggle strong { font-size: var(--fs-lg); font-weight: 800; flex: none; }
+        .sc-recent-last { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+        .sc-chev { flex: none; color: var(--muted-foreground); transition: transform 0.15s; }
+        .sc-chev-open { transform: rotate(180deg); }
+        .sc-undo-inline { margin: 0; flex: none; min-height: 2.5rem; padding: 0 0.8rem; font-size: var(--fs-sm); white-space: nowrap; }
+        .sc-recent li { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+        .sc-recent span { color: var(--muted-foreground); font-variant-numeric: tabular-nums; flex: none; }
+        .sc-recent em { font-style: normal; min-width: 0; flex: 1 1 auto; }
         .sc-r-bad { color: #b91c1c; }
         .sc-r-dup { color: #a16207; }
       `}</style>
