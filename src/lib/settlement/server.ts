@@ -27,7 +27,7 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
       '업체 카드 조회 실패: ',
     ),
     fetchAll((a, b) => supabase.from('businesses').select('id, name').order('id').range(a, b), '업체 조회 실패: '),
-    supabase.from('terminals').select('id, is_parcel'),
+    supabase.from('terminals').select('id, name, is_parcel'),
   ]);
   if (terminalsResult.error) throw new Error(`터미널 조회 실패: ${terminalsResult.error.message}`);
   if (dailies.length === 0) return [];
@@ -39,7 +39,7 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
         (a, b) =>
           supabase
             .from('order_items')
-            .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, unshipped_quantity, is_packed, change_status')
+            .select('id, daily_business_id, product_sequence, product_name_raw, quantity, unit, unshipped_quantity, is_packed, change_status, secondary_weight_kg')
             .in('daily_business_id', chunk)
             .order('id')
             .range(a, b),
@@ -71,6 +71,7 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
   const itemsByDaily = new Map<string, typeof itemRows>();
   for (const item of itemRows) itemsByDaily.set(item.daily_business_id, [...(itemsByDaily.get(item.daily_business_id) ?? []), item]);
 
+  const terminalName = new Map((terminalsResult.data ?? []).map((t) => [t.id, t.name]));
   const parcelTerminals = new Set((terminalsResult.data ?? []).filter((t) => t.is_parcel).map((t) => t.id));
   const businessName = new Map(businesses.map((b) => [b.id, b.name]));
   const split = businessIdsInBothRounds(dailies.map((d) => ({ businessId: d.business_id, round: d.round })));
@@ -83,7 +84,7 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
       parcel: !!d.terminal_id && parcelTerminals.has(d.terminal_id),
     });
     const name = d.display_name ?? businessName.get(d.business_id) ?? '';
-    return { id: d.id, orderDate: d.order_date, name: split.has(d.business_id) ? `${name} ${roundLabel(d.round)}` : name, sortOrder: d.sort_order, stage };
+    return { id: d.id, orderDate: d.order_date, name: split.has(d.business_id) ? `${name} ${roundLabel(d.round)}` : name, sortOrder: d.sort_order, stage, terminal: (d.terminal_id && terminalName.get(d.terminal_id)) || '미지정' };
   });
 
   const items: SalesSourceItem[] = itemRows.map((i) => ({
@@ -95,6 +96,7 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
     unit: i.unit,
     unshippedQuantity: Number(i.unshipped_quantity ?? 0),
     changeStatus: i.change_status,
+    secondaryWeightKg: i.secondary_weight_kg === null || i.secondary_weight_kg === undefined ? null : Number(i.secondary_weight_kg),
   }));
 
   // 입력값은 출고 완료된 카드의 줄만 읽는다.

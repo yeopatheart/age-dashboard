@@ -9,15 +9,15 @@ import { buildDailySeries } from '@/lib/settlement/chart';
 import { buildProductGroups, buildSellerGroups } from '@/lib/settlement/chart-groups';
 import { buildPurchaseRows, totalsOf } from '@/lib/settlement/purchases';
 import { loadSalesRows, loadStoredPurchases } from '@/lib/settlement/server';
-import { customerStats, marginOf, productStats, unpricedLines } from '@/lib/reports/sales-report';
+import { customerStats, marginOf, productStats, terminalStats, unpricedLines } from '@/lib/reports/sales-report';
 import { SalesReportClient, type SalesView } from './sales-report-client';
 
 // 이 탭은 년 단위를 두지 않는다(판매내역·매입내역 계산이 무거워 일·주·월로 충분하다).
 const GRANULARITIES: Granularity[] = ['day', 'week', 'month'];
-const VIEWS: SalesView[] = ['trend', 'product', 'customer', 'seller'];
+const VIEWS: SalesView[] = ['trend', 'product', 'customer', 'terminal', 'seller'];
 
-// 판매·수익 리포트: 정산 판매내역·매입내역 기준의 추이·품목별·업체별·사업자별. 금액이 나오므로 리포트 보기에 더해 정산 보기 권한이 있어야 한다.
-// 기간은 ?g=day|week|month(기본 월), ?date=기준일. 보기는 ?view=trend|product|customer|seller.
+// 판매·수익 리포트: 정산 판매내역·매입내역 기준의 추이·품목별·업체별·터미널별·사업자별. 금액이 나오므로 리포트 보기에 더해 정산 보기 권한이 있어야 한다.
+// 기간은 ?g=day|week|month(기본 월), ?date=기준일. 보기는 ?view=trend|product|customer|terminal|seller.
 export default async function SalesReportPage({ searchParams }: { searchParams: Promise<{ g?: string; date?: string; view?: string }> }) {
   const reportsCheck = requireMenu('reports');
   const settlementCheck = requireMenu('settlement');
@@ -57,6 +57,7 @@ export default async function SalesReportPage({ searchParams }: { searchParams: 
       bySeller={buildSellerGroups(sales.rows, purchaseRows, sellers.rows)}
       productStats={productStats(sales.rows, purchaseRows)}
       customerStats={customerStats(sales.rows)}
+      terminalStats={terminalStats(sales.rows)}
     />
   );
 }

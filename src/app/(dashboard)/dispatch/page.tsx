@@ -57,7 +57,7 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
         canCustomers={canCustomers}
         cards={cards}
         shareTemplate={settings?.scanShare ?? DEFAULT_SCAN_SHARE_TEMPLATE}
-        salesRows={sales.rows.map(({ customer, product, quantity, unit, price }) => ({ customer, product, quantity, unit, price }))}
+        salesRows={sales.rows.map(({ customer, product, quantity, unit, secondaryWeightKg, price }) => ({ customer, product, quantity, unit, secondaryWeightKg, price }))}
         salesMissing={salesMissing}
         receipts={receiptsUnavailable ? [] : receipts.rows}
         sellers={receiptsUnavailable ? [] : sellers.rows}

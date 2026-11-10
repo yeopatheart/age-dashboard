@@ -8,7 +8,6 @@ import { requirePermission } from '@/lib/permissions/access';
 function revalidate() {
   revalidatePath('/products');
   revalidatePath('/dashboard');
-  revalidatePath('/reports');
   revalidatePath('/packing-log');
   revalidatePath('/settlement');
 }

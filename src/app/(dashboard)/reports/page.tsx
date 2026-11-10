@@ -1,31 +1,7 @@
-import { createClient } from '@/lib/supabase/server';
-import { getPeriod, type Granularity, type ReportSummary } from '@/lib/report';
-import { ReportsClient } from './reports-client';
-import { requireMenu } from '@/lib/permissions/access';
-import { todayKST } from '@/lib/order-date';
+import { redirect } from 'next/navigation';
 
-const GRANULARITIES: Granularity[] = ['day', 'week', 'month', 'year'];
-
-export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ g?: string; date?: string }> }) {
-  const accessCheck = requireMenu('reports'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 await로 확정)
-  const { g, date } = await searchParams;
-  const today = todayKST();
-  const granularity = GRANULARITIES.find((x) => x === g) ?? 'month';
-  const anchor = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : today;
-  const period = getPeriod(granularity, anchor);
-
-  const supabase = await createClient();
-  // 집계는 DB 함수(report_summary, 0017)에서 끝내고 결과만 받는다.
-  const [, { data, error }] = await Promise.all([accessCheck, supabase.rpc('report_summary', { p_from: period.from, p_to: period.to })]);
-  if (error) throw new Error(`리포트 조회 실패: ${error.message}`);
-
-  return (
-    <ReportsClient
-      summary={data as ReportSummary}
-      granularity={granularity}
-      anchor={anchor}
-      today={today}
-      period={period}
-    />
-  );
+// 리포트의 첫 화면은 박스 리포트다. 예전에는 여기에 주문 수량 표가 있었는데 판매·수익 리포트(품목별·업체별·터미널별)로 대체해 없앴다.
+// 이 주소는 메뉴·북마크의 진입점이라 박스 리포트로 보낸다(권한은 각 리포트 페이지가 확인한다).
+export default function ReportsIndexPage() {
+  redirect('/reports/box');
 }
