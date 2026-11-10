@@ -89,6 +89,8 @@ export interface ProductSummaryRow {
   unit: string;
   mulbong: number;
   packed: number;
+  // 수량 미정 줄(수량 0·단위 없음)을 모은 줄이면 미정이 있는 고객 수, 아니면 0. 이 줄은 total 0·unit ''이고 화면에서 "미정 N곳"으로 보인다.
+  undecided: number;
 }
 
 // 같은 품목이라도 사이즈·종류(선별/일반, 하모 6-800 등)와 단위(미/kg)가 다르면 따로 센다 — 한 줄로 합치면
@@ -154,12 +156,34 @@ export function getProductCustomers(items: OrderItem[], product: Pick<ProductSum
   return [...byRow.values()].sort((a, b) => (rowOrder.get(a.dailyBusinessId) ?? 999) - (rowOrder.get(b.dailyBusinessId) ?? 999));
 }
 
+// 수량 미정 줄도 품목별 수량에 "미정"으로 올린다: 수량은 모르지만 그 품목의 주문이 있다는 것을 보여야 하기 때문이다.
+// 미정 줄은 단위가 없어 키가 확정 줄과 달라서 자연히 별도 줄이 되고(합계는 0), 같은 품목의 확정 줄 바로 뒤에 놓는다.
 export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
   const map = new Map<string, ProductSummaryRow>();
+  const undecidedBusinesses = new Map<string, Set<string>>(); // 미정 줄 키 → 미정이 있는 고객(카드)
   for (const item of items) {
-    if (item.changeStatus === 'cancelled' || isUndecidedQuantity(item)) continue;
+    if (item.changeStatus === 'cancelled') continue;
     const size = (item.sizeRequest ?? '').trim();
     const key = productKeyOf(item);
+    if (isUndecidedQuantity(item)) {
+      undecidedBusinesses.set(key, (undecidedBusinesses.get(key) ?? new Set<string>()).add(item.dailyBusinessId));
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          productName: item.productName,
+          size,
+          label: `${size ? `${item.productName} (${size})` : item.productName}${prepLabelOf(item) ? ` · ${prepLabelOf(item)}` : ''}`,
+          prep: prepOf(item),
+          total: 0,
+          unshipped: 0,
+          unit: '',
+          mulbong: 0,
+          packed: 0,
+          undecided: 0,
+        });
+      }
+      continue;
+    }
     const existing = map.get(key);
     const shippable = Math.max(0, item.quantity - item.unshippedQuantity);
     if (existing) {
@@ -179,11 +203,18 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
         unit: item.unit,
         mulbong: item.isMulbong ? item.quantity : 0,
         packed: item.isPacked ? item.quantity : 0,
+        undecided: 0,
       });
     }
   }
+  for (const [key, businesses] of undecidedBusinesses) map.get(key)!.undecided = businesses.size;
   return Array.from(map.values()).sort(
-    (a, b) => a.productName.localeCompare(b.productName, 'ko') || a.size.localeCompare(b.size, 'ko') || a.unit.localeCompare(b.unit, 'ko') || PREP_ORDER.indexOf(a.prep) - PREP_ORDER.indexOf(b.prep),
+    (a, b) =>
+      a.productName.localeCompare(b.productName, 'ko') ||
+      a.size.localeCompare(b.size, 'ko') ||
+      Number(a.undecided > 0) - Number(b.undecided > 0) || // 같은 품목이면 확정 줄이 먼저, 미정 줄이 뒤
+      a.unit.localeCompare(b.unit, 'ko') ||
+      PREP_ORDER.indexOf(a.prep) - PREP_ORDER.indexOf(b.prep),
   );
 }
 

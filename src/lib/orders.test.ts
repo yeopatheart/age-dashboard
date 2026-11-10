@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { businessIdsInBothRounds, nameWithRound, roundLabel } from './orders.ts';
+import { businessIdsInBothRounds, getProductSummary, nameWithRound, roundLabel, type OrderItem } from './orders.ts';
 
 test('1·2차가 둘 다 있는 업체만 이름에 차수를 붙인다', () => {
   const split = businessIdsInBothRounds([
@@ -20,4 +20,48 @@ test('차수 값이 이상하면 1차로 본다', () => {
   assert.equal(nameWithRound('x', 0, true), 'x 1차');
   assert.equal(nameWithRound('x', 3, true), 'x 1차');
   assert.equal(roundLabel(2), '2차');
+});
+
+const item = (over: Partial<OrderItem>): OrderItem => ({
+  id: 'i', dailyBusinessId: 'd1', businessId: 'b1', businessName: '가게', terminal: '대구', businessNumber: 1, productSequence: 1,
+  productId: null, productName: '활전갱이', quantity: 2, unit: '미', isMulbong: false, hasAerator: false, isPacked: false,
+  unshippedQuantity: 0, changeStatus: 'none', ...over,
+});
+const undecided = (over: Partial<OrderItem> = {}) => item({ quantity: 0, unit: '', ...over });
+
+test('품목별 수량: 수량 미정뿐인 품목도 "미정" 줄로 나온다', () => {
+  const rows = getProductSummary([item({ productName: '방어', quantity: 3 }), undecided({ productName: '문어다리', dailyBusinessId: 'd2' })]);
+  assert.deepEqual(rows.map((r) => ({ label: r.label, total: r.total, unit: r.unit, undecided: r.undecided })), [
+    { label: '문어다리', total: 0, unit: '', undecided: 1 },
+    { label: '방어', total: 3, unit: '미', undecided: 0 },
+  ]);
+});
+
+test('품목별 수량: 확정 줄이 있는 품목은 확정 줄 뒤에 미정 줄이 따로 붙는다', () => {
+  const rows = getProductSummary([item({ quantity: 4 }), item({ id: 'j', dailyBusinessId: 'd2', quantity: 8 }), undecided({ id: 'k', dailyBusinessId: 'd3' })]);
+  assert.deepEqual(rows.map((r) => [r.label, r.total, r.unit, r.undecided]), [
+    ['활전갱이', 12, '미', 0],
+    ['활전갱이', 0, '', 1],
+  ]);
+});
+
+test('품목별 수량: 미정은 고객 수로 센다(같은 고객의 같은 품목 미정 두 줄은 1곳, 취소는 제외)', () => {
+  const rows = getProductSummary([
+    undecided({ id: 'a', dailyBusinessId: 'd1' }),
+    undecided({ id: 'b', dailyBusinessId: 'd1' }),
+    undecided({ id: 'c', dailyBusinessId: 'd2' }),
+    undecided({ id: 'd', dailyBusinessId: 'd3', changeStatus: 'cancelled' }),
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].undecided, 2);
+});
+
+test('품목별 수량: 사이즈·준비 방식이 다르면 미정 줄도 따로 센다', () => {
+  const rows = getProductSummary([undecided({ sizeRequest: '선별' }), undecided({ id: 'x', dailyBusinessId: 'd2', isMulbong: true })]);
+  assert.deepEqual(rows.map((r) => [r.label, r.undecided]).sort(), [['활전갱이 (선별)', 1], ['활전갱이 · 물봉', 1]]);
+});
+
+test('품목별 수량: 미정이 없으면 이전과 같은 결과다(undecided는 모두 0)', () => {
+  const rows = getProductSummary([item({ quantity: 2 }), item({ id: 'n', dailyBusinessId: 'd2', productName: '방어', quantity: 1, unit: 'kg' })]);
+  assert.deepEqual(rows.map((r) => [r.label, r.total, r.unit, r.undecided]), [['방어', 1, 'kg', 0], ['활전갱이', 2, '미', 0]]);
 });
