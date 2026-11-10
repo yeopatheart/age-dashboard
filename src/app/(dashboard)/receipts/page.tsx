@@ -7,6 +7,8 @@ import { AdminHeader } from '@/components/admin/admin-kit';
 import { MigrationNotice } from '@/components/migration-notice';
 import { todayKST } from '@/lib/order-date';
 import { parsePeriodParams } from '@/lib/settlement/url';
+import { latestByKey } from '@/lib/dispatch-log';
+import { loadDispatchLog } from '@/lib/dispatch-log-server';
 import { loadReceipts } from '@/lib/settlement/receipt-server';
 import { PeriodBar } from '../settlement/period-bar';
 import { ReceiptsClient } from './receipts-client';
@@ -22,10 +24,11 @@ export default async function ReceiptsPage({ searchParams }: { searchParams: Pro
 
   const header = <AdminHeader icon={<FileText size={20} />} title="영수증" sub="그날 발행한 영수증을 고객별로 모아 보고 카카오톡 등으로 보냅니다. 영수증을 만들려면 정산 화면에서 판매내역 줄을 골라 “영수증 만들기”를 누르세요." />;
 
-  const [, receipts, sellers] = await Promise.all([
+  const [, receipts, sellers, log] = await Promise.all([
     accessCheck,
     rowsOrMissing(loadReceipts(supabase, period.from, period.to)),
     rowsOrMissing(fetchAll((a, b) => supabase.from('seller_businesses').select('id, name').order('name').order('id').range(a, b), '사업자 조회 실패: ')),
+    rowsOrMissing(loadDispatchLog(supabase, period.from)), // 영수증은 하루 단위로만 본다(period.from = 기준일)
   ]);
 
   const missing = [receipts.missing, sellers.missing].filter((x): x is string => !!x);
@@ -38,12 +41,15 @@ export default async function ReceiptsPage({ searchParams }: { searchParams: Pro
     );
   }
 
+  const logMissing = log.missing ? migrationsFor([log.missing]) : null;
+
   return (
     <div className="ak-page">
       {header}
+      {logMissing && <MigrationNotice feature="보내기 기록(보냄 표시)" migrations={logMissing} />}
       <PeriodBar granularity={granularity} anchor={anchor} today={today} periodLabel={period.label} basePath="/receipts" dayOnly />
       {/* 기간을 옮기면 열어 둔 영수증·검색을 새로 시작한다(key) */}
-      <ReceiptsClient key={`${granularity}-${anchor}`} receipts={receipts.rows} sellers={sellers.rows} />
+      <ReceiptsClient key={`${granularity}-${anchor}`} receipts={receipts.rows} sellers={sellers.rows} sent={latestByKey(log.rows, 'receipt')} logEnabled={!logMissing} />
     </div>
   );
 }

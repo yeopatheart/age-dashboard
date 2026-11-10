@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { DateNav } from '@/components/date-nav';
 import { MigrationNotice } from '@/components/migration-notice';
 import { Segmented } from '@/components/segmented';
+import type { SentEntry } from '@/lib/dispatch-log';
 import type { ScanShareTemplate } from '@/lib/scan-share-template';
 import type { ReceiptRecord } from '@/lib/settlement/receipt-server';
 import { ReceiptsClient } from '../receipts/receipts-client';
@@ -24,6 +25,9 @@ export function DispatchClient({
   receipts,
   sellers,
   receiptsMissing,
+  sentDriver,
+  sentReceipt,
+  logEnabled,
 }: {
   orderDate: string;
   today: string;
@@ -34,6 +38,9 @@ export function DispatchClient({
   receipts: ReceiptRecord[];
   sellers: { id: string; name: string }[];
   receiptsMissing: string[] | null; // 영수증 테이블 마이그레이션이 없을 때 필요한 파일(없으면 null)
+  sentDriver: Record<string, SentEntry>; // 터미널 이름 → 가장 최근 보냄 기록
+  sentReceipt: Record<string, SentEntry>; // 영수증 카드 키 → 가장 최근 보냄 기록
+  logEnabled: boolean; // 보내기 기록 마이그레이션(0052) 적용 여부
 }) {
   const router = useRouter();
   const items = [
@@ -52,12 +59,12 @@ export function DispatchClient({
         {items.length > 1 && <Segmented items={items} value={active} onSelect={setTab} label="보낼 항목" fill />}
       </div>
 
-      {active === 'driver' && <DriverSection orderDate={orderDate} cards={cards} shareTemplate={shareTemplate} />}
+      {active === 'driver' && <DriverSection orderDate={orderDate} cards={cards} shareTemplate={shareTemplate} sent={sentDriver} logEnabled={logEnabled} />}
       {active === 'receipt' &&
         (receiptsMissing ? (
           <MigrationNotice feature="영수증" migrations={receiptsMissing} />
         ) : (
-          <ReceiptsClient key={orderDate} receipts={receipts} sellers={sellers} />
+          <ReceiptsClient key={orderDate} receipts={receipts} sellers={sellers} sent={sentReceipt} logEnabled={logEnabled} />
         ))}
 
       <style>{`

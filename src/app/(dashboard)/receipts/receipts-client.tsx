@@ -8,10 +8,12 @@ import { SearchInput, SidePanel } from '@/components/admin/admin-kit';
 import { useCan } from '@/components/permissions-context';
 import { ReceiptSheet, RECEIPT_WIDTH_PX } from '@/components/receipt/receipt-sheet';
 import { canCopyImage, canShareImage, copyImage, downloadBlob, receiptToPng, shareImage } from '@/components/receipt/receipt-image';
+import { sentLabel, sentState, type SentEntry } from '@/lib/dispatch-log';
 import { formatWon } from '@/lib/money';
 import { pageNumberLabel, receiptFileName, splitPages } from '@/lib/settlement/receipt';
 import type { ReceiptRecord } from '@/lib/settlement/receipt-server';
 import { deleteReceipt, loadReceiptSeal } from '../settlement/receipt-actions';
+import { useSentLog } from '../dispatch/use-sent-log';
 import { ReceiptCard, type CardImage } from './receipt-card';
 
 interface CardSpec {
@@ -28,7 +30,9 @@ function friendlyError(e: unknown, fallback: string): string {
   return fallback;
 }
 
-export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[]; sellers: { id: string; name: string }[] }) {
+// sent: 카드 키 → 가장 최근 보냄 기록(공유가 끝났거나 이미지를 복사한 순간). logEnabled=false면 기록하지 않는다(마이그레이션 0052 전).
+export function ReceiptsClient({ receipts, sellers, sent, logEnabled }: { receipts: ReceiptRecord[]; sellers: { id: string; name: string }[]; sent: Record<string, SentEntry>; logEnabled: boolean }) {
+  const { entries: sentEntries, record, error: recordError } = useSentLog('receipt', sent, logEnabled);
   const canDelete = useCan()('receipts:delete');
   const [search, setSearch] = useState('');
   const [sellerFilter, setSellerFilter] = useState('');
@@ -145,10 +149,14 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
     setBusyKey(spec.key);
     try {
       if (canShareImage(image.blob, name)) {
-        if ((await shareImage(image.blob, name)) === 'shared') flash(`${receipt.customerName} 영수증을 공유 시트로 보냈습니다.`);
+        if ((await shareImage(image.blob, name)) === 'shared') {
+          flash(`${receipt.customerName} 영수증을 공유 시트로 보냈습니다.`);
+          await record(receipt.orderDate, spec.key, 'share', null);
+        }
       } else if (canCopyImage()) {
         await copyImage(image.blob);
         flash(`${receipt.customerName} 영수증 이미지를 복사했습니다. 카카오톡 채팅창에 붙여넣기(Ctrl+V, Mac은 ⌘+V)하세요.`);
+        await record(receipt.orderDate, spec.key, 'copy', null); // 파일로 저장만 한 경우는 보냈는지 알 수 없어 기록하지 않는다
       } else {
         downloadBlob(image.blob, name);
         flash(`${receipt.customerName} 영수증 이미지를 저장했습니다.`);
@@ -188,6 +196,7 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
 
       {notice && <p className="ak-notice" role="status">{notice}</p>}
       {error && <p className="ak-error" role="alert">{error}</p>}
+      {recordError && <p className="ak-error" role="alert">{recordError}</p>}
       {unreadable > 0 && <p className="ak-error">저장된 내용을 읽을 수 없는 영수증이 {unreadable}장 있어 표시하지 못했습니다.</p>}
 
       {filtered.length === 0 ? (
@@ -213,6 +222,7 @@ export function ReceiptsClient({ receipts, sellers }: { receipts: ReceiptRecord[
                   canDelete={canDelete}
                   confirming={confirmKey === spec.key}
                   busy={busyKey === spec.key}
+                  sentText={sentLabel(sentEntries[spec.key], sentState(sentEntries[spec.key]))}
                   registerNode={registerNode}
                   onOpen={() => setPreview(spec)}
                   onSend={() => void send(spec)}
