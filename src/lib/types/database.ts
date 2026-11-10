@@ -313,6 +313,18 @@ type SettlementReceipt = {
   created_at: string;
 };
 
+// 보내기 기록(0052). 기사 글·영수증 카드를 공유/복사한 순간. 같은 항목을 여러 번 보낼 수 있어 행이 여러 개다.
+type DispatchLog = {
+  id: string;
+  order_date: string;
+  kind: "driver" | "receipt";
+  key: string;
+  method: "share" | "copy";
+  content_hash: string | null;
+  sent_by: string | null;
+  sent_at: string;
+};
+
 // 매입내역의 사용자 입력값(0044). 행은 (출고일, 상품명) 하나다.
 type SettlementPurchase = {
   order_date: string;
@@ -464,6 +476,10 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
         }
+      >;
+      dispatch_log: TableDef<
+        DispatchLog,
+        Pick<DispatchLog, "order_date" | "kind" | "key" | "method"> & { id?: string; content_hash?: string | null; sent_by?: string | null; sent_at?: string }
       >;
       settlement_purchases: TableDef<
         SettlementPurchase,

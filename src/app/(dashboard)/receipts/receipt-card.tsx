@@ -21,6 +21,7 @@ export function ReceiptCard({
   canDelete,
   confirming,
   busy,
+  sentText,
   registerNode,
   onOpen,
   onSend,
@@ -39,6 +40,7 @@ export function ReceiptCard({
   canDelete: boolean;
   confirming: boolean; // 삭제 확인 중
   busy: boolean; // 보내는 중·삭제하는 중
+  sentText: string | null; // "보냄 ✓ 14:07" 같은 보냄 기록 표시(없으면 null)
   registerNode: (key: string, node: HTMLElement | null) => void;
   onOpen: () => void;
   onSend: () => void;
@@ -84,6 +86,7 @@ export function ReceiptCard({
       <div className="rc-meta">
         <strong className="rc-name" title={label}>{label}</strong>
         <span className="rc-sub">NO. {receiptNo} · {snapshot.seller.name} · ₩{formatWon(snapshot.total)}</span>
+        {sentText && <span className="rc-sub" style={{ color: '#0369a1', fontWeight: 800 }}>{sentText}</span>}
       </div>
       {confirming ? (
         <div className="rc-confirm">
