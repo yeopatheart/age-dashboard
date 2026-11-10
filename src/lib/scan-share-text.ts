@@ -65,6 +65,31 @@ export function buildLoadedListText(orderDate: string, cards: ShareCard[], termi
   return cleanShareText(lines.filter((l) => l.trim() !== '').join('\n'));
 }
 
+// 터미널마다 상차 현황(상차/전체 박스)과 기사님께 보낼 글. 터미널은 카드에 처음 나온 순서이고, 상차된 박스가 없으면 text가 null이다.
+// 상차 스캔 화면과 보내기 화면이 같이 쓴다.
+export interface TerminalShare {
+  name: string;
+  loaded: number;
+  total: number;
+  text: string | null;
+}
+
+export function terminalShareList(
+  orderDate: string,
+  cards: (ShareCard & { loaded: number; total: number })[],
+  template: ScanShareTemplate = DEFAULT_SCAN_SHARE_TEMPLATE,
+): TerminalShare[] {
+  const map = new Map<string, { loaded: number; total: number }>();
+  for (const c of cards) {
+    const key = c.terminal || NO_TERMINAL;
+    const t = map.get(key) ?? { loaded: 0, total: 0 };
+    t.loaded += c.loaded;
+    t.total += c.total;
+    map.set(key, t);
+  }
+  return [...map.entries()].map(([name, v]) => ({ name, ...v, text: buildLoadedListText(orderDate, cards, name, template) }));
+}
+
 // 설정 화면 미리보기용 예시 데이터(대구 터미널, 1차 날짜 2026-11-06): 모두 상차 / 일부 상차 / 미상차가 한 번에 보이게 만든다.
 export const SHARE_SAMPLE_DATE = '2026-11-06';
 export const SHARE_SAMPLE_TERMINAL = '대구';

@@ -9,6 +9,7 @@ export const MENU_DEFS = {
   packing: { label: '박스 할당 / 라벨 출력', href: '/packing-log', paths: ['/packing-log'], actions: { submit: '박스 구성 제출·자동 배치', delete: '제출 기록 삭제', print: '송장 라벨 출력' } },
   dashboard: { label: '주문 목록', href: '/dashboard', paths: ['/dashboard'], actions: { edit: '포장 체크·주문/상품 수정·순서 변경', delete: '주문·상품 삭제/취소' } },
   scan: { label: '상차 스캔', href: '/scan', paths: ['/scan'], actions: { scan: '상차 스캔', undo: '상차 되돌리기' } },
+  dispatch: { label: '보내기', href: '/dispatch', paths: ['/dispatch'], actions: {} }, // 구역별 보이는 범위는 상차 스캔·영수증 권한을 따른다
   settlement: { label: '정산', href: '/settlement', paths: ['/settlement'], actions: { edit: '판매가·사업자·입금·메모 입력·영수증 만들기' } },
   receipts: { label: '영수증', href: '/receipts', paths: ['/receipts'], actions: { delete: '영수증 삭제' } },
   reports: { label: '리포트', href: '/reports', paths: ['/reports'], actions: {} },

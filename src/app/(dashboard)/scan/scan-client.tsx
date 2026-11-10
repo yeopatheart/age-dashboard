@@ -1,14 +1,14 @@
 'use client';
 import '@/components/admin/admin.css';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { AlertTriangle, Camera, CheckCircle2, Check, ChevronDown, Copy, Keyboard, ScanLine, Share2, Undo2, X, XCircle } from 'lucide-react';
 import { scanBarcode, undoScan, type ScanResult } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { playTone, unlockAudio } from '@/lib/sound/tones';
-import { cleanShareText } from '@/lib/share-text';
-import { buildLoadedListText, NO_TERMINAL, type PackageCount } from '@/lib/scan-share-text';
+import { useShareText } from '@/lib/use-share-text';
+import { terminalShareList, type PackageCount } from '@/lib/scan-share-text';
 import { undoneSummary, type UndoneBox } from '@/lib/scan-text';
 import type { ScanShareTemplate } from '@/lib/scan-share-template';
 
@@ -272,47 +272,15 @@ export function ScanClient({ orderDate, today, cards, shareTemplate }: { orderDa
 
 
   // 터미널별 합계와 아직 안 끝난 업체
-  const terminals = useMemo(() => {
-    const map = new Map<string, { loaded: number; total: number }>();
-    for (const c of cards) {
-      const key = c.terminal || NO_TERMINAL;
-      const t = map.get(key) ?? { loaded: 0, total: 0 };
-      t.loaded += c.loaded;
-      t.total += c.total;
-      map.set(key, t);
-    }
-    // 터미널마다 퀵 기사님께 따로 보낼 상차 완료 글(상차된 박스가 없으면 null)
-    return [...map.entries()].map(([name, v]) => ({ name, ...v, text: buildLoadedListText(orderDate, cards, name, shareTemplate) }));
-  }, [cards, orderDate, shareTemplate]);
+  // 터미널마다 퀵 기사님께 따로 보낼 상차 완료 글(상차된 박스가 없으면 null)
+  const terminals = useMemo(() => terminalShareList(orderDate, cards, shareTemplate), [cards, orderDate, shareTemplate]);
   const totalLoaded = cards.reduce((s, c) => s + c.loaded, 0);
   const totalBoxes = cards.reduce((s, c) => s + c.total, 0);
   const visibleCards = onlyPending ? cards.filter((c) => c.loaded < c.total) : cards;
   const isToday = orderDate === today;
 
   // 터미널별 상차 완료 글을 퀵 기사님께 보낸다. 공유는 지원하는 브라우저(주로 휴대폰)에서만 보이고, 복사는 항상 쓸 수 있다.
-  const canShare = useSyncExternalStore(
-    () => () => {},
-    () => typeof navigator.share === 'function',
-    () => false,
-  );
-  const [copiedTerminal, setCopiedTerminal] = useState<string | null>(null);
-  const copyList = async (terminal: string, text: string) => {
-    try {
-      await navigator.clipboard.writeText(cleanShareText(text));
-      setCopiedTerminal(terminal);
-      window.setTimeout(() => setCopiedTerminal((cur) => (cur === terminal ? null : cur)), 2500);
-    } catch {
-      window.prompt('아래 글을 복사해서 붙여넣으세요.', cleanShareText(text));
-    }
-  };
-  const shareList = async (terminal: string, text: string) => {
-    try {
-      await navigator.share({ text: cleanShareText(text) });
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return; // 공유 창을 닫은 것이다
-      await copyList(terminal, text);
-    }
-  };
+  const { canShare, copiedKey: copiedTerminal, copy: copyList, share: shareList } = useShareText();
 
   return (
     <div className="sc-root">
