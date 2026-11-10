@@ -8,16 +8,18 @@ import { todayKST } from '@/lib/order-date';
 import { MigrationNotice } from '@/components/migration-notice';
 import { latestByKey, type DispatchLogRow } from '@/lib/dispatch-log';
 import { loadDispatchLog } from '@/lib/dispatch-log-server';
+import { loadSalesRows } from '@/lib/settlement/server';
 import { loadScanCards } from '@/lib/scan-cards';
 import { loadAppSettings } from '@/lib/settings-server';
 import { DEFAULT_SCAN_SHARE_TEMPLATE } from '@/lib/scan-share-template';
 import { loadReceipts, type ReceiptRecord } from '@/lib/settlement/receipt-server';
+import type { SalesRow } from '@/lib/settlement/sales';
 import type { ScanCard } from '../scan/scan-client';
 import { DispatchClient } from './dispatch-client';
 
 // 보내기: 출고가 끝난 뒤 카카오톡으로 보내는 일을 한 화면에 모은다(모바일 우선). 구역마다 기존 화면의 로직을 그대로 쓴다.
-//  - 기사: 터미널별로 퀵 기사님께 보낼 상차 완료 글(상차 스캔과 같은 글·같은 설정). 보이는 조건: 상차 스캔 보기 권한.
-//  - 영수증: 그날 발행한 영수증 카드와 이미지 보내기(영수증 화면과 같음). 보이는 조건: 영수증 보기 권한.
+//  - 퀵기사: 터미널별로 퀵 기사님께 보낼 상차 완료 글(상차 스캔과 같은 글·같은 설정). 보이는 조건: 상차 스캔 보기 권한.
+//  - 고객사: 그날 정산이 끝난 고객사 목록에서 업체마다 정산 메시지와 영수증을 보낸다(영수증 보기·삭제는 영수증 화면과 같은 카드). 보이는 조건: 정산 보기 권한(영수증 버튼은 영수증 보기 권한).
 // 날짜는 ?d=YYYY-MM-DD(기본 오늘). 영수증은 출고일이 그날인 것을 보여 준다.
 export default async function DispatchPage({ searchParams }: { searchParams: Promise<{ d?: string }> }) {
   const access = await requireMenu('dispatch');
@@ -25,16 +27,19 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
   const today = todayKST();
   const orderDate = d && /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today ? d : today;
   const canDriver = can(access, 'scan:view');
-  const canReceipts = can(access, 'receipts:view');
+  const canCustomers = can(access, 'settlement:view');
+  const canReceipts = can(access, 'receipts:view') && canCustomers; // 영수증은 고객사 탭 안에서만 쓴다
   const supabase = await createClient();
 
-  const [cards, settings, receipts, sellers, log] = await Promise.all([
+  const [cards, settings, sales, receipts, sellers, log] = await Promise.all([
     canDriver ? loadScanCards(supabase, orderDate) : Promise.resolve<ScanCard[]>([]),
     canDriver ? loadAppSettings(supabase) : Promise.resolve(null),
+    canCustomers ? rowsOrMissing(loadSalesRows(supabase, orderDate, orderDate)) : Promise.resolve<{ rows: SalesRow[]; missing: string | null }>({ rows: [], missing: null }),
     canReceipts ? rowsOrMissing(loadReceipts(supabase, orderDate, orderDate)) : Promise.resolve<{ rows: ReceiptRecord[]; missing: string | null }>({ rows: [], missing: null }),
     canReceipts ? rowsOrMissing(fetchAll((a, b) => supabase.from('seller_businesses').select('id, name').order('name').order('id').range(a, b), '사업자 조회 실패: ')) : Promise.resolve<{ rows: { id: string; name: string }[]; missing: string | null }>({ rows: [], missing: null }),
     rowsOrMissing(loadDispatchLog(supabase, orderDate)),
   ]);
+  const salesMissing = sales.missing ? migrationsFor([sales.missing]) : null;
   const receiptsMissing = migrationsFor([receipts.missing, sellers.missing].filter((x): x is string => !!x));
   const receiptsUnavailable = !!receipts.missing || !!sellers.missing;
   // 보내기 기록 테이블(0052)이 없어도 화면은 열린다: 기록 없이 보내기만 되고 위에 안내를 보여 준다.
@@ -43,20 +48,24 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="ak-page">
-      <AdminHeader icon={<Send size={20} />} title="보내기" sub="출고가 끝난 뒤 카카오톡으로 보내는 글과 영수증을 한곳에서 보냅니다. 업체·터미널마다 보내기를 눌러 방을 고르세요." />
+      <AdminHeader icon={<Send size={20} />} title="보내기" sub="출고가 끝난 뒤 카카오톡으로 보내는 글과 영수증을 한곳에서 보냅니다. 퀵기사는 터미널마다, 고객사는 업체마다 보내기를 눌러 방을 고르세요." />
       {logMissing && <MigrationNotice feature="보내기 기록(보냄 표시)" migrations={logMissing} />}
       <DispatchClient
         key={orderDate}
         orderDate={orderDate}
         today={today}
         canDriver={canDriver}
+        canCustomers={canCustomers}
         canReceipts={canReceipts}
         cards={cards}
         shareTemplate={settings?.scanShare ?? DEFAULT_SCAN_SHARE_TEMPLATE}
+        salesRows={sales.rows.map(({ customer, product, quantity, unit, price }) => ({ customer, product, quantity, unit, price }))}
+        salesMissing={salesMissing}
         receipts={receiptsUnavailable ? [] : receipts.rows}
         sellers={receiptsUnavailable ? [] : sellers.rows}
         receiptsMissing={receiptsUnavailable ? receiptsMissing : null}
         sentDriver={latestByKey(logRows, 'driver')}
+        sentMessage={latestByKey(logRows, 'customer')}
         sentReceipt={latestByKey(logRows, 'receipt')}
         logEnabled={!logMissing}
       />

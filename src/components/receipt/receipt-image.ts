@@ -139,6 +139,23 @@ export async function shareImage(blob: Blob, fileName: string): Promise<'shared'
   }
 }
 
+// 여러 장을 한 번에 공유 시트로 보낼 수 있는지(한 고객사의 영수증이 여러 장일 때).
+export function canShareImages(items: { blob: Blob; name: string }[]): boolean {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') return false;
+  return navigator.canShare({ files: items.map((i) => new File([i.blob], i.name, { type: 'image/png' })) });
+}
+
+// 여러 장을 한 번에 공유 시트로 보낸다. 사용자가 닫으면 'cancelled'.
+export async function shareImages(items: { blob: Blob; name: string }[]): Promise<'shared' | 'cancelled'> {
+  try {
+    await navigator.share({ files: items.map((i) => new File([i.blob], i.name, { type: 'image/png' })) });
+    return 'shared';
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') return 'cancelled';
+    throw e;
+  }
+}
+
 export function canCopyImage(): boolean {
   return typeof navigator !== 'undefined' && !!navigator.clipboard && typeof ClipboardItem !== 'undefined';
 }

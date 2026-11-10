@@ -317,7 +317,7 @@ type SettlementReceipt = {
 type DispatchLog = {
   id: string;
   order_date: string;
-  kind: "driver" | "receipt";
+  kind: "driver" | "receipt" | "customer";
   key: string;
   method: "share" | "copy";
   content_hash: string | null;

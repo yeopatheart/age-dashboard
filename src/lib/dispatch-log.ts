@@ -1,7 +1,7 @@
 // 보내기 기록의 순수 로직(서버·클라이언트 공용): 글 해시, 항목마다 가장 최근 기록 고르기, 상태·표시 글.
 // 저장·조회는 dispatch-log-server.ts와 dispatch/actions.ts가 한다.
 
-export type DispatchKind = 'driver' | 'receipt';
+export type DispatchKind = 'driver' | 'receipt' | 'customer'; // 기사 글 | 영수증 카드 | 고객사 정산 메시지
 export type DispatchMethod = 'share' | 'copy';
 
 export interface DispatchLogRow {

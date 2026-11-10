@@ -3,18 +3,19 @@
 // 카드를 누르면 크게 보고, 잘못 발행한 것은 카드의 삭제로 이력에서 지운다(영수증 삭제 권한).
 // 보내기 이미지는 카드가 화면에 보일 때 한 장씩 차례로 미리 만들어 둔다 — 눌린 뒤에 만들면 오래 걸려 모바일 공유 시트(사용자 동작 직후에만 열림)가 막힐 수 있고,
 // 하루치를 한꺼번에 만들면 느리다.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchInput, SidePanel } from '@/components/admin/admin-kit';
 import { useCan } from '@/components/permissions-context';
 import { ReceiptSheet, RECEIPT_WIDTH_PX } from '@/components/receipt/receipt-sheet';
-import { canCopyImage, canShareImage, copyImage, downloadBlob, receiptToPng, shareImage } from '@/components/receipt/receipt-image';
+import { canCopyImage, canShareImage, copyImage, downloadBlob, shareImage } from '@/components/receipt/receipt-image';
 import { sentLabel, sentState, type SentEntry } from '@/lib/dispatch-log';
 import { formatWon } from '@/lib/money';
 import { pageNumberLabel, receiptFileName, splitPages } from '@/lib/settlement/receipt';
 import type { ReceiptRecord } from '@/lib/settlement/receipt-server';
-import { deleteReceipt, loadReceiptSeal } from '../settlement/receipt-actions';
+import { deleteReceipt } from '../settlement/receipt-actions';
 import { useSentLog } from '../dispatch/use-sent-log';
-import { ReceiptCard, type CardImage } from './receipt-card';
+import { ReceiptCard } from './receipt-card';
+import { friendlyError, useReceiptImages, useReceiptSeals } from './use-receipt-images';
 
 interface CardSpec {
   key: string;
@@ -23,40 +24,34 @@ interface CardSpec {
   pageCount: number;
 }
 
-// 브라우저가 던지는 영문 오류 문구 대신 사용자가 할 수 있는 조치를 알려 준다.
-function friendlyError(e: unknown, fallback: string): string {
-  if (e instanceof DOMException && e.name === 'NotAllowedError') return '브라우저가 이 동작을 허용하지 않았습니다. 주소창의 사이트 권한(클립보드·공유)을 확인해 주세요.';
-  if (e instanceof Error && /[가-힣]/.test(e.message)) return e.message;
-  return fallback;
-}
-
 // sent: 카드 키 → 가장 최근 보냄 기록(공유가 끝났거나 이미지를 복사한 순간). logEnabled=false면 기록하지 않는다(마이그레이션 0052 전).
-export function ReceiptsClient({ receipts, sellers, sent, logEnabled }: { receipts: ReceiptRecord[]; sellers: { id: string; name: string }[]; sent: Record<string, SentEntry>; logEnabled: boolean }) {
-  const { entries: sentEntries, record, error: recordError } = useSentLog('receipt', sent, logEnabled);
+// sentLog: 부모(보내기 화면의 고객사 탭)가 같은 기록 상태를 같이 쓰고 싶을 때 넘긴다. 없으면 이 화면이 자기 상태를 가진다.
+export function ReceiptsClient({
+  receipts,
+  sellers,
+  sent,
+  logEnabled,
+  sentLog,
+}: {
+  receipts: ReceiptRecord[];
+  sellers: { id: string; name: string }[];
+  sent: Record<string, SentEntry>;
+  logEnabled: boolean;
+  sentLog?: ReturnType<typeof useSentLog>;
+}) {
+  const ownLog = useSentLog('receipt', sent, logEnabled);
+  const { entries: sentEntries, record, error: recordError } = sentLog ?? ownLog;
   const canDelete = useCan()('receipts:delete');
   const [search, setSearch] = useState('');
   const [sellerFilter, setSellerFilter] = useState('');
-  const [seals, setSeals] = useState<Record<string, string | null>>({}); // 사업자 id → 직인(없으면 null). 키가 없으면 아직 불러오는 중
-  const [images, setImages] = useState<Record<string, CardImage>>({});
-  const [wanted, setWanted] = useState<string[]>([]); // 화면에 보인 카드(이미지를 만들 순서)
   const [preview, setPreview] = useState<CardSpec | null>(null);
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const nodes = useRef(new Map<string, HTMLElement>());
-  const generating = useRef(false);
-  const [tick, setTick] = useState(0); // 이미지 하나를 만들고 나면 올려서 다음 카드로 이어 가게 한다
-  const mounted = useRef(true);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      clearTimeout(noticeTimer.current);
-    };
-  }, []);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
 
   const filtered = useMemo(() => {
     const k = search.trim().toLowerCase();
@@ -78,20 +73,9 @@ export function ReceiptsClient({ receipts, sellers, sent, logEnabled }: { receip
 
   // 보이는 영수증의 사업자 직인을 한 번씩 받아 온다(이력 목록에는 용량이 큰 직인을 싣지 않는다).
   const sellerIds = useMemo(() => [...new Set(filtered.filter((r) => r.snapshot && r.sellerId).map((r) => r.sellerId as string))], [filtered]);
-  useEffect(() => {
-    for (const id of sellerIds) {
-      if (id in seals) continue;
-      void loadReceiptSeal(id)
-        .then((res) => mounted.current && setSeals((prev) => ({ ...prev, [id]: res.seal })))
-        .catch(() => mounted.current && setSeals((prev) => ({ ...prev, [id]: null })));
-    }
-  }, [sellerIds, seals]);
+  const seals = useReceiptSeals(sellerIds);
+  const { images, registerNode, want, retry } = useReceiptImages(seals);
   const sealOf = (r: ReceiptRecord): string | null | undefined => (r.sellerId ? seals[r.sellerId] : null);
-
-  const registerNode = useCallback((key: string, node: HTMLElement | null) => {
-    if (node) nodes.current.set(key, node);
-    else nodes.current.delete(key);
-  }, []);
 
   // 카드가 화면 근처에 들어오면 이미지를 만들 목록에 넣는다.
   const gridRef = useRef<HTMLDivElement>(null);
@@ -101,29 +85,13 @@ export function ReceiptsClient({ receipts, sellers, sent, logEnabled }: { receip
     const observer = new IntersectionObserver(
       (entries) => {
         const seen = entries.filter((e) => e.isIntersecting).map((e) => (e.target as HTMLElement).dataset.cardKey as string);
-        if (seen.length > 0) setWanted((prev) => [...prev, ...seen.filter((k) => !prev.includes(k))]);
+        if (seen.length > 0) want(seen);
       },
       { rootMargin: '300px' },
     );
     grid.querySelectorAll('[data-card-key]').forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [cards, seals]);
-
-  // 만들 차례인 카드 하나씩 이미지를 만든다(동시에 하나만). 끝나면 상태가 바뀌어 이 효과가 다음 카드로 다시 돈다.
-  useEffect(() => {
-    if (generating.current) return;
-    const key = wanted.find((k) => !images[k] && nodes.current.has(k));
-    if (!key) return;
-    const node = nodes.current.get(key) as HTMLElement;
-    generating.current = true;
-    receiptToPng(node)
-      .then((blob) => mounted.current && setImages((prev) => ({ ...prev, [key]: { state: 'ready', blob } })))
-      .catch((e) => mounted.current && setImages((prev) => ({ ...prev, [key]: { state: 'error', message: friendlyError(e, '이미지를 만들지 못했습니다. 다시 만들어 주세요.') } })))
-      .finally(() => {
-        generating.current = false;
-        if (mounted.current) setTick((n) => n + 1);
-      });
-  }, [wanted, images, seals, tick]);
+  }, [cards, seals, want]);
 
   const flash = (message: string) => {
     setNotice(message);
@@ -134,12 +102,7 @@ export function ReceiptsClient({ receipts, sellers, sent, logEnabled }: { receip
   const send = async (spec: CardSpec) => {
     const image = images[spec.key];
     if (image?.state === 'error') {
-      // 다시 만들기: 실패 기록을 지우면 만들 목록에서 다시 차례가 온다
-      setImages((prev) => {
-        const { [spec.key]: _removed, ...rest } = prev;
-        void _removed;
-        return rest;
-      });
+      retry(spec.key); // 다시 만들기: 실패 기록을 지우면 만들 목록에서 다시 차례가 온다
       return;
     }
     if (image?.state !== 'ready' || busyKey) return;
