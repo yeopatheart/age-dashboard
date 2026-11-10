@@ -7,6 +7,7 @@ import { Segmented } from '@/components/segmented';
 const TABS = [
   { key: '/reports', label: '주문 수량', href: '/reports' },
   { key: '/reports/box', label: '박스', href: '/reports/box' },
+  { key: '/reports/time', label: '운영 시간', href: '/reports/time' },
 ];
 
 export function ReportTabs() {
