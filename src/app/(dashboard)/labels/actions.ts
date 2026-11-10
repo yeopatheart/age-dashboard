@@ -5,8 +5,10 @@ import { createClient } from '@/lib/supabase/server';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
 import { mergeLabelText, normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
 import { LABEL_PRESETS, LABEL_TEMPLATE_KEY, buildTemplate, parseElements, type LabelData, type LabelPresetKey, type LabelTemplate } from '@/lib/labels/template';
+import { printedBoxTypeValue } from '@/lib/labels/reprint';
 import { printableSeqError } from '@/lib/packing/box-rules';
-import { LABEL_ACTIVE_DESIGN_KEY, LABEL_MARGIN_KEY, LABEL_ROTATE_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelDesigns, loadLabelRotate, loadLabelTemplate, type CardLabelBase, type CardLabelInfo, type LabelDesign } from '@/lib/labels/server';
+import { missingTable } from '@/lib/supabase/missing-table';
+import { LABEL_ACTIVE_DESIGN_KEY, LABEL_MARGIN_KEY, LABEL_ROTATE_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelDesigns, loadLabelRotate, loadLabelTemplate, loadSubmittedBoxTypes, type CardLabelBase, type CardLabelInfo, type LabelDesign } from '@/lib/labels/server';
 import { requirePermission } from '@/lib/permissions/access';
 
 // ─── 디자인 보관함: 저장·새로 만들기·이름 바꾸기·삭제·사용 중 지정 ───────────────────────────────
@@ -164,11 +166,9 @@ export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: 
   if (!base) return fail('업체 주문을 찾지 못했습니다.');
 
   // 라벨은 제출한 박스에 대해서만 출력한다(제출 전이나 제출한 박스 수보다 큰 번호는 막는다).
-  const { data: record } = await supabase.from('packing_records').select('id').eq('daily_business_id', input.dailyBusinessId).maybeSingle();
-  const { count: savedBoxCount } = record
-    ? await supabase.from('packing_boxes').select('id', { count: 'exact', head: true }).eq('record_id', record.id)
-    : { count: 0 };
-  const seqError = printableSeqError(savedBoxCount ?? 0, seqs);
+  // 제출한 박스 종류도 같이 읽는다: 라벨 N번 = N번째 박스(박스 종류 항목이 있는 디자인이면 라벨에 찍힌다).
+  const boxTypes = await loadSubmittedBoxTypes(supabase, input.dailyBusinessId);
+  const seqError = printableSeqError(boxTypes.length, seqs);
   if (seqError) return fail(seqError);
 
   const labelBySeq = new Map((existing ?? []).map((l) => [l.seq, l]));
@@ -187,9 +187,21 @@ export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: 
 
   const ids = seqs.flatMap((s) => (labelBySeq.get(s) ? [labelBySeq.get(s)!.id] : []));
   if (ids.length !== seqs.length) return fail('바코드를 발급하지 못한 박스가 있습니다. 다시 시도해주세요.');
+
+  // 이번에 라벨에 찍히는 박스 종류를 기억해 둔다(나중에 박스 종류가 바뀌면 "재출력 필요"로 알린다). 같은 값끼리 묶어 한 번에 쓴다.
+  // 열(0051)이 아직 없으면 건너뛴다 — 그 경우 화면은 재출력 안내만 하지 않는다.
+  const idsByPrinted = new Map<string | null, string[]>();
+  for (const seq of seqs) {
+    const value = printedBoxTypeValue(template, boxTypes[seq - 1] ?? '');
+    idsByPrinted.set(value, [...(idsByPrinted.get(value) ?? []), labelBySeq.get(seq)!.id]);
+  }
+  for (const [value, labelIds] of idsByPrinted) {
+    const { error } = await supabase.from('box_labels').update({ printed_box_type: value }).in('id', labelIds);
+    if (error && missingTable(error.message) !== 'label_printed_box_type') return fail(error.message);
+  }
   await supabase.from('box_label_events').insert(ids.map((label_id) => ({ label_id, event: 'print' as const, label_kind: LABEL_TEMPLATE_KEY, created_by: userId })));
 
-  const labels: LabelData[] = seqs.map((seq) => ({ ...base.data, boxNo: seq, barcode: labelBySeq.get(seq)!.barcode, merge: mergeLabelText(base.mergeGroups, seq) }));
+  const labels: LabelData[] = seqs.map((seq) => ({ ...base.data, boxNo: seq, barcode: labelBySeq.get(seq)!.barcode, merge: mergeLabelText(base.mergeGroups, seq), boxType: boxTypes[seq - 1] ?? '' }));
   revalidatePath('/packing-log');
   return { error: null, template, labels, infos: await loadCardLabels(supabase, input.dailyBusinessId), rotated };
 }
