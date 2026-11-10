@@ -37,7 +37,8 @@ function GroupTooltip({ active, payload }: TooltipContentProps) {
   );
 }
 
-export function GroupChart({ groups, kind, periodLabel }: { groups: GroupPoint[]; kind: 'product' | 'seller'; periodLabel: string }) {
+// showTable=false면 "표로 보기"를 그리지 않는다(품목별 보기는 판매수량·이익률까지 있는 자기 표를 따로 둔다).
+export function GroupChart({ groups, kind, periodLabel, showTable = true }: { groups: GroupPoint[]; kind: 'product' | 'seller'; periodLabel: string; showTable?: boolean }) {
   const [sortKey, setSortKey] = useState<GroupSortKey>('sales');
   const noun = kind === 'product' ? '품목' : '사업자';
   const { shown, rest } = topGroups(groups, sortKey, TOP_N);
@@ -92,6 +93,7 @@ export function GroupChart({ groups, kind, periodLabel }: { groups: GroupPoint[]
             </p>
           )}
 
+          {showTable && (
           <details className="viz-table-wrap">
             <summary>표로 보기 ({groups.length}개)</summary>
             <div className="viz-table-scroll">
@@ -122,6 +124,7 @@ export function GroupChart({ groups, kind, periodLabel }: { groups: GroupPoint[]
               </table>
             </div>
           </details>
+          )}
         </>
       )}
     </section>

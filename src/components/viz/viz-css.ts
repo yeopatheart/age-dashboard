@@ -20,9 +20,10 @@ export const VIZ_CSS = `
 .viz-tip-row strong { color: var(--text-primary); font-weight: 600; margin-left: auto; padding-left: 0.6rem; }
 .viz-tip-name { color: var(--text-secondary); }
 .viz-tip-note { color: var(--text-muted); font-size: var(--fs-xs); border-top: 1px solid var(--grid); padding-top: 0.3rem; }
-.viz-views { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-.viz-view-btn, .viz-seg-btn { height: 2.25rem; padding: 0 1rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); font-size: var(--fs-sm); font-weight: 700; cursor: pointer; }
-.viz-view-btn.is-on, .viz-seg-btn.is-on { background: var(--text-primary); border-color: var(--text-primary); color: #fff; }
+
+.viz-seg-btn { height: 2.25rem; padding: 0 1rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); font-size: var(--fs-sm); font-weight: 700; cursor: pointer; }
+
+.viz-seg-btn.is-on { background: var(--text-primary); border-color: var(--text-primary); color: #fff; }
 .viz-controls { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem 1rem; flex-wrap: wrap; }
 .viz-seg { display: inline-flex; align-items: center; gap: 0.3rem; }
 .viz-seg-label { font-size: var(--fs-xs); color: var(--text-muted); margin-right: 0.2rem; }

@@ -1,39 +1,15 @@
 'use client';
-import { useState, useSyncExternalStore } from 'react';
+import { useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, type DotItemDotProps, type LabelProps, type TooltipContentProps } from 'recharts';
 import { axisFormatter, niceScale, type DayPoint } from '@/lib/settlement/chart';
-import type { GroupPoint } from '@/lib/settlement/chart-groups';
 import type { PurchaseTotals } from '@/lib/settlement/purchases';
 import { VIZ_CSS } from '@/components/viz/viz-css';
 import { formatWon } from '@/lib/money';
-import { GroupChart } from './group-chart';
 import { Key, Legend, SERIES, won } from './chart-shared';
 
-// 정산 그래프. 주·월 조회는 일별 추이를 선 그래프로, 일 조회는 하루의 판매가·매입가·수익을 나란히 비교하는 막대로 보여 준다.
+// 판매·수익 리포트의 추이 보기(정산 화면의 그래프를 옮겨 왔다). 주·월 조회는 일별 추이를 선 그래프로, 일 조회는 하루의 판매가·매입가·수익을 나란히 비교하는 막대로 보여 준다.
 // 색은 항목마다 고정이다(판매가=1번, 매입가=2번, 수익=3번 슬롯). 상태색(초록·빨강)은 쓰지 않는다 — 수익이 적자여도 "상태"가 아니라 숫자다.
 // 규격(선 2px, 막대 24px 이하·4px 둥근 끝, 2px 표면 링, 실선 헤어라인 격자)과 십자선·툴팁·표로 보기는 dataviz 지침을 따른다.
-
-type ChartView = 'all' | 'product' | 'seller';
-const VIEWS: { key: ChartView; name: string }[] = [
-  { key: 'all', name: '전체' },
-  { key: 'product', name: '품목별' },
-  { key: 'seller', name: '사업자별' },
-];
-// 기간을 옮기면 그래프가 새로 만들어지지만(page.tsx의 key), 보던 보기(전체·품목별·사업자별)는 그대로 유지한다.
-// 페이지를 새로 불러오면 '전체'로 돌아간다. 브라우저 저장소에 두면 새로 불러올 때 서버 화면('전체')과 어긋나 화면이 동작하지 않는 문제가 있어(hydration) 메모리에만 둔다.
-const viewMemory = new Map<string, ChartView>();
-const viewListeners = new Set<() => void>();
-const readView = (): ChartView => viewMemory.get('view') ?? 'all';
-function writeView(v: ChartView): void {
-  viewMemory.set('view', v);
-  viewListeners.forEach((l) => l());
-}
-const subscribeView = (cb: () => void) => {
-  viewListeners.add(cb);
-  return () => {
-    viewListeners.delete(cb);
-  };
-};
 
 const LINE_H = 320;
 const LINE_MARGIN = { top: 12, bottom: 4, left: 4 };
@@ -82,22 +58,20 @@ function BarTooltip({ active, payload }: TooltipContentProps) {
   );
 }
 
-export function ChartClient({
+export function TrendView({
   series,
   totals,
+  margin,
+  unpricedLines,
   periodLabel,
-  byProduct,
-  bySeller,
 }: {
   series: DayPoint[];
   totals: PurchaseTotals;
+  margin: number | null; // 이익률(매입가를 입력한 품목의 판매가 기준). 매입가를 입력한 품목이 없으면 null
+  unpricedLines: number; // 판매가를 입력하지 않은 판매내역 줄 수
   periodLabel: string;
-  byProduct: GroupPoint[];
-  bySeller: GroupPoint[];
 }) {
   const [hoverBar, setHoverBar] = useState<number | null>(null);
-  const view = useSyncExternalStore(subscribeView, readView, () => 'all' as ChartView);
-  const setView = writeView;
   const isDay = series.length === 1;
   const empty = totals.salesTotal === 0 && totals.purchaseTotal === 0 && totals.rows === 0;
   const summary = `${periodLabel} 판매가 ${won(totals.salesTotal)}, 매입가 ${won(totals.purchaseTotal)}, 수익 ${won(totals.profitTotal)}`;
@@ -161,30 +135,28 @@ export function ChartClient({
     <div className="viz-root">
       <style>{VIZ_CSS}</style>
 
-      <div className="viz-tiles">
+      <div className="viz-tiles" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(10rem, 1fr))' }}>
         {SERIES.map((s) => (
           <div key={s.key} className="viz-tile">
             <span className="viz-tile-label"><Key color={s.color} kind="box" />총 {s.name}</span>
             <span className="viz-tile-value">{won(s.key === 'sales' ? totals.salesTotal : s.key === 'purchase' ? totals.purchaseTotal : totals.profitTotal)}</span>
           </div>
         ))}
+        <div className="viz-tile">
+          <span className="viz-tile-label">수익률</span>
+          <span className="viz-tile-value">{margin === null ? '-' : `${(margin * 100).toFixed(1)}%`}</span>
+          <span className="viz-sub">매입가를 입력한 품목 기준</span>
+        </div>
       </div>
-      {(totals.missingPrice > 0 || totals.partialSales > 0) && (
+      {(totals.missingPrice > 0 || totals.partialSales > 0 || unpricedLines > 0) && (
         <p className="ak-sub" style={{ margin: 0 }}>
           {totals.missingPrice > 0 && <>매입가 미입력 <strong>{totals.missingPrice}건</strong>은 수익과 총 수익에서 뺐습니다. </>}
-          {totals.partialSales > 0 && <>판매가를 일부만 입력한 품목 {totals.partialSales}건은 총 판매가가 덜 잡혔습니다.</>}
+          {totals.partialSales > 0 && <>판매가를 일부만 입력한 품목 {totals.partialSales}건은 총 판매가가 덜 잡혔습니다. </>}
+          {unpricedLines > 0 && <>판매가를 입력하지 않은 판매내역 {unpricedLines}줄이 있습니다.</>}
         </p>
       )}
 
-      <div className="viz-views" role="group" aria-label="그래프 보기">
-        {VIEWS.map((v) => (
-          <button key={v.key} type="button" className={`viz-view-btn ${view === v.key ? 'is-on' : ''}`} aria-pressed={view === v.key} onClick={() => setView(v.key)}>{v.name}</button>
-        ))}
-      </div>
-
-      {view !== 'all' && <GroupChart key={view} groups={view === 'product' ? byProduct : bySeller} kind={view} periodLabel={periodLabel} />}
-
-      {view === 'all' && (
+      {(
       <section className="viz-card" aria-label="정산 그래프">
         <div className="viz-head">
           <span className="viz-title">{isDay ? `${series[0].label} (${series[0].weekday}) 판매가·매입가·수익 비교` : `일별 판매가·매입가·수익 추이`}</span>
