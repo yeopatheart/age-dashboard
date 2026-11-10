@@ -126,12 +126,30 @@ type OrderItem = {
   size_spec: SizeSpec | null;
   needs_review: boolean;
   review_reason: string | null;
+  ai_repaired: boolean; // AI가 형식을 벗어난 줄을 재구성한 줄(0055). needs_review와 달리 AI 보정만 가리킨다
   created_by: string | null;
   created_at: string;
   updated_at: string;
 };
 
 // 박스 기록(0020) — 제출 시점에 저장하는 "어느 박스에 어떤 상품이 담겼는지". 이름·크기는 그 시점 값의 복사본.
+// 박스 할당 제출 이력(0055). 제출할 때마다 한 줄이 쌓인다(packing_records는 재제출하면 지우고 다시 만든다).
+type PackingSubmitEvent = {
+  id: string;
+  daily_business_id: string | null;
+  order_date: string;
+  business_name: string;
+  terminal_name: string | null;
+  submitted_by: string | null;
+  submitted_at: string;
+  box_count: number;
+  items_verified: boolean | null;
+  order_signature: string | null;
+  recommendation_id: string | null;
+  recommended_rank: number | null;
+  accepted_as_is: boolean | null;
+};
+
 type PackingRecord = {
   id: string;
   daily_business_id: string;
@@ -423,6 +441,7 @@ export type Database = {
           size_spec?: SizeSpec | null;
           needs_review?: boolean;
           review_reason?: string | null;
+          ai_repaired?: boolean;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -507,6 +526,21 @@ export type Database = {
           accepted_as_is?: boolean | null;
           order_signature?: string | null;
           items_verified?: boolean | null;
+        }
+      >;
+      packing_submit_events: TableDef<
+        PackingSubmitEvent,
+        Pick<PackingSubmitEvent, "order_date" | "business_name" | "box_count"> & {
+          id?: string;
+          daily_business_id?: string | null;
+          terminal_name?: string | null;
+          submitted_by?: string | null;
+          submitted_at?: string;
+          items_verified?: boolean | null;
+          order_signature?: string | null;
+          recommendation_id?: string | null;
+          recommended_rank?: number | null;
+          accepted_as_is?: boolean | null;
         }
       >;
       packing_model_versions: TableDef<

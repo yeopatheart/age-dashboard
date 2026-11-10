@@ -345,6 +345,7 @@ export interface LineDecision {
   kind: LineSuggestionKind;
   existingOrderItemId: string | null;
   memo?: string;
+  aiRepaired?: boolean; // AI가 형식을 벗어난 줄을 재구성한 줄이면 true(SuggestedLine.source === 'ai'). order_items.ai_repaired(0055)에 남긴다
 }
 
 // 상품 목록에 없는 이름은 주문입력 출처로 자동 등록하고, 기존 상품이 쓰는 색과 겹치지 않는 색을 배정한다.
@@ -504,7 +505,7 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
   // 4) 상품 — 수정은 병렬로, 신규는 업체별 순번을 순서대로 발급(업체끼리는 병렬)한 뒤 한 번에 삽입한다.
   const memoByDaily = new Map<string, string>();
   const updates: Promise<unknown>[] = [];
-  const newByDaily = new Map<string, ParsedProduct[]>();
+  const newByDaily = new Map<string, { product: ParsedProduct; aiRepaired: boolean }[]>();
 
   for (const { decision, key } of resolved) {
     const dailyBusinessId = dailyIdByKey.get(key);
@@ -538,13 +539,15 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
               change_status: 'modified',
               needs_review: product.needsReview,
               review_reason: product.reviewReason ?? null,
+              // true일 때만 쓴다: 마이그레이션 0055 전에도 일반 줄 입력이 막히지 않게 하고, 한 번 AI 보정이면 그 기록을 지우지 않는다.
+              ...(decision.aiRepaired ? { ai_repaired: true } : {}),
             })
             .eq('id', decision.existingOrderItemId),
         ),
       );
     } else {
       const list = newByDaily.get(dailyBusinessId) ?? [];
-      list.push(product);
+      list.push({ product, aiRepaired: decision.aiRepaired === true });
       newByDaily.set(dailyBusinessId, list);
     }
   }
@@ -557,7 +560,7 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
   const newRowGroups = await Promise.all(
     [...newByDaily].map(async ([dailyBusinessId, products]) => {
       const rows = [];
-      for (const product of products) {
+      for (const { product, aiRepaired } of products) {
         const { data: sequence, error: sequenceError } = await supabase.rpc('assign_product_sequence', { p_daily_business_id: dailyBusinessId });
         if (sequenceError || sequence === null) throw new Error(`상품 순번 발급 실패: ${sequenceError?.message ?? '응답 없음'}`);
         rows.push({
@@ -577,6 +580,7 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
           change_status: isFirstInputOfDay ? ('none' as const) : ('new' as const),
           needs_review: product.needsReview,
           review_reason: product.reviewReason ?? null,
+          ...(aiRepaired ? { ai_repaired: true } : {}), // true일 때만 쓴다(마이그레이션 0055 전에도 일반 줄 입력이 막히지 않게)
           created_by: userId,
         });
       }

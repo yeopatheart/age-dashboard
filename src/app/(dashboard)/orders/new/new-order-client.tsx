@@ -166,6 +166,7 @@ export function NewOrderClient({
         kind: s.kind,
         existingOrderItemId: s.existingOrderItemId,
         memo: s.memo,
+        aiRepaired: s.source === 'ai',
       }));
       await commitOrderLines(orderDate, round, decisions, rawText);
       setDone(true);

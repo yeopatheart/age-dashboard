@@ -13,6 +13,7 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
   settlement_receipts: '0047_settlement_receipts.sql',
   label_designs: '0050_label_designs.sql',
   dispatch_log: '0052_dispatch_log.sql',
+  packing_submit_events: '0055_ops_event_log.sql',
   settlement_sales_edit: '0048_settlement_sales_edit.sql', // 테이블이 아니라 settlement_sales에 더한 열(품목·수량·단위 수정)
   label_printed_box_type: '0051_label_printed_box_type.sql', // 테이블이 아니라 box_labels에 더한 열(출력한 박스 종류)
 };
