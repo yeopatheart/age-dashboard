@@ -8,6 +8,7 @@ import { assignToBoxes, trainModel, type PackingItem } from '@/lib/packing/model
 import { emptyBoxMessage, firstEmptyBoxIndex } from '@/lib/packing/box-rules';
 import { compareWithRecommendation, getTodayModel, orderSignature } from '@/lib/packing/server';
 import { requirePermission } from '@/lib/permissions/access';
+import { missingTable } from '@/lib/supabase/missing-table';
 
 export interface PackingSubmission {
   dailyBusinessId: string;
@@ -179,6 +180,21 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
 
   // 리포트 집계(report_summary)가 daily_businesses.total_boxes를 합산하므로 제출한 박스 수를 맞춰 둔다.
   await supabase.from('daily_businesses').update({ total_boxes: input.boxes.length }).eq('id', daily.id);
+
+  // 제출 이력(0055): 재제출하면 위에서 packing_records를 지우고 다시 만들기 때문에, 제출마다 한 줄씩 따로 쌓아 둔다(재제출 횟수·최초 제출 때의 추천 적중 등).
+  // 리포트용 기록이라 실패해도 현장 제출을 막지 않는다 — 서버 로그에만 남기고, 마이그레이션 전(테이블 없음)에는 조용히 건너뛴다.
+  const { error: eventError } = await supabase.from('packing_submit_events').insert({
+    daily_business_id: daily.id,
+    order_date: daily.order_date,
+    business_name: business?.name ?? '',
+    terminal_name: terminal?.name ?? null,
+    submitted_by: userId,
+    box_count: input.boxes.length,
+    items_verified: input.boxes.length === 1 || input.itemsVerified,
+    order_signature: signature,
+    ...comparison,
+  });
+  if (eventError && missingTable(eventError.message) === null) console.error(`박스 제출 이력 저장 실패: ${eventError.message}`);
 
   revalidatePath('/packing-log');
   revalidatePath('/dashboard');
