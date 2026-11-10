@@ -3,7 +3,6 @@ import { ScanClient } from './scan-client';
 import { requireMenu } from '@/lib/permissions/access';
 import { todayKST } from '@/lib/order-date';
 import { loadScanCards } from '@/lib/scan-cards';
-import { loadAppSettings } from '@/lib/settings-server';
 
 // 상차 스캔 화면. 그날 발급된 박스 라벨을 업체 카드별·터미널별로 모아 "상차 몇 박스 / 전체 몇 박스"를 보여준다.
 export default async function ScanPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
@@ -13,11 +12,7 @@ export default async function ScanPage({ searchParams }: { searchParams: Promise
   const orderDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today ? date : today;
   const supabase = await createClient();
 
-  const [, cards, settings] = await Promise.all([
-    accessCheck,
-    loadScanCards(supabase, orderDate),
-    loadAppSettings(supabase), // 터미널별 상차 완료 글의 형식(시스템 설정)
-  ]);
+  const [, cards] = await Promise.all([accessCheck, loadScanCards(supabase, orderDate)]);
 
-  return <ScanClient orderDate={orderDate} today={today} cards={cards} shareTemplate={settings.scanShare} />;
+  return <ScanClient orderDate={orderDate} today={today} cards={cards} />;
 }

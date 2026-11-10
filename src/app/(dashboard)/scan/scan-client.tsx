@@ -3,14 +3,12 @@ import '@/components/admin/admin.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
-import { AlertTriangle, Camera, CheckCircle2, Check, ChevronDown, Copy, Keyboard, ScanLine, Share2, Undo2, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Camera, CheckCircle2, ChevronDown, Keyboard, ScanLine, Undo2, X, XCircle } from 'lucide-react';
 import { scanBarcode, undoScan, type ScanResult } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { playTone, unlockAudio } from '@/lib/sound/tones';
-import { useShareText } from '@/lib/use-share-text';
-import { terminalShareList, type PackageCount } from '@/lib/scan-share-text';
+import { NO_TERMINAL, type PackageCount } from '@/lib/scan-share-text';
 import { undoneSummary, type UndoneBox } from '@/lib/scan-text';
-import type { ScanShareTemplate } from '@/lib/scan-share-template';
 
 export interface ScanCard {
   id: string;
@@ -76,7 +74,7 @@ function RecentList({ items }: { items: RecentItem[] }) {
   );
 }
 
-export function ScanClient({ orderDate, today, cards, shareTemplate }: { orderDate: string; today: string; cards: ScanCard[]; shareTemplate: ScanShareTemplate }) {
+export function ScanClient({ orderDate, today, cards }: { orderDate: string; today: string; cards: ScanCard[] }) {
   const can = useCan();
   const canScan = can('scan:scan');
   const canUndo = can('scan:undo');
@@ -271,16 +269,23 @@ export function ScanClient({ orderDate, today, cards, shareTemplate }: { orderDa
   };
 
 
-  // 터미널별 합계와 아직 안 끝난 업체
-  // 터미널마다 퀵 기사님께 따로 보낼 상차 완료 글(상차된 박스가 없으면 null)
-  const terminals = useMemo(() => terminalShareList(orderDate, cards, shareTemplate), [cards, orderDate, shareTemplate]);
+  // 터미널별 합계(상차 몇 박스 / 전체 몇 박스). 퀵 기사님께 보내는 상차 완료 글은 보내기 화면에서 만든다.
+  const terminals = useMemo(() => {
+    const map = new Map<string, { loaded: number; total: number }>();
+    for (const c of cards) {
+      const key = c.terminal || NO_TERMINAL;
+      const t = map.get(key) ?? { loaded: 0, total: 0 };
+      t.loaded += c.loaded;
+      t.total += c.total;
+      map.set(key, t);
+    }
+    return [...map.entries()].map(([name, v]) => ({ name, ...v }));
+  }, [cards]);
   const totalLoaded = cards.reduce((s, c) => s + c.loaded, 0);
   const totalBoxes = cards.reduce((s, c) => s + c.total, 0);
   const visibleCards = onlyPending ? cards.filter((c) => c.loaded < c.total) : cards;
   const isToday = orderDate === today;
 
-  // 터미널별 상차 완료 글을 퀵 기사님께 보낸다. 공유는 지원하는 브라우저(주로 휴대폰)에서만 보이고, 복사는 항상 쓸 수 있다.
-  const { canShare, copiedKey: copiedTerminal, copy: copyList, share: shareList } = useShareText();
 
   return (
     <div className="sc-root">
@@ -382,15 +387,9 @@ export function ScanClient({ orderDate, today, cards, shareTemplate }: { orderDa
             <div className="sc-terminals">
               {terminals.map((t) => (
                 <div key={t.name} className={`sc-term ${t.loaded === t.total ? 'sc-term-done' : ''}`}>
-                  <div className="sc-term-name">{t.name}</div>
                   <div className="sc-term-row">
-                    <div className="sc-term-count">{t.loaded}/{t.total}</div>
-                    <div className="sc-share">
-                      {canShare && (
-                        <button className="sc-ic sc-ic-primary" onClick={() => t.text && shareList(t.name, t.text)} disabled={!t.text} aria-label={`${t.name} 상차 완료 목록 공유`} title="공유"><Share2 size={15} /></button>
-                      )}
-                      <button className="sc-ic" onClick={() => t.text && copyList(t.name, t.text)} disabled={!t.text} aria-label={copiedTerminal === t.name ? `${t.name} 복사됨` : `${t.name} 상차 완료 목록 복사`} title={copiedTerminal === t.name ? '복사됨' : '복사'}>{copiedTerminal === t.name ? <Check size={15} /> : <Copy size={15} />}</button>
-                    </div>
+                    <span className="sc-term-name">{t.name}</span>
+                    <span className="sc-term-count">{t.loaded}/{t.total}</span>
                   </div>
                   <div className="sc-bar"><span style={{ width: `${t.total ? (t.loaded / t.total) * 100 : 0}%` }} /></div>
                 </div>
@@ -444,7 +443,7 @@ export function ScanClient({ orderDate, today, cards, shareTemplate }: { orderDa
         .sc-total { font-size: var(--fs-lg); color: var(--primary); }
         .sc-scan { padding: 0.7rem; }
         .sc-video { position: relative; background: #0f172a; border-radius: 14px; overflow: hidden; aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; }
-        .sc-video-off { aspect-ratio: 16 / 9; background: #f1f5f9; }
+        .sc-video-off { aspect-ratio: 3 / 1; background: #f1f5f9; } /* 카메라를 끈 동안은 시작 버튼만 크게 두고 낮춰서 아래 업체 목록이 더 많이 보이게 한다(켜면 4:3) */
         .sc-video-off video { visibility: hidden; }
         .sc-start { position: absolute; inset: 0; width: 100%; border: 2px dashed #94a3b8; border-radius: 14px; background: transparent; color: #1e293b; font-size: var(--fs-num); font-weight: 900; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem; cursor: pointer; }
         .sc-start:active { background: #e2e8f0; }
@@ -454,21 +453,17 @@ export function ScanClient({ orderDate, today, cards, shareTemplate }: { orderDa
         .sc-manual { display: flex; align-items: center; gap: 0.5rem; }
         .sc-manual .ak-input { flex: 1; min-width: 0; height: 2.75rem; font-size: var(--fs-lg); }
         .sc-manual .ak-btn { height: 2.75rem; }
-        .sc-terminals { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 0.5rem; }
-        .sc-term { border: 1px solid var(--border); border-radius: 12px; padding: 0.55rem 0.7rem; display: flex; flex-direction: column; gap: 0.25rem; }
+        .sc-terminals { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.25rem, 1fr)); gap: 0.35rem; }
+        .sc-term { border: 1px solid var(--border); border-radius: 10px; padding: 0.3rem 0.5rem; display: flex; flex-direction: column; gap: 0.2rem; }
         .sc-term-done { background: #f0fdf4; border-color: #86efac; }
-        .sc-term-name { font-size: var(--fs-sm); font-weight: 800; color: var(--muted-foreground); }
-        .sc-term-row { display: flex; align-items: center; justify-content: space-between; gap: 0.2rem 0.4rem; flex-wrap: wrap; }
-        .sc-term-count { font-size: var(--fs-num); font-weight: 900; }
-        .sc-share { display: flex; gap: 0.3rem; }
-        .sc-ic { width: var(--chip-h); height: var(--chip-h); border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--foreground); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
-        .sc-ic-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-        .sc-ic:disabled { opacity: 0.45; cursor: default; }
-        .sc-bar { height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+        .sc-term-name { font-size: var(--fs-sm); font-weight: 800; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+        .sc-term-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
+        .sc-term-count { flex: none; font-size: var(--fs-md); font-weight: 900; font-variant-numeric: tabular-nums; }
+        .sc-bar { height: 4px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
         .sc-bar span { display: block; height: 100%; background: #22c55e; }
         .sc-check { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-md); font-weight: 700; }
         .sc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-        .sc-list li { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.2rem; border-bottom: 1px solid #f1f5f9; font-size: var(--fs-lg); }
+        .sc-list li { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.2rem; border-bottom: 1px solid #f1f5f9; font-size: var(--fs-md); }
         .sc-done { color: #15803d; }
         .sc-tag { flex: none; font-size: var(--fs-xs); font-weight: 800; background: #f1f5f9; border-radius: 999px; padding: 0.15rem 0.6rem; }
         .sc-name { flex: 1; min-width: 0; font-weight: 800; word-break: keep-all; }
