@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildCsv, csvCell } from './reports/csv.ts';
-import { baseCustomerName, customerStats, marginOf, productStats, quantityText, unpricedLines } from './reports/sales-report.ts';
+import { baseCustomerName, customerStats, marginOf, productStats, quantityText, terminalStats, unpricedLines, weightText } from './reports/sales-report.ts';
 import type { PurchaseRow } from './settlement/purchases.ts';
 import type { SalesRow } from './settlement/sales.ts';
 
 const sale = (over: Partial<SalesRow>): SalesRow => ({
-  itemId: 'i', orderDate: '2026-11-09', customer: '바다횟집', product: '활전갱이', quantity: 3, unit: '미',
+  itemId: 'i', orderDate: '2026-11-09', customer: '바다횟집', terminal: '대구', secondaryWeightKg: null, product: '활전갱이', quantity: 3, unit: '미',
   original: { product: '활전갱이', quantity: 3, unit: '미' }, edited: false, sellerId: null, price: 30000, unitPrice: null, paid: false, memo: '', ...over,
 });
 const purchase = (over: Partial<PurchaseRow>): PurchaseRow => ({
@@ -95,4 +95,39 @@ test('customerStats: 차수를 합쳐 업체별 매출·줄 수·일수·일평�
 test('quantityText', () => {
   assert.equal(quantityText([{ unit: '미', qty: 3 }, { unit: '키로', qty: 5.4 }]), '3미 · 5.4키로');
   assert.equal(quantityText([]), '-');
+});
+
+test('부가중량과 판매 업체 수: 품목별·업체별에 부가중량 합(kg), 품목별에 판매한 업체 수(1·2차는 한 업체)', () => {
+  const sales = [
+    sale({ itemId: '1', customer: '엔야 1차', quantity: 3, secondaryWeightKg: 1.3 }),
+    sale({ itemId: '2', customer: '엔야 2차', quantity: 3, secondaryWeightKg: 1.2 }),
+    sale({ itemId: '3', customer: '해월일식', quantity: 2, secondaryWeightKg: null }),
+  ];
+  const p = productStats(sales, [])[0];
+  assert.equal(p.weightKg, 2.5);
+  assert.equal(p.customers, 2); // 엔야(1·2차), 해월일식
+  const c = customerStats(sales);
+  assert.equal(c.find((x) => x.customer === '엔야')!.weightKg, 2.5);
+  assert.equal(c.find((x) => x.customer === '해월일식')!.weightKg, 0);
+  assert.equal(weightText(2.5), '2.5kg');
+  assert.equal(weightText(0), '-');
+});
+
+test('terminalStats: 터미널별 매출·줄·업체 수·일수·수량·부가중량, 매출 순', () => {
+  const sales = [
+    sale({ itemId: '1', terminal: '대구', customer: '바다횟집', price: 30000, secondaryWeightKg: 1 }),
+    sale({ itemId: '2', terminal: '대구', customer: '해월일식 1차', orderDate: '2026-11-10', price: 20000 }),
+    sale({ itemId: '3', terminal: '남부', customer: '엔야', price: 90000, quantity: 2, unit: '키로' }),
+    sale({ itemId: '4', terminal: '', customer: '무터미널', price: null }),
+  ];
+  const stats = terminalStats(sales);
+  assert.deepEqual(stats.map((s) => s.terminal), ['남부', '대구', '미지정']);
+  const daegu = stats[1];
+  assert.equal(daegu.sales, 50000);
+  assert.equal(daegu.lines, 2);
+  assert.equal(daegu.customers, 2);
+  assert.equal(daegu.days, 2);
+  assert.equal(daegu.weightKg, 1);
+  assert.deepEqual(stats[0].quantities, [{ unit: '키로', qty: 2 }]);
+  assert.equal(stats[2].unpricedLines, 1);
 });

@@ -10,6 +10,7 @@ export interface SalesSourceCard {
   name: string; // 고객명(같은 날 1·2차에 모두 주문이 있으면 차수가 붙어 있다)
   sortOrder: number;
   stage: Stage;
+  terminal: string; // 그날 카드의 터미널 이름(없으면 '미지정')
 }
 
 export interface SalesSourceItem {
@@ -21,6 +22,7 @@ export interface SalesSourceItem {
   unit: string;
   unshippedQuantity: number;
   changeStatus: ChangeStatus;
+  secondaryWeightKg: number | null; // 수량에 딸린 부가중량(예: 3미 + 1.3kg). 없으면 null
 }
 
 // 사용자가 입력해서 저장한 값(없으면 아직 입력 전)
@@ -45,6 +47,8 @@ export interface SalesRow {
   unit: string;
   original: { product: string; quantity: number; unit: string }; // 주문 목록 원본("원래대로"와 안내에 쓴다)
   edited: boolean; // 품목·수량·단위 중 하나라도 정산에서 고쳤는지
+  terminal: string; // 그날 카드의 터미널
+  secondaryWeightKg: number | null; // 부가중량(kg). 정산에서 수량을 고쳐도 원래 주문의 값 그대로다
   sellerId: string | null;
   price: number | null;
   unitPrice: number | null; // 영수증의 단가 칸(0047). 비어 있으면 영수증 단가 칸이 빈칸
@@ -73,6 +77,8 @@ export function buildSalesRows(cards: SalesSourceCard[], items: SalesSourceItem[
         itemId: item.id,
         orderDate: card.orderDate,
         customer: card.name,
+        terminal: card.terminal,
+        secondaryWeightKg: item.secondaryWeightKg,
         ...resolveSalesEdit(original, s),
         original,
         sellerId: s?.sellerId ?? null,

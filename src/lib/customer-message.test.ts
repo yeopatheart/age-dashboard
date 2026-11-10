@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCustomerMessage, formatMessageDate, groupSettledCustomers, type MessageRow } from './customer-message.ts';
+import { buildCustomerMessage, formatMessageDate, groupSettledCustomers, messageQuantity, type MessageRow } from './customer-message.ts';
 
-const row = (customer: string, product: string, quantity: number, unit: string, price: number | null): MessageRow => ({ customer, product, quantity, unit, price });
+const row = (customer: string, product: string, quantity: number, unit: string, price: number | null, secondaryWeightKg: number | null = null): MessageRow => ({ customer, product, quantity, unit, secondaryWeightKg, price });
 
 test('formatMessageDate: 앞의 0을 쓰지 않는다', () => {
   assert.equal(formatMessageDate('2026-11-09'), '11/9');
@@ -43,5 +43,36 @@ test('buildCustomerMessage: 예시 형식 그대로(번호, 상품 수량 : 금�
   assert.equal(
     buildCustomerMessage('2026-11-09', settled[0]),
     ['감사합니다.', '11/9 엔야 - 총 216,000', '1. 활전갱이 3미 : 39,000', '2. 일산중방어 5.4키로 : 167,000', '3. 버스 1박스 : 10,000'].join('\n'),
+  );
+});
+
+test('messageQuantity: 부가중량이 있으면 수량 뒤에 키로로 이어 붙인다(3미 + 1.3kg → 3미1.3키로)', () => {
+  assert.equal(messageQuantity({ quantity: 3, unit: '미', secondaryWeightKg: 1.3 }), '3미1.3키로');
+  assert.equal(messageQuantity({ quantity: 3, unit: '미', secondaryWeightKg: 1 }), '3미1키로');
+  assert.equal(messageQuantity({ quantity: 5.4, unit: '키로', secondaryWeightKg: null }), '5.4키로');
+  assert.equal(messageQuantity({ quantity: 1, unit: '박스', secondaryWeightKg: 0 }), '1박스');
+});
+
+test('buildCustomerMessage: 사용자가 준 예시와 같은 형식(부가중량 포함)', () => {
+  const { settled } = groupSettledCustomers([
+    row('엔야', '활전갱이', 3, '미', 39000, 1.3),
+    row('엔야', '활고등어', 3, '미', 51000, 2),
+    row('엔야', '활장어(키로 3미)', 3, '미', 19000, 1),
+    row('엔야', '일산중방어', 5.4, '키로', 167000),
+    row('엔야', '생굴', 1, '키로', 16000),
+    row('엔야', '버스', 1, '박스', 10000),
+  ]);
+  assert.equal(
+    buildCustomerMessage('2026-11-09', settled[0]),
+    [
+      '감사합니다.',
+      '11/9 엔야 - 총 302,000',
+      '1. 활전갱이 3미1.3키로 : 39,000',
+      '2. 활고등어 3미2키로 : 51,000',
+      '3. 활장어(키로 3미) 3미1키로 : 19,000',
+      '4. 일산중방어 5.4키로 : 167,000',
+      '5. 생굴 1키로 : 16,000',
+      '6. 버스 1박스 : 10,000',
+    ].join('\n'),
   );
 });

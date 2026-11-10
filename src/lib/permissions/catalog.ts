@@ -11,7 +11,7 @@ export const MENU_DEFS = {
   scan: { label: '상차 스캔', href: '/scan', paths: ['/scan'], actions: { scan: '상차 스캔', undo: '상차 되돌리기' } },
   dispatch: { label: '보내기', href: '/dispatch', paths: ['/dispatch'], actions: {} }, // 구역별 보이는 범위: 퀵기사=상차 스캔 보기, 고객사(영수증 포함)=정산 보기·영수증 삭제=정산 편집
   settlement: { label: '정산', href: '/settlement', paths: ['/settlement'], actions: { edit: '판매가·사업자·입금·메모 입력·영수증 만들기·영수증 삭제' } },
-  reports: { label: '리포트', href: '/reports', paths: ['/reports'], actions: {} },
+  reports: { label: '리포트', href: '/reports/box', paths: ['/reports'], actions: {} },
   businesses: { label: '고객사 관리', href: '/businesses', paths: ['/businesses'], actions: { edit: '등록·수정', delete: '삭제' } },
   sellers: { label: '사업자 관리', href: '/sellers', paths: ['/sellers'], actions: { edit: '등록·수정', delete: '삭제' } },
   terminals: { label: '터미널 관리', href: '/terminals', paths: ['/terminals'], actions: { edit: '등록·수정', delete: '삭제' } },

@@ -9,14 +9,15 @@ import { GRANULARITY_LABEL, type Granularity } from '@/lib/report';
 import type { DayPoint } from '@/lib/settlement/chart';
 import type { GroupPoint } from '@/lib/settlement/chart-groups';
 import type { PurchaseTotals } from '@/lib/settlement/purchases';
-import type { CustomerStat, ProductStat } from '@/lib/reports/sales-report';
+import type { CustomerStat, ProductStat, TerminalStat } from '@/lib/reports/sales-report';
 import { CustomerView } from './customer-view';
 import { GroupChart } from './group-chart';
 import { ProductView } from './product-view';
+import { TerminalView } from './terminal-view';
 import { TrendView } from './trend-view';
 
-export type SalesView = 'trend' | 'product' | 'customer' | 'seller';
-const VIEW_LABEL: Record<SalesView, string> = { trend: '추이', product: '품목별', customer: '업체별', seller: '사업자별' };
+export type SalesView = 'trend' | 'product' | 'customer' | 'terminal' | 'seller';
+const VIEW_LABEL: Record<SalesView, string> = { trend: '추이', product: '품목별', customer: '업체별', terminal: '터미널별', seller: '사업자별' };
 const GRANULARITIES: Granularity[] = ['day', 'week', 'month'];
 
 export interface SalesReportProps {
@@ -33,6 +34,7 @@ export interface SalesReportProps {
   bySeller: GroupPoint[];
   productStats: ProductStat[];
   customerStats: CustomerStat[];
+  terminalStats: TerminalStat[];
 }
 
 export function SalesReportClient(props: SalesReportProps) {
@@ -61,6 +63,7 @@ export function SalesReportClient(props: SalesReportProps) {
       {view === 'trend' && <TrendView series={props.series} totals={props.totals} margin={props.margin} unpricedLines={props.unpricedLines} periodLabel={period.label} />}
       {view === 'product' && <ProductView groups={props.byProduct} stats={props.productStats} periodLabel={period.label} filenameKey={filenameKey} />}
       {view === 'customer' && <CustomerView stats={props.customerStats} filenameKey={filenameKey} />}
+      {view === 'terminal' && <TerminalView stats={props.terminalStats} filenameKey={filenameKey} />}
       {view === 'seller' && <GroupChart groups={props.bySeller} kind="seller" periodLabel={period.label} />}
 
       <style>{VIZ_CSS}</style>

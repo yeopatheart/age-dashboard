@@ -178,7 +178,7 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
     .map(([id, kg]) => supabase.from('order_items').update({ measured_weight_kg: kg }).eq('id', id));
   await Promise.all(weightUpdates);
 
-  // 리포트 집계(report_summary)가 daily_businesses.total_boxes를 합산하므로 제출한 박스 수를 맞춰 둔다.
+  // daily_businesses.total_boxes(운영 시간 리포트의 박스 수 등이 읽는다)를 제출한 박스 수에 맞춰 둔다.
   await supabase.from('daily_businesses').update({ total_boxes: input.boxes.length }).eq('id', daily.id);
 
   // 제출 이력(0055): 재제출하면 위에서 packing_records를 지우고 다시 만들기 때문에, 제출마다 한 줄씩 따로 쌓아 둔다(재제출 횟수·최초 제출 때의 추천 적중 등).

@@ -9,6 +9,7 @@ export interface MessageRow {
   product: string;
   quantity: number;
   unit: string;
+  secondaryWeightKg: number | null; // 수량에 딸린 부가중량(예: 3미 + 1.3kg). 없으면 null
   price: number | null;
 }
 
@@ -45,11 +46,17 @@ export function formatMessageDate(orderDate: string): string {
   return `${Number(m)}/${Number(d)}`;
 }
 
+// 수량 글: 수량 + 단위, 부가중량이 있으면 이어 붙인다("3미" + 1.3kg → "3미1.3키로"). 고객에게 보내는 글이라 kg이 아니라 "키로"로 쓴다.
+export function messageQuantity(r: Pick<MessageRow, 'quantity' | 'unit' | 'secondaryWeightKg'>): string {
+  const weight = r.secondaryWeightKg !== null && r.secondaryWeightKg > 0 ? `${Number(r.secondaryWeightKg.toFixed(3))}키로` : '';
+  return `${formatQuantity(r.quantity, r.unit)}${weight}`;
+}
+
 // 고객사에 보낼 글:
 //   감사합니다.
 //   11/9 엔야 - 총 302,000
 //   1. 활전갱이 3미1.3키로 : 39,000
 export function buildCustomerMessage(orderDate: string, c: SettledCustomer): string {
-  const lines = c.rows.map((r, i) => `${i + 1}. ${r.product} ${formatQuantity(r.quantity, r.unit)} : ${formatWon(r.price)}`);
+  const lines = c.rows.map((r, i) => `${i + 1}. ${r.product} ${messageQuantity(r)} : ${formatWon(r.price)}`);
   return ['감사합니다.', `${formatMessageDate(orderDate)} ${c.customer} - 총 ${formatWon(c.total)}`, ...lines].join('\n');
 }

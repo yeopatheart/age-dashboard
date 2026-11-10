@@ -50,6 +50,8 @@ export function marginOf(rows: PurchaseRow[]): { profit: number; base: number; m
 export interface ProductStat {
   product: string;
   quantities: UnitQty[]; // 판매수량(출고 수량)을 단위별로
+  weightKg: number; // 부가중량(kg) 합(수량에 딸린 무게, 없는 줄은 0)
+  customers: number; // 판매한 업체 수(1·2차는 한 업체)
   lines: number; // 판매내역 줄 수
   unpricedLines: number; // 판매가를 입력하지 않은 줄 수(매출이 덜 잡힌다)
   sales: number;
@@ -61,11 +63,11 @@ export interface ProductStat {
 }
 
 export function productStats(sales: SalesRow[], purchases: PurchaseRow[]): ProductStat[] {
-  const byProduct = new Map<string, ProductStat & { qty: Map<string, number> }>();
+  const byProduct = new Map<string, ProductStat & { qty: Map<string, number>; who: Set<string> }>();
   const get = (product: string) => {
     let s = byProduct.get(product);
     if (!s) {
-      s = { product, quantities: [], lines: 0, unpricedLines: 0, sales: 0, purchase: 0, profit: 0, profitBase: 0, margin: null, missingPurchase: 0, qty: new Map() };
+      s = { product, quantities: [], weightKg: 0, customers: 0, lines: 0, unpricedLines: 0, sales: 0, purchase: 0, profit: 0, profitBase: 0, margin: null, missingPurchase: 0, qty: new Map(), who: new Set() };
       byProduct.set(product, s);
     }
     return s;
@@ -73,6 +75,8 @@ export function productStats(sales: SalesRow[], purchases: PurchaseRow[]): Produ
   for (const row of sales) {
     const s = get(row.product);
     s.lines += 1;
+    s.weightKg += row.secondaryWeightKg ?? 0;
+    s.who.add(baseCustomerName(row.customer));
     addQty(s.qty, row.unit, row.quantity);
     if (row.price === null) s.unpricedLines += 1;
     else s.sales += row.price;
@@ -89,7 +93,7 @@ export function productStats(sales: SalesRow[], purchases: PurchaseRow[]): Produ
     s.profitBase += p.salesTotal;
   }
   return [...byProduct.values()]
-    .map(({ qty, ...s }) => ({ ...s, quantities: unitList(qty), margin: s.profitBase > 0 ? s.profit / s.profitBase : null }))
+    .map(({ qty, who, ...s }) => ({ ...s, quantities: unitList(qty), weightKg: round3(s.weightKg), customers: who.size, margin: s.profitBase > 0 ? s.profit / s.profitBase : null }))
     .sort((a, b) => b.sales - a.sales || a.product.localeCompare(b.product, 'ko'));
 }
 
@@ -102,21 +106,23 @@ export interface CustomerStat {
   days: number; // 주문한 날 수
   dailyAvg: number; // 일평균 매출(주문한 날 기준)
   quantities: UnitQty[];
+  weightKg: number;
 }
 
 // 같은 날 1·2차 주문이 모두 있으면 고객명에 " 1차"/" 2차"가 붙는다. 업체 단위로 보려고 차수 표기를 떼어 합친다.
 export const baseCustomerName = (name: string): string => name.replace(/\s[12]차$/, '');
 
 export function customerStats(sales: SalesRow[]): CustomerStat[] {
-  const byCustomer = new Map<string, { sales: number; lines: number; unpriced: number; dates: Set<string>; qty: Map<string, number> }>();
+  const byCustomer = new Map<string, { sales: number; lines: number; unpriced: number; dates: Set<string>; qty: Map<string, number>; weight: number }>();
   for (const row of sales) {
     const name = baseCustomerName(row.customer);
     let s = byCustomer.get(name);
     if (!s) {
-      s = { sales: 0, lines: 0, unpriced: 0, dates: new Set(), qty: new Map() };
+      s = { sales: 0, lines: 0, unpriced: 0, dates: new Set(), qty: new Map(), weight: 0 };
       byCustomer.set(name, s);
     }
     s.lines += 1;
+    s.weight += row.secondaryWeightKg ?? 0;
     s.dates.add(row.orderDate);
     addQty(s.qty, row.unit, row.quantity);
     if (row.price === null) s.unpriced += 1;
@@ -131,9 +137,48 @@ export function customerStats(sales: SalesRow[]): CustomerStat[] {
       days: s.dates.size,
       dailyAvg: s.dates.size === 0 ? 0 : Math.round(s.sales / s.dates.size),
       quantities: unitList(s.qty),
+      weightKg: round3(s.weight),
     }))
     .sort((a, b) => b.sales - a.sales || a.customer.localeCompare(b.customer, 'ko'));
 }
 
+// ─── 터미널별 ───────────────────────────────────────────────────────────────
+export interface TerminalStat {
+  terminal: string;
+  sales: number;
+  lines: number;
+  unpricedLines: number;
+  customers: number; // 그 터미널로 나간 업체 수(1·2차는 한 업체)
+  days: number;
+  quantities: UnitQty[];
+  weightKg: number;
+}
+
+// 터미널(그날 카드의 터미널)별 매출·수량·업체 수. 이익은 낼 수 없다(매입이 터미널 단위가 아니다).
+export function terminalStats(sales: SalesRow[]): TerminalStat[] {
+  const by = new Map<string, { sales: number; lines: number; unpriced: number; who: Set<string>; dates: Set<string>; qty: Map<string, number>; weight: number }>();
+  for (const row of sales) {
+    const name = row.terminal || '미지정';
+    let s = by.get(name);
+    if (!s) {
+      s = { sales: 0, lines: 0, unpriced: 0, who: new Set(), dates: new Set(), qty: new Map(), weight: 0 };
+      by.set(name, s);
+    }
+    s.lines += 1;
+    s.who.add(baseCustomerName(row.customer));
+    s.dates.add(row.orderDate);
+    s.weight += row.secondaryWeightKg ?? 0;
+    addQty(s.qty, row.unit, row.quantity);
+    if (row.price === null) s.unpriced += 1;
+    else s.sales += row.price;
+  }
+  return [...by]
+    .map(([terminal, s]) => ({ terminal, sales: s.sales, lines: s.lines, unpricedLines: s.unpriced, customers: s.who.size, days: s.dates.size, quantities: unitList(s.qty), weightKg: round3(s.weight) }))
+    .sort((a, b) => b.sales - a.sales || a.terminal.localeCompare(b.terminal, 'ko'));
+}
+
 // "3미 · 5.4키로" 형태의 수량 글.
 export const quantityText = (quantities: UnitQty[]): string => (quantities.length === 0 ? '-' : quantities.map((q) => `${q.qty.toLocaleString('en-US')}${q.unit}`).join(' · '));
+
+// 부가중량 글("1.3kg"). 0이면 "-".
+export const weightText = (kg: number): string => (kg > 0 ? `${kg.toLocaleString('en-US')}kg` : '-');

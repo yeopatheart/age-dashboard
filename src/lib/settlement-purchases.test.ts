@@ -6,6 +6,8 @@ const sale = (orderDate: string, product: string, price: number | null) => ({
   itemId: `${orderDate}-${product}-${price}`,
   orderDate,
   customer: '엔야',
+  terminal: '남부',
+  secondaryWeightKg: null,
   product,
   quantity: 1,
   unit: '미',
