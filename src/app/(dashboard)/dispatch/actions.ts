@@ -7,10 +7,10 @@ import type { DispatchKind, DispatchMethod } from '@/lib/dispatch-log';
 import type { PermissionKey } from '@/lib/permissions/catalog';
 
 // 종류별로 기록을 허용하는 권한(DB 정책 0052·0053과 같다).
-const KIND_PERMISSION: Record<DispatchKind, PermissionKey> = { driver: 'scan:view', receipt: 'receipts:view', customer: 'settlement:view' };
+const KIND_PERMISSION: Record<DispatchKind, PermissionKey> = { driver: 'scan:view', receipt: 'settlement:view', customer: 'settlement:view' };
 
 // 글·영수증을 공유/복사한 순간을 남긴다. 사용자(sent_by)는 DB가 로그인 사용자로 채우고 클라이언트가 보낸 값은 쓰지 않는다.
-// 기사 글은 scan:view, 영수증은 receipts:view, 고객사 메시지는 settlement:view 권한을 서버가 다시 확인한다(DB 정책도 같은 권한). 기록은 바꾸거나 지우지 않는다.
+// 기사 글은 scan:view, 영수증·고객사 메시지는 settlement:view 권한을 서버가 다시 확인한다(DB 정책도 같은 권한). 기록은 바꾸거나 지우지 않는다.
 // 화면은 응답으로 받은 시각을 그대로 쓰므로 revalidatePath를 부르지 않는다(이중 렌더 방지).
 export async function recordSent(input: {
   orderDate: string;

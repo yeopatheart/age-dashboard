@@ -2,7 +2,6 @@
 // 선택한 판매내역 줄로 영수증을 만드는 패널. 1) 어떤 영수증이 몇 장 만들어지는지 확인 → 2) 발행(스냅샷 저장) → 3) 영수증별 미리보기·이미지 저장·공유·복사.
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { useCan } from '@/components/permissions-context';
 import { SidePanel } from '@/components/admin/admin-kit';
 import { ReceiptViewer } from '@/components/receipt/receipt-viewer';
 import { formatWon } from '@/lib/money';
@@ -41,7 +40,6 @@ export function ReceiptIssuePanel({
   saving: boolean; // 판매가·사업자 저장이 끝나기 전에는 발행하지 않는다(서버가 저장된 값을 읽는다)
   onClose: () => void;
 }) {
-  const canViewReceipts = useCan()('receipts:view');
   const sellerName = useMemo(() => new Map(sellers.map((s) => [s.id, s.name])), [sellers]);
   const preview = useMemo(() => groupForReceipts(rows.map(toSource)), [rows]);
   const duplicates = useMemo(() => findDuplicateReceipts(preview.groups, issued), [preview.groups, issued]);
@@ -171,9 +169,9 @@ export function ReceiptIssuePanel({
               </div>
             ))}
           </div>
-          {canViewReceipts && result.receipts.length > 0 && (
+          {result.receipts.length > 0 && (
             <p className="ak-meta">
-              발행한 영수증은 <Link href={`/receipts?g=day&d=${result.receipts[0].snapshot.orderDate}`} style={{ textDecoration: 'underline' }}>영수증 메뉴</Link>에서 다시 열어 보고 공유할 수 있습니다.
+              발행한 영수증은 <Link href={`/dispatch?d=${result.receipts[0].snapshot.orderDate}`} style={{ textDecoration: 'underline' }}>보내기 화면의 고객사 탭</Link>에서 다시 열어 보고 보낼 수 있습니다.
             </p>
           )}
         </>

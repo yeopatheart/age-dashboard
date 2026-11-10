@@ -140,7 +140,7 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-section-chart { grid-column: 1 / -1; order: 4; }
 }
 
-/* 정산·영수증 기간 줄(PeriodBar): [일 주 월] + [‹ 기간 › 오늘]. 알약·구분 버튼 모양은 공용 컨트롤(globals.css .dn-* · .sg-*)이다. 휴대폰에서도 한 줄에 둔다. */
+/* 정산 기간 줄(PeriodBar): [일 주 월] + [‹ 기간 › 오늘]. 알약·구분 버튼 모양은 공용 컨트롤(globals.css .dn-* · .sg-*)이다. 휴대폰에서도 한 줄에 둔다. */
 .ak-toolbar.ak-period-bar { flex-wrap: nowrap; }
 @media (max-width: 768px) { .ak-toolbar.ak-period-bar { gap: 0.4rem; } }
 

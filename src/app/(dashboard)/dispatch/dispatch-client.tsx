@@ -22,7 +22,6 @@ export function DispatchClient({
   today,
   canDriver,
   canCustomers,
-  canReceipts,
   cards,
   shareTemplate,
   salesRows,
@@ -39,7 +38,6 @@ export function DispatchClient({
   today: string;
   canDriver: boolean;
   canCustomers: boolean;
-  canReceipts: boolean;
   cards: ScanCard[];
   shareTemplate: ScanShareTemplate;
   salesRows: MessageRow[]; // 그날 정산 판매내역 줄(정산 보기 권한이 없으면 빈 배열)
@@ -81,7 +79,6 @@ export function DispatchClient({
             rows={salesRows}
             receipts={receipts}
             sellers={sellers}
-            canReceipts={canReceipts}
             receiptsMissing={receiptsMissing}
             sentMessage={sentMessage}
             sentReceipt={sentReceipt}
