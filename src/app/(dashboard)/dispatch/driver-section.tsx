@@ -1,6 +1,6 @@
 'use client';
 import { useMemo } from 'react';
-import { Check, Copy, Share2 } from 'lucide-react';
+import { Check, Copy, Send } from 'lucide-react';
 import { hashText, sentLabel, sentState, type SentEntry } from '@/lib/dispatch-log';
 import { cleanShareText } from '@/lib/share-text';
 import { terminalShareList } from '@/lib/scan-share-text';
@@ -9,7 +9,7 @@ import { useShareText } from '@/lib/use-share-text';
 import type { ScanCard } from '../scan/scan-client';
 import { useSentLog } from './use-sent-log';
 
-// 기사 구역: 터미널마다 퀵 기사님께 보낼 상차 완료 글(상차 스캔 화면과 같은 글·같은 설정)과 보내기 버튼.
+// 퀵기사 구역: 터미널마다 퀵 기사님께 보낼 상차 완료 글(상차 스캔 화면과 같은 글·같은 설정)과 보내기 버튼.
 // 상차된 박스가 하나도 없는 터미널은 보낼 글이 없다. 일부만 상차했으면 글 끝에 "⚠ 미상차" 줄이 붙는다(글 형식은 시스템 설정).
 // 공유가 끝났거나 복사에 성공하면 보냄 기록(dispatch_log)을 남기고 카드에 "보냄 ✓ 시각"을 보인다. 보낸 뒤 글이 달라지면(상차가 더 됨 등) "이후 변경됨"으로 바뀐다.
 export function DriverSection({
@@ -55,21 +55,26 @@ export function DriverSection({
               <span className="dd-count">{t.loaded}/{t.total}박스</span>
               {t.loaded === t.total && <span className="dd-tag">상차 완료</span>}
               {label && <span className={`dd-tag ${state === 'changed' ? 'dd-tag-warn' : 'dd-tag-sent'}`}>{label}</span>}
-            </div>
-            {t.text ? (
-              <>
-                <pre className="dd-text">{t.text}</pre>
-                <div className="dd-actions">
-                  {canShare && (
-                    <button type="button" className="dd-btn dd-btn-primary" onClick={() => void onShare(t.name, t.text!)}>
-                      <Share2 size={15} /> 보내기
-                    </button>
-                  )}
-                  <button type="button" className={`dd-btn ${canShare ? '' : 'dd-btn-primary'}`} onClick={() => void onCopy(t.name, t.text!)}>
-                    {copiedKey === t.name ? <Check size={15} /> : <Copy size={15} />} {copiedKey === t.name ? '복사됨' : '복사'}
+              {t.text && (
+                <div className="dd-icons">
+                  <button type="button" className="dd-icon" onClick={() => void onCopy(t.name, t.text!)} aria-label={`${t.name} 글 복사`} title={copiedKey === t.name ? '복사됨' : '복사'}>
+                    {copiedKey === t.name ? <Check size={20} /> : <Copy size={20} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="dd-icon dd-icon-primary"
+                    onClick={() => void onShare(t.name, t.text!)}
+                    disabled={!canShare}
+                    aria-label={`${t.name} 글 카카오톡 보내기`}
+                    title={canShare ? '카카오톡 보내기' : '휴대폰에서 쓸 수 있습니다. 컴퓨터에서는 복사를 쓰세요.'}
+                  >
+                    <Send size={20} />
                   </button>
                 </div>
-              </>
+              )}
+            </div>
+            {t.text ? (
+              <pre className="dd-text">{t.text}</pre>
             ) : (
               <p className="dd-empty">상차된 박스가 없어 보낼 글이 없습니다.</p>
             )}
@@ -89,11 +94,11 @@ export function DriverSection({
           .dd-tag-sent { background: #e0f2fe; color: #0369a1; }
           .dd-tag-warn { background: #fef3c7; color: #b45309; }
           .dd-text { margin: 0; padding: 0.6rem 0.8rem; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; font-family: inherit; font-size: var(--fs-md); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-          .dd-actions { display: flex; gap: 0.5rem; }
-          .dd-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; height: var(--ctl-h); padding: 0 1rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--foreground); font-size: var(--fs-sm); font-weight: 800; cursor: pointer; white-space: nowrap; }
-          .dd-btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+          .dd-icons { margin-left: auto; display: flex; gap: 0.5rem; }
+          .dd-icon { display: inline-flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--foreground); cursor: pointer; }
+          .dd-icon-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+          .dd-icon:disabled { opacity: 0.4; cursor: not-allowed; }
           .dd-empty { margin: 0; font-size: var(--fs-sm); color: var(--muted-foreground, #64748b); }
-          @media (max-width: 768px) { .dd-btn { height: var(--cta-h); flex: 1; font-size: var(--fs-md); } }
         `}</style>
     </>
   );

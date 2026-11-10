@@ -141,6 +141,7 @@ export async function deleteReceipt(id: string): Promise<{ error: string | null 
   if (!data || data.length === 0) return { error: '이미 삭제되었거나 찾을 수 없는 영수증입니다.' };
   revalidatePath('/settlement'); // 정산 화면의 "이미 발행됨" 경고도 새로 읽는다
   revalidatePath('/receipts');
+  revalidatePath('/dispatch'); // 보내기 화면(고객사 탭)의 영수증 개수·미리보기도 새로 읽는다
   return { error: null };
 }
 
