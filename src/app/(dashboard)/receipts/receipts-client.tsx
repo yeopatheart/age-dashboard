@@ -41,7 +41,7 @@ export function ReceiptsClient({
 }) {
   const ownLog = useSentLog('receipt', sent, logEnabled);
   const { entries: sentEntries, record, error: recordError } = sentLog ?? ownLog;
-  const canDelete = useCan()('receipts:delete');
+  const canDelete = useCan()('settlement:edit');
   const [search, setSearch] = useState('');
   const [sellerFilter, setSellerFilter] = useState('');
   const [preview, setPreview] = useState<CardSpec | null>(null);

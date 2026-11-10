@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Check, Copy, Eye, MessageSquareText, Receipt as ReceiptIcon } from 'lucide-react';
+import { Eye, Receipt as ReceiptIcon, Send } from 'lucide-react';
 import { SidePanel } from '@/components/admin/admin-kit';
 import { canCopyImage, canShareImages, copyImage, shareImages } from '@/components/receipt/receipt-image';
 import { ReceiptSheet, RECEIPT_WIDTH_PX } from '@/components/receipt/receipt-sheet';
@@ -33,7 +33,6 @@ export function CustomerSection({
   rows,
   receipts,
   sellers,
-  canReceipts,
   receiptsMissing,
   sentMessage,
   sentReceipt,
@@ -41,16 +40,15 @@ export function CustomerSection({
 }: {
   orderDate: string;
   rows: MessageRow[];
-  receipts: ReceiptRecord[]; // 그날 발행한 영수증(영수증 보기 권한이 없으면 빈 배열)
+  receipts: ReceiptRecord[]; // 그날 발행한 영수증
   sellers: { id: string; name: string }[];
-  canReceipts: boolean;
   receiptsMissing: string[] | null;
   sentMessage: Record<string, SentEntry>; // 고객명 → 가장 최근 메시지 보냄 기록
   sentReceipt: Record<string, SentEntry>; // 영수증 카드 키 → 가장 최근 보냄 기록
   logEnabled: boolean;
 }) {
   const { settled, pending } = useMemo(() => groupSettledCustomers(rows), [rows]);
-  const { canShare, copiedKey, copy, share } = useShareText();
+  const { canShare, copy, share } = useShareText();
   const messageLog = useSentLog('customer', sentMessage, logEnabled);
   const receiptLog = useSentLog('receipt', sentReceipt, logEnabled);
 
@@ -76,7 +74,7 @@ export function CustomerSection({
   const listRef = useRef<HTMLUListElement>(null);
   useEffect(() => {
     const list = listRef.current;
-    if (!list || !canReceipts) return;
+    if (!list) return;
     const observer = new IntersectionObserver(
       (entries) => {
         const seen = entries.filter((e) => e.isIntersecting).map((e) => (e.target as HTMLElement).dataset.customer as string);
@@ -88,7 +86,7 @@ export function CustomerSection({
     );
     list.querySelectorAll('[data-customer]').forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [settled, canReceipts, cardsByCustomer, want]);
+  }, [settled, cardsByCustomer, want]);
 
   const [expanded, setExpanded] = useState<string | null>(null);
   const [panel, setPanel] = useState<string | null>(null);
@@ -171,7 +169,7 @@ export function CustomerSection({
           const state = sentState(entry, hashText(cleanShareText(text)));
           const label = sentLabel(entry, state);
           const cards = cardsByCustomer.get(c.customer) ?? [];
-          const rState = canReceipts ? receiptState(c.customer) : 'none';
+          const rState = receiptState(c.customer);
           const receiptSent = cards.length > 0 && cards.every((card) => receiptLog.entries[card.key]);
           const lastReceipt = receiptSent ? cards.map((card) => receiptLog.entries[card.key]).sort((a, b) => Date.parse(b.sentAt) - Date.parse(a.sentAt))[0] : undefined;
           const receiptLabel = lastReceipt ? sentLabel(lastReceipt, 'sent') : null;
@@ -183,12 +181,10 @@ export function CustomerSection({
                   <span className="cs-sum">₩{formatWon(c.total)} · {c.rows.length}줄</span>
                 </button>
                 <div className="cs-icons">
-                  <button type="button" className="cs-icon cs-icon-primary" onClick={() => void sendMessage(c.customer, text)} aria-label={`${c.customer} 메세지 보내기`} title={canShare ? '메세지 보내기' : '메세지 복사(컴퓨터에서는 공유 시트가 없어 복사합니다)'}>
-                    {!canShare && copiedKey === c.customer ? <Check size={22} /> : canShare ? <MessageSquareText size={22} /> : <Copy size={22} />}
+                  <button type="button" className="cs-icon cs-icon-primary" onClick={() => void sendMessage(c.customer, text)} aria-label={`${c.customer} 메세지 보내기`} title={canShare ? '카카오톡 보내기' : '메세지 복사(컴퓨터에서는 공유 시트가 없어 복사합니다)'}>
+                    <Send size={20} />
                   </button>
-                  {canReceipts && (
-                    <>
-                      <button
+                  <button
                         type="button"
                         className={`cs-icon ${rState === 'error' ? 'cs-icon-warn' : ''}`}
                         onClick={() => void sendReceipts(c.customer)}
@@ -196,24 +192,22 @@ export function CustomerSection({
                         aria-label={`${c.customer} 영수증 보내기`}
                         title={rState === 'none' ? '발행된 영수증이 없습니다' : rState === 'preparing' ? '영수증 이미지 준비 중…' : rState === 'error' ? '이미지를 만들지 못했습니다. 눌러서 다시 만들기' : '영수증 보내기'}
                       >
-                        <ReceiptIcon size={22} />
+                        <ReceiptIcon size={20} />
                       </button>
                       <button type="button" className="cs-icon" onClick={() => setPanel(c.customer)} disabled={cards.length === 0} aria-label={`${c.customer} 영수증 미리보기`} title={cards.length === 0 ? '발행된 영수증이 없습니다' : '영수증 미리보기·삭제'}>
-                        <Eye size={22} />
+                        <Eye size={20} />
                       </button>
-                    </>
-                  )}
                 </div>
               </div>
               {(label || cards.length > 0) && (
                 <div className="cs-tags">
+                  {cards.length > 0 && <span className="cs-tag">영수증 {new Set(cards.map((x) => x.receipt.id)).size}장</span>}
                   {label && <span className={`cs-tag ${state === 'changed' ? 'cs-tag-warn' : 'cs-tag-sent'}`}>메세지 {label}</span>}
-                  {canReceipts && cards.length > 0 && <span className="cs-tag">영수증 {new Set(cards.map((x) => x.receipt.id)).size}장</span>}
                   {receiptLabel && <span className="cs-tag cs-tag-sent">영수증 {receiptLabel}</span>}
                 </div>
               )}
               {expanded === c.customer && <pre className="cs-text">{text}</pre>}
-              {canReceipts && visible.includes(c.customer) && cards.length > 0 && (
+              {visible.includes(c.customer) && cards.length > 0 && (
                 <div aria-hidden="true" style={{ position: 'fixed', left: -10000, top: 0, pointerEvents: 'none' }}>
                   {cards.map((card) => {
                     const seal = card.receipt.sellerId ? seals[card.receipt.sellerId] : null;
@@ -254,7 +248,7 @@ export function CustomerSection({
         .cs-sum { font-size: var(--fs-sm); color: var(--muted-foreground, #64748b); font-weight: 700; }
         .cs-icons { display: flex; gap: 0.5rem; flex: none; }
         .cs-icon { display: inline-flex; align-items: center; justify-content: center; width: 2.75rem; height: 2.75rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--foreground); cursor: pointer; }
-        .cs-icon-primary { width: 3.25rem; height: 3.25rem; background: var(--primary); border-color: var(--primary); color: #fff; }
+        .cs-icon-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
         .cs-icon-warn { border-color: #f59e0b; color: #b45309; }
         .cs-icon:disabled { opacity: 0.4; cursor: not-allowed; }
         .cs-tags { display: flex; gap: 0.4rem; flex-wrap: wrap; }

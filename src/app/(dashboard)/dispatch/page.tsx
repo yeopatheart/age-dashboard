@@ -28,15 +28,14 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
   const orderDate = d && /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today ? d : today;
   const canDriver = can(access, 'scan:view');
   const canCustomers = can(access, 'settlement:view');
-  const canReceipts = can(access, 'receipts:view') && canCustomers; // 영수증은 고객사 탭 안에서만 쓴다
   const supabase = await createClient();
 
   const [cards, settings, sales, receipts, sellers, log] = await Promise.all([
     canDriver ? loadScanCards(supabase, orderDate) : Promise.resolve<ScanCard[]>([]),
     canDriver ? loadAppSettings(supabase) : Promise.resolve(null),
     canCustomers ? rowsOrMissing(loadSalesRows(supabase, orderDate, orderDate)) : Promise.resolve<{ rows: SalesRow[]; missing: string | null }>({ rows: [], missing: null }),
-    canReceipts ? rowsOrMissing(loadReceipts(supabase, orderDate, orderDate)) : Promise.resolve<{ rows: ReceiptRecord[]; missing: string | null }>({ rows: [], missing: null }),
-    canReceipts ? rowsOrMissing(fetchAll((a, b) => supabase.from('seller_businesses').select('id, name').order('name').order('id').range(a, b), '사업자 조회 실패: ')) : Promise.resolve<{ rows: { id: string; name: string }[]; missing: string | null }>({ rows: [], missing: null }),
+    canCustomers ? rowsOrMissing(loadReceipts(supabase, orderDate, orderDate)) : Promise.resolve<{ rows: ReceiptRecord[]; missing: string | null }>({ rows: [], missing: null }),
+    canCustomers ? rowsOrMissing(fetchAll((a, b) => supabase.from('seller_businesses').select('id, name').order('name').order('id').range(a, b), '사업자 조회 실패: ')) : Promise.resolve<{ rows: { id: string; name: string }[]; missing: string | null }>({ rows: [], missing: null }),
     rowsOrMissing(loadDispatchLog(supabase, orderDate)),
   ]);
   const salesMissing = sales.missing ? migrationsFor([sales.missing]) : null;
@@ -56,7 +55,6 @@ export default async function DispatchPage({ searchParams }: { searchParams: Pro
         today={today}
         canDriver={canDriver}
         canCustomers={canCustomers}
-        canReceipts={canReceipts}
         cards={cards}
         shareTemplate={settings?.scanShare ?? DEFAULT_SCAN_SHARE_TEMPLATE}
         salesRows={sales.rows.map(({ customer, product, quantity, unit, price }) => ({ customer, product, quantity, unit, price }))}
