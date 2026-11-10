@@ -7,6 +7,7 @@ import { Barcode, Printer } from 'lucide-react';
 import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
 import { LabelView } from '@/components/labels/label-view';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
+import { labelNeedsReprint, templateShowsBoxType } from '@/lib/labels/reprint';
 import { FOLD_KEEP_OUT_MM, foldOf, type LabelData } from '@/lib/labels/template';
 import type { CardLabelInfo } from '@/lib/labels/server';
 import { getCardLabels, prepareLabelPrint, saveMergeGroups, type CardLabelPreviewSource } from '../labels/actions';
@@ -20,7 +21,9 @@ const PREVIEW_UNIT = '2.1px'; // 미리보기에서 1mm를 그리는 크기(라�
 //  - 박스가 늘어나면 새 번호의 줄이 "미출력"으로 나타난다. 훼손·분실된 라벨은 같은 버튼으로 다시 출력한다(같은 바코드).
 //  - 박스 번호만 찍고 전체 박스 수는 찍지 않는다 — 박스가 늘어도 이미 붙인 라벨을 다시 붙이지 않게 하려는 규칙이다.
 //  - 프린터·용지 설정은 라벨 설정 화면에서 한 번만 한다. 여기서는 출력 버튼만 누르면 된다.
-export function LabelPanel({ dailyBusinessId, boxCount }: { dailyBusinessId: string; boxCount: number }) {
+//  - 라벨에 박스 종류를 찍는 디자인이면, 이미 붙인 라벨에 찍힌 박스 종류가 지금 제출된 것과 다를 때 버튼이 "재출력 필요"로 바뀐다.
+// boxTypes = 제출한 박스 종류 이름(박스 순서). 박스 할당을 다시 제출하면 부모가 새 값을 내려 주므로 이 화면은 다시 읽지 않아도 최신이다.
+export function LabelPanel({ dailyBusinessId, boxCount, boxTypes }: { dailyBusinessId: string; boxCount: number; boxTypes: string[] }) {
   const [infos, setInfos] = useState<CardLabelInfo[]>([]);
   const [source, setSource] = useState<Pick<CardLabelPreviewSource, 'template' | 'base'> | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -75,7 +78,7 @@ export function LabelPanel({ dailyBusinessId, boxCount }: { dailyBusinessId: str
   };
 
   return (
-    <LabelPanelView boxCount={boxCount} groups={normalizeMergeGroups(groups, boxCount)} staleSeqs={staleSeqs} onGroupsChange={canMerge ? changeGroups : undefined} infos={infos} source={source} loaded={loaded} busyKey={busyKey} error={error} job={job} onPrint={print} onJobDone={() => setJob(null)} />
+    <LabelPanelView boxCount={boxCount} boxTypes={boxTypes} groups={normalizeMergeGroups(groups, boxCount)} staleSeqs={staleSeqs} onGroupsChange={canMerge ? changeGroups : undefined} infos={infos} source={source} loaded={loaded} busyKey={busyKey} error={error} job={job} onPrint={print} onJobDone={() => setJob(null)} />
   );
 }
 
@@ -126,6 +129,7 @@ function MergeEditor({ boxCount, groups, disabled, onChange }: { boxCount: numbe
 // 화면만 그리는 부분(데이터를 props로 받는다).
 export function LabelPanelView({
   boxCount,
+  boxTypes,
   groups,
   staleSeqs,
   onGroupsChange,
@@ -139,6 +143,7 @@ export function LabelPanelView({
   onJobDone,
 }: {
   boxCount: number;
+  boxTypes: string[];
   groups: MergeGroups;
   staleSeqs: number[];
   onGroupsChange?: (next: MergeGroups) => void; // 없으면 합포장은 보기만 한다(권한 없음)
@@ -169,7 +174,7 @@ export function LabelPanelView({
         return null;
       }
     }
-    return { ...source.base.data, boxNo: seq, barcode, merge: mergeLabelText(groups, seq) };
+    return { ...source.base.data, boxNo: seq, barcode, merge: mergeLabelText(groups, seq), boxType: boxTypes[seq - 1] ?? '' };
   };
 
   const statusOf = (seq: number) => {
@@ -178,6 +183,14 @@ export function LabelPanelView({
     if (!info || info.printCount === 0) return { text: '미출력', tone: 'new' as const };
     return { text: `출력 ${info.printCount}회`, tone: 'printed' as const };
   };
+
+  // 이미 붙인 라벨 중 찍힌 박스 종류가 지금과 달라 다시 출력해야 하는 박스
+  const showsBoxType = templateShowsBoxType(template);
+  const needsReprint = (seq: number) => {
+    const info = bySeq.get(seq);
+    return !!info && labelNeedsReprint({ templateShowsBoxType: showsBoxType, printCount: info.printCount, printedBoxType: info.printedBoxType, currentBoxType: boxTypes[seq - 1] ?? '' });
+  };
+  const reprintSeqs = seqs.filter(needsReprint);
 
   return (
     <section className="lp-root">
@@ -225,6 +238,7 @@ export function LabelPanelView({
               const st = statusOf(seq);
               const data = previewData(seq);
               const printed = bySeq.get(seq)?.printCount ?? 0;
+              const reprint = needsReprint(seq);
               return (
                 <div key={seq} className={`lp-row lp-${st.tone} ${seq === selSeq ? 'lp-row-on' : ''}`}>
                   <button type="button" className="lp-row-main" onClick={() => setPicked(seq)} aria-pressed={seq === selSeq} aria-label={`박스 ${seq}번 미리보기`}>
@@ -232,8 +246,8 @@ export function LabelPanelView({
                     <span className="lp-chip">{loaded ? st.text : '…'}</span>
                     {mergeGroupOf(groups, seq) && <span className="lp-chip lp-chip-merge">{mergeLabelText(groups, seq)}</span>}
                   </button>
-                  <button type="button" className={`lp-print ${printed > 0 ? 'lp-print-again' : ''}`} disabled={!!busyKey || !data} onClick={() => print([seq], String(seq))}>
-                    <Printer size={14} /> {busyKey === String(seq) ? '준비 중…' : printed > 0 ? '다시 출력' : '출력'}
+                  <button type="button" className={`lp-print ${reprint ? 'lp-print-need' : printed > 0 ? 'lp-print-again' : ''}`} disabled={!!busyKey || !data} onClick={() => print([seq], String(seq))}>
+                    <Printer size={14} /> {busyKey === String(seq) ? '준비 중…' : reprint ? '재출력 필요' : printed > 0 ? '다시 출력' : '출력'}
                   </button>
                 </div>
               );
@@ -244,6 +258,9 @@ export function LabelPanelView({
 
       {staleSeqs.length > 0 && (
         <p className="lp-warn">합포장 표시가 바뀌었습니다. 이미 붙인 {staleSeqs.join(', ')}번 라벨은 옛 표시이니 다시 출력해서 바꿔 붙이세요.</p>
+      )}
+      {reprintSeqs.length > 0 && (
+        <p className="lp-warn">이미 붙인 {reprintSeqs.join(', ')}번 라벨은 박스 종류가 지금과 다르거나 박스 종류가 찍혀 있지 않습니다. 다시 출력해서 바꿔 붙이세요.</p>
       )}
       {extra.length > 0 && (
         <p className="lp-warn">박스를 줄여서 번호 {extra.map((e) => e.seq).join(', ')}번 라벨이 남아 있습니다. 해당 라벨은 붙이지 마세요.</p>
@@ -296,6 +313,7 @@ export function LabelPanelView({
         .lp-row .lp-chip-merge { background: #ecfdf5; color: #047857; }
         .lp-print { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; height: 2rem; padding: 0 0.9rem; border-radius: 9px; border: 0; background: var(--primary); color: #fff; font-size: var(--fs-sm); font-weight: 800; cursor: pointer; flex: none; white-space: nowrap; }
         .lp-print-again { background: #fff; color: var(--primary); border: 1.5px solid var(--primary); }
+        .lp-print-need { background: #f59e0b; color: #fff; border: 0; }
         .lp-warn { font-size: 0.8125rem; font-weight: 700; color: #92400e; background: #fffbeb; border-radius: 10px; padding: 0.35rem 0.7rem; }
         .lp-error { font-size: 0.875rem; font-weight: 700; color: var(--danger, #dc2626); }
         .lp-note { font-size: 0.75rem; color: var(--muted-foreground); line-height: 1.4; }

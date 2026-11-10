@@ -13,6 +13,7 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
   settlement_receipts: '0047_settlement_receipts.sql',
   label_designs: '0050_label_designs.sql',
   settlement_sales_edit: '0048_settlement_sales_edit.sql', // 테이블이 아니라 settlement_sales에 더한 열(품목·수량·단위 수정)
+  label_printed_box_type: '0051_label_printed_box_type.sql', // 테이블이 아니라 box_labels에 더한 열(출력한 박스 종류)
 };
 
 // 오류가 "테이블 없음"이면 그 테이블 이름(못 읽으면 'unknown'), 아니면 null.
@@ -20,6 +21,8 @@ export function missingTable(error: unknown): string | null {
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
   // 마이그레이션 0047이 기존 테이블에 더한 열(단가 unit_price, 직인 seal_image)이 없을 때도 같은 안내를 한다.
   // 마이그레이션 0048이 settlement_sales에 더한 열(품목·수량·단위 수정값)이 없을 때도 같은 안내를 한다.
+  // 마이그레이션 0051이 box_labels에 더한 열(printed_box_type)이 없을 때도 같은 안내를 한다.
+  if (/printed_box_type/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'label_printed_box_type';
   if (/product_override|quantity_override|unit_override/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'settlement_sales_edit';
   if (/unit_price|seal_image/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'settlement_receipts';
   if (!/Could not find the table|schema cache/i.test(message)) return null;

@@ -4,7 +4,7 @@ import type { Database } from '@/lib/types/database';
 import { loadAppSettings } from '@/lib/settings-server';
 import { normalizeMergeGroups, type MergeGroups } from '@/lib/box-merge';
 import { nameWithRound } from '@/lib/orders';
-import { rowsOrMissing } from '@/lib/supabase/missing-table';
+import { missingTable, rowsOrMissing } from '@/lib/supabase/missing-table';
 import { DEFAULT_TEMPLATE, buildTemplate, type LabelData, type LabelTemplate } from './template';
 
 type Client = SupabaseClient<Database>;
@@ -49,10 +49,20 @@ export interface CardLabelInfo {
   printCount: number;
   lastPrintedAt: string | null;
   loadedAt: string | null;
+  // 마지막 출력 때 라벨에 찍힌 박스 종류(null = 안 찍음, undefined = 알 수 없음: 마이그레이션 0051 적용 전)
+  printedBoxType?: string | null;
 }
 
 export async function loadCardLabels(supabase: Client, dailyBusinessId: string): Promise<CardLabelInfo[]> {
-  const { data: labels } = await supabase.from('box_labels').select('id, seq, barcode, loaded_at').eq('daily_business_id', dailyBusinessId).order('seq');
+  // printed_box_type 열(0051)이 아직 없으면 그 열 없이 다시 읽는다(없는 열 때문에 모든 라벨이 "미출력"으로 보이면 안 된다).
+  const withType = await supabase.from('box_labels').select('id, seq, barcode, loaded_at, printed_box_type').eq('daily_business_id', dailyBusinessId).order('seq');
+  let columnMissing = false;
+  let labels: { id: string; seq: number; barcode: string; loaded_at: string | null; printed_box_type?: string | null }[] | null = withType.data;
+  if (withType.error) {
+    if (missingTable(withType.error.message) !== 'label_printed_box_type') throw new Error(`라벨 조회 실패: ${withType.error.message}`);
+    columnMissing = true;
+    labels = (await supabase.from('box_labels').select('id, seq, barcode, loaded_at').eq('daily_business_id', dailyBusinessId).order('seq')).data;
+  }
   const rows = labels ?? [];
   if (rows.length === 0) return [];
   const { data: events } = await supabase
@@ -67,14 +77,30 @@ export async function loadCardLabels(supabase: Client, dailyBusinessId: string):
     printCount.set(e.label_id, (printCount.get(e.label_id) ?? 0) + 1);
     if (!lastPrinted.has(e.label_id)) lastPrinted.set(e.label_id, e.created_at);
   }
-  return rows.map((l) => ({ seq: l.seq, barcode: l.barcode, printCount: printCount.get(l.id) ?? 0, lastPrintedAt: lastPrinted.get(l.id) ?? null, loadedAt: l.loaded_at }));
+  return rows.map((l) => ({
+    seq: l.seq,
+    barcode: l.barcode,
+    printCount: printCount.get(l.id) ?? 0,
+    lastPrintedAt: lastPrinted.get(l.id) ?? null,
+    loadedAt: l.loaded_at,
+    printedBoxType: columnMissing ? undefined : l.printed_box_type ?? null,
+  }));
+}
+
+// 박스 할당에서 제출한 박스 종류 이름을 박스 순서대로 읽는다(라벨 N번 = N번째 박스 = 배열의 N-1번째). 제출 전이면 빈 배열.
+export async function loadSubmittedBoxTypes(supabase: Client, dailyBusinessId: string): Promise<string[]> {
+  const { data: record } = await supabase.from('packing_records').select('id').eq('daily_business_id', dailyBusinessId).maybeSingle();
+  if (!record) return [];
+  const { data: boxes, error } = await supabase.from('packing_boxes').select('box_name').eq('record_id', record.id).order('position').order('id');
+  if (error) throw new Error(`박스 조회 실패: ${error.message}`);
+  return (boxes ?? []).map((b) => b.box_name);
 }
 
 // 한 업체 카드의 라벨에 공통으로 들어가는 값(박스 번호·바코드만 박스마다 다르다).
 export interface CardLabelBase {
   orderDate: string;
   businessNumber: number;
-  data: Omit<LabelData, 'boxNo' | 'barcode' | 'merge'>;
+  data: Omit<LabelData, 'boxNo' | 'barcode' | 'merge' | 'boxType'>;
   mergeGroups: MergeGroups; // 합포장 묶음(라벨의 합포장 표시에 쓴다)
 }
 

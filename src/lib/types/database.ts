@@ -187,6 +187,7 @@ type BoxLabel = {
   barcode: string;
   loaded_at: string | null;
   loaded_by: string | null;
+  printed_box_type: string | null; // 마지막 출력 때 라벨에 찍힌 박스 종류(0051). null = 박스 종류를 찍지 않은 라벨
   created_at: string;
 };
 type BoxLabelEvent = {
@@ -502,7 +503,7 @@ export type Database = {
       >;
       box_labels: TableDef<
         BoxLabel,
-        Pick<BoxLabel, "daily_business_id" | "seq" | "barcode"> & { id?: string; loaded_at?: string | null; loaded_by?: string | null; created_at?: string }
+        Pick<BoxLabel, "daily_business_id" | "seq" | "barcode"> & { id?: string; loaded_at?: string | null; loaded_by?: string | null; printed_box_type?: string | null; created_at?: string }
       >;
       box_label_events: TableDef<
         BoxLabelEvent,

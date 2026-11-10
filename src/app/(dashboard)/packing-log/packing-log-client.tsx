@@ -555,7 +555,7 @@ export function PackingLogClient({
                   )}
                 </div>
 
-                {can('packing:print') && !selected.parcel && <LabelPanel key={selected.id} dailyBusinessId={selected.id} boxCount={selected.submitted?.boxes.length ?? 0} />}
+                {can('packing:print') && !selected.parcel && <LabelPanel key={selected.id} dailyBusinessId={selected.id} boxCount={selected.submitted?.boxes.length ?? 0} boxTypes={selected.submitted?.boxes.map((b) => b.boxName) ?? []} />}
               </section>
 
               <DragOverlay>

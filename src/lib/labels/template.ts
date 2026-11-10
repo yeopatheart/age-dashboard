@@ -16,6 +16,7 @@ export const LABEL_FIELDS = {
   contact: '연락처',
   barcodeNumber: '번호(숫자 12자리)',
   merge: '합포장 표시',
+  boxType: '박스 종류',
 } as const;
 export type LabelField = keyof typeof LABEL_FIELDS;
 
@@ -79,6 +80,7 @@ export interface LabelData {
   contact: string;
   barcode: string;
   merge: string; // 합포장이면 "합포장 1·2", 아니면 빈 글자
+  boxType: string; // 박스 할당에서 제출한 이 박스의 종류 이름(제출 전이면 빈 글자)
 }
 
 export function fieldText(field: LabelField, data: LabelData): string {
@@ -91,6 +93,7 @@ export function fieldText(field: LabelField, data: LabelData): string {
     case 'contact': return data.contact;
     case 'barcodeNumber': return data.barcode;
     case 'merge': return data.merge;
+    case 'boxType': return data.boxType;
   }
 }
 
@@ -225,4 +228,5 @@ export const SAMPLE_LABEL_DATA: LabelData = {
   contact: '055-000-0000',
   barcode: '261028012035',
   merge: '합포장 1·2',
+  boxType: '물봉',
 };
