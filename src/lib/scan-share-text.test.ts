@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLoadedListText, packageCounts, SHARE_SAMPLE_CARDS, SHARE_SAMPLE_DATE, SHARE_SAMPLE_TERMINAL, type ShareCard } from './scan-share-text.ts';
+import { buildLoadedListText, packageCounts, terminalShareList, NO_TERMINAL, SHARE_SAMPLE_CARDS, SHARE_SAMPLE_DATE, SHARE_SAMPLE_TERMINAL, type ShareCard } from './scan-share-text.ts';
 import { DEFAULT_SCAN_SHARE_TEMPLATE, type ScanShareTemplate } from './scan-share-template.ts';
 
 const cards: ShareCard[] = [
@@ -80,4 +80,17 @@ test('합포장 묶음은 한 덩이로 센다', () => {
     ),
     { loaded: 1, total: 2 },
   );
+});
+
+test('터미널별 목록은 처음 나온 순서이고 상차/전체 박스를 합산하며 상차 0박스면 글이 null이다', () => {
+  const cards = [
+    { business: 'A', terminal: '대구', loaded: 2, total: 2, packages: { loaded: 2, total: 2 } },
+    { business: 'B', terminal: '', loaded: 0, total: 1, packages: { loaded: 0, total: 1 } },
+    { business: 'C', terminal: '대구', loaded: 1, total: 3, packages: { loaded: 1, total: 3 } },
+  ];
+  const list = terminalShareList('2026-11-06', cards);
+  assert.deepEqual(list.map((t) => [t.name, t.loaded, t.total]), [['대구', 3, 5], [NO_TERMINAL, 0, 1]]);
+  assert.equal(list[0].text, buildLoadedListText('2026-11-06', cards, '대구'));
+  assert.equal(list[1].text, null);
+  assert.deepEqual(terminalShareList('2026-11-06', []), []);
 });
