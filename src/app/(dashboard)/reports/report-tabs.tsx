@@ -9,6 +9,7 @@ const TABS = [
   { key: '/reports', label: '주문 수량', href: '/reports' },
   { key: '/reports/box', label: '박스', href: '/reports/box' },
   { key: '/reports/time', label: '운영 시간', href: '/reports/time' },
+  { key: '/reports/ops', label: '운영 개선', href: '/reports/ops' },
   { key: '/reports/sales', label: '판매·수익', href: '/reports/sales', needs: 'settlement:view' as const }, // 금액이 나오므로 정산 보기 권한이 있어야 한다
 ];
 
