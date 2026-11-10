@@ -14,6 +14,7 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
   label_designs: '0050_label_designs.sql',
   dispatch_log: '0052_dispatch_log.sql',
   packing_submit_events: '0055_ops_event_log.sql',
+  ops_event_log: '0055_ops_event_log.sql', // 테이블이 아니라 order_items에 더한 열(AI 보정 여부 ai_repaired)
   settlement_sales_edit: '0048_settlement_sales_edit.sql', // 테이블이 아니라 settlement_sales에 더한 열(품목·수량·단위 수정)
   label_printed_box_type: '0051_label_printed_box_type.sql', // 테이블이 아니라 box_labels에 더한 열(출력한 박스 종류)
 };
@@ -24,6 +25,8 @@ export function missingTable(error: unknown): string | null {
   // 마이그레이션 0047이 기존 테이블에 더한 열(단가 unit_price, 직인 seal_image)이 없을 때도 같은 안내를 한다.
   // 마이그레이션 0048이 settlement_sales에 더한 열(품목·수량·단위 수정값)이 없을 때도 같은 안내를 한다.
   // 마이그레이션 0051이 box_labels에 더한 열(printed_box_type)이 없을 때도 같은 안내를 한다.
+  // 마이그레이션 0055가 order_items에 더한 열(ai_repaired)이 없을 때도 같은 안내를 한다.
+  if (/ai_repaired/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'ops_event_log';
   if (/printed_box_type/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'label_printed_box_type';
   if (/product_override|quantity_override|unit_override/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'settlement_sales_edit';
   if (/unit_price|seal_image/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'settlement_receipts';
