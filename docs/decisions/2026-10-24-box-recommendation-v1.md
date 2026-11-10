@@ -9,7 +9,7 @@
 1. **학습 데이터 신뢰도 2등급**: 1박스 기록 = 사례(kNN)·용량 추정에 사용. 2박스 이상 = 박스 종류·개수만 믿고 물봉 개수·분할 파라미터 추정에만 사용(상품 배치는 학습에서 제외).
 2. **모델은 규칙 + 사례 기반**(`src/lib/packing/model.ts`, 순수 함수). 1주일치로는 일반 ML이 맞지 않는다. 물봉 표시 상품은 물봉 박스로(박스 개수는 용량으로), 나머지 상품은 비슷한 과거 1박스 주문으로 박스 종류 후보 3개를 순위화, 많으면 용량 기준으로 분할.
 3. **자동 학습 = 그날 첫 접속 시 재학습**(`getTodayModel`). 처음 계획한 "새벽 cron"을 쓰지 않은 이유: service_role 키(서버 비밀)를 새로 들이지 않고도 되고, 학습이 수십 ms라 접속을 느리게 하지 않는다. 오늘 이전의 제출 기록만으로 학습해 하루 동안 추천이 흔들리지 않는다(버전 `v-YYYY-MM-DD`). 기록이 수만 건으로 커지면 cron으로 옮긴다.
-4. **shadow test**: 추천은 미제출 업체에만, 만든 시점의 주문 지문(`order_signature`)과 함께 append-only로 저장(`packing_recommendations`). 제출 시 현장 결과와 비교해 `recommended_rank`, `accepted_as_is`를 기록. 정확도는 `/packing-log/accuracy`.
+4. **shadow test**: 추천은 미제출 업체에만, 만든 시점의 주문 지문(`order_signature`)과 함께 append-only로 저장(`packing_recommendations`). 제출 시 현장 결과와 비교해 `recommended_rank`, `accepted_as_is`를 기록. 정확도는 `/reports/box?view=accuracy`(2026-11-10에 표 기반 `/packing-log/accuracy`를 리포트로 옮겼다. [reports-roadmap](2026-11-10-reports-roadmap.md)).
 5. **대시보드(TV)에는 박스 상세를 넣지 않는다**(고정 행 높이). 박스 구성을 정한 뒤 주문이 바뀐 업체에만 이름 옆 "박스" 배지. 상세는 박스 기록 화면.
 
 ## 백테스트 (`npm run packing:backtest`, 1박스 160건 + 2박스 이상 66건)

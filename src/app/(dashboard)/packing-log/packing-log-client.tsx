@@ -405,7 +405,7 @@ export function PackingLogClient({
           <DateNav value={orderDate} today={today} onChange={go} label="박스 할당 날짜" />
           <span className="ak-count">업체 {rows.length}곳 · 제출 {doneCount}곳</span>
           <span className="ak-spacer" />
-          <Link href="/packing-log/accuracy" className="ak-btn"><BarChart3 size={14} /> 추천 정확도</Link>
+          {can('reports:view') && <Link href="/reports/box?view=accuracy" className="ak-btn"><BarChart3 size={14} /> 추천 정확도</Link>}
           <label className="pk-check"><input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} /> 미기록 업체만</label>
         </div>
       </div>

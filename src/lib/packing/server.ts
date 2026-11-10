@@ -51,7 +51,7 @@ export function orderSignature(items: LiveOrderItem[]): string {
   return `${items.length}-${hash.toString(16).padStart(8, '0')}`;
 }
 
-function parseStoredPlans(value: unknown): StoredPlan[] {
+export function parseStoredPlans(value: unknown): StoredPlan[] {
   if (!Array.isArray(value)) return [];
   const plans: StoredPlan[] = [];
   for (const p of value) {
