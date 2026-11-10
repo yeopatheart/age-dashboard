@@ -9,16 +9,13 @@ import { todayKST } from '@/lib/order-date';
 import { parsePeriodParams } from '@/lib/settlement/url';
 import { loadSalesRows, loadStoredPurchases, loadSupplierDirectory } from '@/lib/settlement/server';
 import { loadReceipts } from '@/lib/settlement/receipt-server';
-import { buildPurchaseRows, totalsOf } from '@/lib/settlement/purchases';
-import { buildDailySeries } from '@/lib/settlement/chart';
-import { buildProductGroups, buildSellerGroups } from '@/lib/settlement/chart-groups';
+import { buildPurchaseRows } from '@/lib/settlement/purchases';
 import { PeriodBar } from './period-bar';
 import { SettlementSection } from './settlement-section';
 import { SettlementClient } from './settlement-client';
 import { PurchasesClient } from './purchases-client';
-import { ChartClient } from './chart-client';
 
-// 정산: 출고가 끝난 주문을 판매내역과 매입내역으로 보여 주고 가격·사업자 구분·입금 여부·메모를 입력한다. 그래프·매입내역·판매내역을 한 화면에 함께 보여 준다.
+// 정산: 출고가 끝난 주문을 판매내역과 매입내역으로 보여 주고 가격·사업자 구분·입금 여부·메모를 입력한다. 매입내역·판매내역을 한 화면에 함께 보여 준다.
 // ?g=day|week|month(기본 day), ?d=YYYY-MM-DD(기준일, 기본 오늘, 미래는 오늘로 본다)로 기간을 정한다. 세 구역이 같은 기간을 쓴다.
 export default async function SettlementPage({ searchParams }: { searchParams: Promise<{ g?: string; d?: string }> }) {
   const accessCheck = requireMenu('settlement'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 await로 확정)
@@ -28,7 +25,7 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
   const multiDay = period.from !== period.to;
   const supabase = await createClient();
 
-  const header = <AdminHeader icon={<Receipt size={20} />} title="정산" sub="출고가 끝난 주문이 판매내역과 매입내역으로 올라옵니다. 가격, 사업자 구분, 입금 여부, 메모를 입력하세요. 입력하면 바로 저장됩니다." />;
+  const header = <AdminHeader icon={<Receipt size={20} />} title="정산" sub="출고가 끝난 주문이 판매내역과 매입내역으로 올라옵니다. 가격, 사업자 구분, 입금 여부, 메모를 입력하세요. 입력하면 바로 저장됩니다. 기간별 매출·이익 그래프는 리포트의 판매·수익에서 봅니다." />;
 
   const [, sales, sellers, inputsTable, stored, directory, receipts] = await Promise.all([
     accessCheck,
@@ -45,7 +42,7 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
           return [] as never[];
         }),
     ),
-    // 매입내역·그래프에 쓰는 값. 0044를 적용하기 전이면 두 구역만 안내를 보여 주고 판매내역은 계속 쓴다.
+    // 매입내역에 쓰는 값. 0044를 적용하기 전이면 매입내역만 안내를 보여 주고 판매내역은 계속 쓴다.
     rowsOrMissing(loadStoredPurchases(supabase, period.from, period.to)),
     valueOrMissing(loadSupplierDirectory(supabase)),
     // 영수증 이력(0047): 판매내역에서 "이미 발행됨" 경고를 하는 데만 쓴다(목록은 영수증 메뉴). 적용 전이면 경고만 빠진다.
@@ -63,7 +60,7 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
     );
   }
 
-  // 매입내역·그래프의 행(출고일 × 품목)은 판매내역에서 계산하고, 사용자가 입력해서 저장한 값을 붙인다.
+  // 매입내역의 행(출고일 × 품목)은 판매내역에서 계산하고, 사용자가 입력해서 저장한 값을 붙인다.
   const purchaseMissing = [stored.missing, directory.missing].filter((x): x is string => !!x);
   const purchaseNotice = (feature: string) => <MigrationNotice feature={feature} migrations={migrationsFor(purchaseMissing)} />;
   const purchaseRows = purchaseMissing.length === 0 && directory.value ? buildPurchaseRows(sales.rows, stored.rows) : null;
@@ -94,13 +91,6 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
             <PurchasesClient key={key} rows={purchaseRows} sellers={sellers.rows} suppliers={directory.value.suppliers} supplierIdsByProduct={supplierIdsByProduct} multiDay={multiDay} />
           ) : (
             purchaseNotice('매입내역')
-          )}
-        </SettlementSection>
-        <SettlementSection id="chart" title="그래프">
-          {purchaseRows && directory.value ? (
-            <ChartClient key={key} series={buildDailySeries(purchaseRows, period.from, period.to)} totals={totalsOf(purchaseRows)} periodLabel={period.label} byProduct={buildProductGroups(purchaseRows)} bySeller={buildSellerGroups(sales.rows, purchaseRows, sellers.rows)} />
-          ) : (
-            purchaseNotice('그래프')
           )}
         </SettlementSection>
       </div>
