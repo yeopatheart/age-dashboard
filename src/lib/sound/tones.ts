@@ -44,17 +44,28 @@ export function getAudioContext(): AudioContext | null {
   return ctx;
 }
 
-// 사용자가 누르는 순간(클릭 핸들러 안)에 불러야 한다.
-export async function unlockAudio(): Promise<boolean> {
+// 오디오가 돌고 있게 만든다. 막혀 있으면(suspended) resume을 시도하되 waitMs 안에 풀리지 않으면 포기하고 false를 돌려준다.
+// 크롬은 사용자가 아직 한 번도 누르지 않은 페이지의 resume()을 reject하지 않고 클릭할 때까지 pending으로 둔다. 그냥 await하면
+// 호출한 쪽(playCues의 재생 줄)이 영원히 멈춰서 그 뒤의 모든 알림이 소리 없이 쌓인다.
+const RESUME_WAIT_MS = 400;
+export async function ensureAudioRunning(waitMs = RESUME_WAIT_MS): Promise<boolean> {
   const c = getAudioContext();
   if (!c) return false;
+  const running = () => c.state === 'running'; // 상태는 await 사이에 바뀐다(앞의 검사로 타입이 좁혀지지 않게 함수로 읽는다)
+  if (running()) return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await c.resume();
+    await Promise.race([c.resume(), new Promise<void>((resolve) => (timer = setTimeout(resolve, waitMs)))]);
   } catch {
-    // 막히면 running이 되지 않는다 — 호출한 쪽이 isAudioRunning으로 확인한다
+    // 막히면 running이 되지 않는다 — 호출한 쪽이 반환값으로 확인한다
+  } finally {
+    clearTimeout(timer);
   }
-  return c.state === 'running';
+  return running();
 }
+
+// 사용자가 누르는 순간(클릭 핸들러 안)에 불러야 한다. 누른 직후라 resume이 곧 풀리므로 넉넉히 기다린다.
+export const unlockAudio = () => ensureAudioRunning(1500);
 
 export const isAudioRunning = () => ctx?.state === 'running';
 
@@ -63,22 +74,14 @@ export function subscribeAudioState(cb: () => void): () => void {
   return () => listeners.delete(cb);
 }
 
-// 톤이 끝나면 풀리는 Promise를 돌려준다(음성을 톤 뒤에 이어 붙일 때 쓴다). 소리를 못 내는 환경이면 바로 풀린다.
-// 브라우저가 오디오를 멈춰 둔(suspended) 상태라면 한 번 되살려 본다 — 이 페이지에서 사용자가 이미 한 번이라도 눌렀다면
-// 크롬·사파리는 조작 없이도 resume을 허용한다. 되살리지 못하면(아직 한 번도 안 눌렀다면) 예전처럼 조용히 넘어가고,
+// 톤이 끝나면 풀리는 Promise를 돌려준다(음성을 톤 뒤에 이어 붙일 때 쓴다). 소리를 못 냈으면 false, 냈으면 true.
+// 브라우저가 오디오를 멈춰 둔(suspended) 상태라면 잠깐(RESUME_WAIT_MS) 되살려 본다 — 이 페이지에서 사용자가 이미 한 번이라도 눌렀다면
+// 크롬·사파리는 조작 없이도 resume을 허용한다. 되살리지 못하면(아직 한 번도 안 눌렀다면) 기다리지 않고 포기해서 호출한 쪽이 멈추지 않는다.
 // 화면의 "소리가 꺼져 있습니다 — 눌러서 켜기" 안내가 그 상태를 알린다.
-export async function playTone(name: ToneName, volume = 1): Promise<void> {
+export async function playTone(name: ToneName, volume = 1): Promise<boolean> {
+  if (!(await ensureAudioRunning())) return false;
   const c = getAudioContext();
-  if (!c) return;
-  const running = () => c.state === 'running'; // resume 뒤에 상태를 다시 읽는다(앞의 검사로 타입이 좁혀지지 않게 함수로 읽는다)
-  if (!running()) {
-    try {
-      await c.resume();
-    } catch {
-      // 막히면 running이 되지 않는다
-    }
-    if (!running()) return;
-  }
+  if (!c) return false;
   const def = TONES[name];
   const peak = Math.max(0, Math.min(1, volume)) * def.gain;
   let t = c.currentTime + 0.02;
@@ -102,4 +105,5 @@ export async function playTone(name: ToneName, volume = 1): Promise<void> {
   }
   const total = t - c.currentTime;
   await new Promise<void>((resolve) => setTimeout(resolve, total * 1000 + 40));
+  return true;
 }

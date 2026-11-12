@@ -80,3 +80,24 @@ test('새 이벤트 종류도 소리 계획에 들어간다', () => {
   // 사용자가 끈 종류는 소리가 나지 않는다
   assert.deepEqual(planCues(restored, 'tone', ['item-restored']), []);
 });
+
+test('포장 체크를 풀면 포장 해제 이벤트가 나고 소리·문구가 계획된다', () => {
+  const prev = snap([row()], [item({ isPacked: true })]);
+  const next = snap([row()], [item({ isPacked: false })]);
+  const events = diffOrders(prev, next);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].kind, 'item-unpacked');
+  assert.equal(describeEvent(events[0]), '포장 해제, 청해수산 활감성돔');
+  assert.equal(spokenEvent(events[0]), '포장 해제. 청해수산. 활감성돔');
+  assert.deepEqual(planCues(events, 'voice', ['item-packed']), [{ tone: 'changed', say: ['포장 해제. 청해수산. 활감성돔'] }]);
+});
+
+test('포장 해제는 기본 설정(포장 체크만 끔)에서도 소리가 난다', () => {
+  const events = diffOrders(snap([row()], [item({ isPacked: true })]), snap([row()], [item({ isPacked: false })]));
+  assert.equal(planCues(events, 'tone', ['item-packed']).length, 1);
+});
+
+test('차수가 바뀐 업체 카드는 업체 정보 수정 이벤트가 난다', () => {
+  const events = diffOrders(snap([row({ round: 1 })], [item()]), snap([row({ round: 2 })], [item()]));
+  assert.deepEqual(events.map((e) => e.kind), ['order-modified']);
+});
