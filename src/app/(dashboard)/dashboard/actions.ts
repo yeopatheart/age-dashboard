@@ -6,6 +6,7 @@ import { findOrCreateBusiness, findOrCreateDailyBusiness } from '@/lib/business-
 import type { ChangeStatus, OrderRound, Prep } from '@/lib/orders';
 import { requirePermission } from '@/lib/permissions/access';
 import { editableDateError, todayKST } from '@/lib/order-date';
+import { manualItemChanged, resolveManualChangeStatus } from '@/lib/manual-item-status';
 import { loadAppSettings } from '@/lib/settings-server';
 import { isIsoDate, nonNegativeNumberError, positiveNumberError, textError } from '@/lib/validate';
 import type { Database } from '@/lib/types/database';
@@ -202,6 +203,37 @@ export async function updateOrderItemManual(orderItemId: string, fields: ManualI
   const supabase = await createClient();
   const guard = await itemDateError(supabase, orderItemId);
   if (guard) return { error: guard };
+  const { data: current } = await supabase
+    .from('order_items')
+    .select('product_name_raw, quantity, unit, secondary_weight_kg, size_request, is_mulbong, has_aerator, change_status')
+    .eq('id', orderItemId)
+    .maybeSingle();
+  if (!current) return { error: '상품을 찾지 못했습니다.' };
+  // 일반 상품의 내용을 고쳤는데 상태가 그대로면 칠판에서 수정 여부를 알 수 없다: 이때만 수정됨으로 올린다.
+  const changeStatus = resolveManualChangeStatus(
+    current.change_status,
+    fields.changeStatus,
+    manualItemChanged(
+      {
+        productName: current.product_name_raw,
+        quantity: Number(current.quantity),
+        unit: current.unit,
+        secondaryWeightKg: current.secondary_weight_kg === null ? null : Number(current.secondary_weight_kg),
+        sizeRequest: current.size_request,
+        isMulbong: current.is_mulbong,
+        hasAerator: current.has_aerator,
+      },
+      {
+        productName: fields.productName,
+        quantity: fields.quantity,
+        unit: fields.unit,
+        secondaryWeightKg: fields.secondaryWeightKg,
+        sizeRequest: fields.sizeRequest,
+        isMulbong: fields.prep !== 'none',
+        hasAerator: fields.prep === 'aerator',
+      },
+    ),
+  );
   const { error } = await supabase
     .from('order_items')
     .update({
@@ -212,7 +244,7 @@ export async function updateOrderItemManual(orderItemId: string, fields: ManualI
       size_request: fields.sizeRequest,
       is_mulbong: fields.prep !== 'none',
       has_aerator: fields.prep === 'aerator',
-      change_status: fields.changeStatus,
+      change_status: changeStatus,
     })
     .eq('id', orderItemId);
   if (error) return { error: error.message };

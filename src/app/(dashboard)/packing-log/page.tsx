@@ -6,6 +6,7 @@ import { PackingLogClient, type PackingBusiness } from './packing-log-client';
 import { requireMenu } from '@/lib/permissions/access';
 import { fetchAll, mapChunks, selectAll } from '@/lib/supabase/fetch-all';
 import { labelPrintStatus } from '@/lib/label-status';
+import { excludedReason } from '@/lib/packing/excluded-items';
 import { todayKST } from '@/lib/order-date';
 
 export default async function PackingLogPage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
@@ -128,6 +129,12 @@ export default async function PackingLogPage({ searchParams }: { searchParams: P
           aerator: i.has_aerator,
           orderMulbong: i.is_mulbong && !i.has_aerator,
         })),
+      // 박스에 담을 대상이 아니라 위 목록에서 빠진 상품(수량 미정·전량 미출고). 화면이 안내한다.
+      excludedItems: (items ?? []).flatMap((i) => {
+        if (i.daily_business_id !== d.id || i.change_status === 'cancelled') return [];
+        const reason = excludedReason(Number(i.quantity), i.unit, Number(i.unshipped_quantity ?? 0));
+        return reason ? [{ name: i.product_name_raw, reason }] : [];
+      }),
       recommendation: recommendations.get(d.id)?.current ?? null,
       // 택배 터미널과 미제출 업체는 라벨 표시를 하지 않는다.
       labelStatus: record && !(!!d.terminal_id && parcelTerminalIds.has(d.terminal_id)) ? labelPrintStatus(packedBoxes.filter((b) => b.record_id === record.id).length, printedSeqsByDaily.get(d.id) ?? []) : null,

@@ -316,6 +316,12 @@ export function LabelPanelView({
         .lp-print-need { background: #f59e0b; color: #fff; border: 0; }
         .lp-warn { font-size: 0.8125rem; font-weight: 700; color: #92400e; background: #fffbeb; border-radius: 10px; padding: 0.35rem 0.7rem; }
         .lp-error { font-size: 0.875rem; font-weight: 700; color: var(--danger, #dc2626); }
+        /* 손으로 누르는 화면(휴대폰·태블릿·터치 입력)에서는 누르는 요소를 44px 이상으로 둔다. PC(마우스)는 촘촘한 크기를 유지한다. */
+        @media (max-width: 900px), (pointer: coarse) {
+          .lp-bulk, .lp-print, .lp-merge-do { min-height: 44px; }
+          .lp-merge-pick button, .lp-merge-group button { min-width: 44px; min-height: 44px; }
+          .lp-row-main { height: 44px; }
+        }
         .lp-note { font-size: 0.75rem; color: var(--muted-foreground); line-height: 1.4; }
         .lp-note a { color: var(--primary); text-decoration: underline; }
         /* 작업 영역이 좁으면(휴대폰·태블릿) 미리보기를 위로 쌓고, 손으로 누르기 좋게 줄 높이와 버튼을 키운다. */

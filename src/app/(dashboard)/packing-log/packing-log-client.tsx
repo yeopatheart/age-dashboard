@@ -20,6 +20,7 @@ import {
 import { BarChart3, CircleDashed, ClipboardList, GripVertical, Package, PackageCheck, Plus, Printer, PrinterCheck, PrinterX, Trash2, X } from 'lucide-react';
 import type { RecommendationView, StoredPlan } from '@/lib/packing/server';
 import { emptyBoxMessage, firstEmptyBoxIndex, removalShiftsPrintedLabels } from '@/lib/packing/box-rules';
+import { EXCLUDED_REASON_LABEL, type ExcludedItem } from '@/lib/packing/excluded-items';
 import { submitPacking, assignItemsToBoxes, deletePackingRecord } from './actions';
 import { LabelPanel } from './label-panel';
 import { useCan } from '@/components/permissions-context';
@@ -49,6 +50,8 @@ export interface PackingBusiness {
   // 택배 터미널: 택배사 송장을 붙이므로 박스 라벨을 출력하지 않는다
   parcel: boolean;
   items: PackingItem[];
+  // 박스에 담을 대상이 아니라 items에서 빠진 상품(수량 미정·전량 미출고). 조용히 빠지지 않게 화면이 안내한다.
+  excludedItems: ExcludedItem[];
   // 박스 추천(shadow test). 미제출 업체는 1순위 추천이 박스에 미리 채워진다.
   recommendation: RecommendationView | null;
   // 제출한 업체의 라벨 출력 현황(목록 칩용). 택배·미제출 업체는 null
@@ -226,7 +229,7 @@ export function PackingLogClient({
     : readOnly
       ? '과거 날짜는 설정에서 "과거 날짜 편집"을 켜면 제출할 수 있습니다'
       : draft.boxes.length === 0
-      ? '오른쪽에서 박스를 추가해주세요'
+      ? '박스를 추가해주세요'
       : hasDeletedBox
         ? '삭제된 박스가 있습니다. 해당 박스를 지우고 다른 박스를 추가해주세요'
         : unplaced.length > 0
@@ -267,6 +270,9 @@ export function PackingLogClient({
       const at = draft.boxes.findIndex((b) => b.uid === uid);
       const shifts = removalShiftsPrintedLabels(selected.submitted?.boxes.length ?? 0, at, selected.labelStatus?.printed ?? 0);
       if (shifts && !window.confirm('이미 라벨을 출력한 업체입니다. 가운데 박스를 지우면 뒤 박스의 번호가 앞당겨져 붙여 둔 스티커와 어긋납니다. 그래도 지울까요?')) return;
+      // 담은 상품이 있는 박스는 손가락이 스치기만 해도 지워지지 않게 한 번 묻는다(상품은 지워지지 않고 상품 목록으로 돌아간다). 빈 박스는 바로 지운다.
+      const filled = draft.boxes[at]?.items.length ?? 0;
+      if (!shifts && filled > 0 && !window.confirm(`${at + 1}번 박스를 뺄까요? 담은 상품 ${filled}개는 상품 목록으로 돌아갑니다.`)) return;
     }
     updateDraft((d) => ({ ...d, boxes: d.boxes.filter((b) => b.uid !== uid) }));
   };
@@ -469,6 +475,12 @@ export function PackingLogClient({
                     {selected.submitted ? '제출한 뒤 주문이 바뀌었습니다. 박스 구성을 다시 확인하고 필요하면 고쳐서 다시 제출하세요.' : '추천을 만든 뒤 주문이 바뀌어 추천을 새로 만들었습니다. 박스 구성을 다시 확인하세요.'}
                   </div>
                 )}
+                {selected.excludedItems.length > 0 && (
+                  <div className="pk-rec pk-rec-warn">
+                    박스에 담을 수 없는 상품 {selected.excludedItems.length}개가 목록에서 빠져 있습니다:{' '}
+                    {selected.excludedItems.map((e) => `${e.name}(${EXCLUDED_REASON_LABEL[e.reason]})`).join(', ')}. 박스에 담아야 하면 주문 목록에서 수량이나 미출고를 먼저 고쳐 주세요.
+                  </div>
+                )}
                 <div className="pk-rec">
                   {selected.submitted ? (
                     <>
@@ -478,8 +490,8 @@ export function PackingLogClient({
                   ) : modified ? (
                     <>
                       <span className="pk-rec-label">직접 입력</span>
-                      <span className="pk-edited">추천 {rank + 1}순위에서 수정함 · 직접 입력으로 제출됩니다</span>
-                      <button className="ak-btn" onClick={resetToBase}>추천대로 되돌리기</button>
+                      <span className="pk-edited">{selected.recommendation ? `추천 ${rank + 1}순위에서 수정함 · ` : ''}직접 입력으로 제출됩니다</span>
+                      <button className="ak-btn" onClick={resetToBase}>{selected.recommendation ? '추천대로 되돌리기' : '처음으로 되돌리기'}</button>
                     </>
                   ) : selected.recommendation ? (
                     <>
@@ -523,7 +535,7 @@ export function PackingLogClient({
                         ))}
                       </div>
                       <div className="pk-slots">
-                        {draft.boxes.length === 0 && <p className="pk-hint">위에서 박스를 추가한 뒤, 왼쪽 상품을 박스로 끌어다 놓으세요.</p>}
+                        {draft.boxes.length === 0 && <p className="pk-hint">박스를 추가한 뒤, 상품 목록의 상품을 박스로 끌어다 놓으세요.</p>}
                         {draft.boxes.map((box, idx) => (
                           <BoxSlot key={box.uid} box={box} index={idx + 1} items={selected.items} boxTypes={boxes} onChangeType={(boxId) => changeBoxType(box.uid, boxId)} onRemove={() => removeBox(box.uid)} onUnassign={(id) => unassign(id, box.uid)} />
                         ))}
@@ -676,6 +688,14 @@ export function PackingLogClient({
           .pk-chip { padding: 0.2rem 0.45rem; }
           .pk-big { min-height: 2.75rem; padding: 0 1.3rem; font-size: var(--fs-lg); border-radius: 12px; }
         }
+        /* 손으로 누르는 화면(휴대폰·태블릿·터치 입력)에서는 누르는 요소를 44px 이상으로 둔다. PC(마우스)는 촘촘한 크기를 유지한다. */
+        @media (max-width: 900px), (pointer: coarse) {
+          .pk-x { min-width: 44px; min-height: 44px; align-items: center; justify-content: center; }
+          .pk-add-box { min-height: 44px; }
+          .pk-mini { height: 44px; }
+          .pk-check { min-height: 44px; }
+          .pk-check input { width: 22px; height: 22px; }
+        }
         /* 작업 영역 폭이 좁으면(태블릿/좁은 창) 상품 영역을 박스 영역 위로 쌓는다. */
         @container (max-width: 52rem) { .pk-board { grid-template-columns: 1fr; } }
         @media (max-width: 900px) { .pk-layout { grid-template-columns: 1fr; } .pk-board { grid-template-columns: 1fr; } .pk-list { max-height: none; flex-direction: row; overflow-x: auto; padding-bottom: 0.25rem; } .pk-biz { flex: none; width: 12.5rem; } .pk-biz-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 100%; } }
@@ -810,7 +830,7 @@ function BoxSlot({
               ))}
             </select>
           )}
-          {!readOnly && onRemove && <button className="pk-x" onClick={onRemove} title="박스 빼기 (담은 상품은 다시 왼쪽으로 돌아갑니다)"><X size={16} /></button>}
+          {!readOnly && onRemove && <button className="pk-x" onClick={onRemove} title="박스 빼기 (담은 상품은 상품 목록으로 돌아갑니다)"><X size={16} /></button>}
         </div>
         {(box.isMulbong || box.boxId === null || box.dims) && (
           <div className="pk-slot-meta">
