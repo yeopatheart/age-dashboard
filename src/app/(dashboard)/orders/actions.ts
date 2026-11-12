@@ -10,6 +10,7 @@ import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from '@/lib/kakao-parser';
 import { repairFailedLine } from '@/lib/kakao-ai-repair';
 import { prepOf, type OrderRound } from '@/lib/orders';
+import { similarProductNames, suspiciousNameReason } from '@/lib/product-name-check';
 import { requirePermission } from '@/lib/permissions/access';
 import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { isIsoDate, nonNegativeNumberError, textError } from '@/lib/validate';
@@ -113,6 +114,9 @@ export interface SuggestedLine {
   // 등록된 적 없는 터미널/업체 — 확정하면 주문입력 출처로 자동 등록된다.
   isNewTerminal: boolean;
   isNewBusiness: boolean;
+  // 상품 마스터에 없는 이름 — 확정하면 주문입력 출처로 자동 등록된다. 비슷한 기존 상품이 있으면 오타 중복일 수 있어 함께 보여 준다(자동으로 합치지 않는다).
+  isNewProduct: boolean;
+  similarProducts: string[];
 }
 
 // 읽기 전용: 붙여넣은 텍스트를 파싱하고, 각 줄의 업체명을 업체 카탈로그 전체와 대조해서
@@ -127,12 +131,14 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
   const settings = await loadAppSettings(supabase);
   const dateError = editableDateError(orderDate, settings.allowPastOrderEdit);
   if (dateError) throw new Error(dateError);
-  const [{ data: allBusinesses }, { data: registeredTerminals }, { data: dailyBusinesses }] = await Promise.all([
+  const [{ data: allBusinesses }, { data: registeredTerminals }, { data: dailyBusinesses }, knownProducts] = await Promise.all([
 
     fetchAll((from, to) => supabase.from('businesses').select('id, name, terminal_id').order('id').range(from, to), '업체 조회 실패: ').then((data) => ({ data })),
     supabase.from('terminals').select('id, name'),
     supabase.from('daily_businesses').select('id, business_id, terminal_id').eq('order_date', orderDate).eq('round', round),
+    fetchAll((from, to) => supabase.from('products').select('name').order('id').range(from, to), '상품 조회 실패: '),
   ]);
+  const knownProductNames = new Set(knownProducts.map((p) => p.name));
   const businessList = allBusinesses ?? [];
   const terminalNameSet = new Set((registeredTerminals ?? []).map((t) => t.name));
 
@@ -210,6 +216,8 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
       source,
       isNewTerminal: line.terminalName !== '' && !terminalNameSet.has(line.terminalName),
       isNewBusiness: catalogBusinessId === null,
+      isNewProduct: false,
+      similarProducts: [] as string[],
     };
 
     // 업체 줄 전체 취소("터미널/ 업체명/ 취소") — 그 업체의 살아있는 상품을 하나씩 취소로 펼친다.
@@ -272,8 +280,12 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
       // 같은 상품도 물봉·기포기·일반은 준비 방식이 달라 별개 줄이다(예: "보리새우 30미(일반, 물봉)"과 "(일반, 기포기)"). 취소는 상품명만으로 찾는다.
       const existing = existingItems.find((i) => i.product_name_raw === product.productName && (product.isCancel || prepOf({ isMulbong: i.is_mulbong, hasAerator: i.has_aerator }) === prepOf(product)));
       const spec = parseSizeSpec(product.sizeRequest, settings);
+      const isNewProduct = !product.isCancel && product.productName !== '' && !knownProductNames.has(product.productName);
+      const suspicious = isNewProduct ? suspiciousNameReason(product.productName) : null;
       const common = {
         ...base,
+        isNewProduct,
+        similarProducts: isNewProduct ? similarProductNames(product.productName, knownProductNames) : [],
         key: `${line.raw}__${idx}`,
         product,
         normalizedFrom: product.normalizedFrom,
@@ -326,10 +338,10 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
         existingOrderItemId,
         // 같은 줄의 다른 상품 하나가 문제라고 정상 상품까지 확인 필요로 만들지 않는다 — 상품 단위로만
         // 판단한다. 단, AI가 재구성한 줄은 모든 상품이 항상 사람 확인 대상이다.
-        needsReview: product.needsReview || missingQuantity || source === 'ai',
+        needsReview: product.needsReview || missingQuantity || source === 'ai' || suspicious !== null,
         blocking: missingQuantity && !!existing,
         undecidedQuantity,
-        reviewReason: undecidedQuantity ? '수량 미정으로 추가됩니다 (나중에 대시보드에서 수량을 채우세요)' : product.reviewReason ?? (missingQuantity ? '이미 있는 상품이라 수량 없이는 바꿀 수 없습니다' : source === 'ai' ? line.reviewReason : undefined),
+        reviewReason: undecidedQuantity ? '수량 미정으로 추가됩니다 (나중에 대시보드에서 수량을 채우세요)' : product.reviewReason ?? (missingQuantity ? '이미 있는 상품이라 수량 없이는 바꿀 수 없습니다' : source === 'ai' ? line.reviewReason : suspicious ?? undefined),
       });
     });
   }

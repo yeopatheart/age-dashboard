@@ -4,6 +4,7 @@ import { Sparkles, Loader2, AlertTriangle, History, ChevronDown, ChevronUp, Book
 import { MarkdownView } from '@/components/markdown-view';
 import { roundLabel, type OrderRound } from '@/lib/orders';
 import { editableDateError } from '@/lib/order-date';
+import { replaceProductName } from '@/lib/product-name-check';
 import { useCan } from '@/components/permissions-context';
 import { DateNav } from '@/components/date-nav';
 import { Segmented } from '@/components/segmented';
@@ -134,19 +135,30 @@ export function NewOrderClient({
     setEditError(null);
   };
   // 고친 상품 글자를 같은 규칙으로 다시 읽어서 그 줄만 새로 판정한다(신규/수정/변경 없음, 의심 표시가 다시 계산된다).
-  const applyEdit = async (s: Row) => {
-    if (!editText.trim()) return setEditError('상품을 입력해 주세요.');
+  const applyEdit = async (s: Row, textOverride?: string) => {
+    const text = (textOverride ?? editText).trim();
+    if (!text) return setEditError('상품을 입력해 주세요.');
+    // 비슷한 이름 버튼으로 시작했는데 실패하면 오류가 보이도록 수정 입력칸을 연다.
+    const openOnError = () => {
+      if (textOverride === undefined) return;
+      setEditingKey(s.key);
+      setEditText(text);
+    };
     setEditBusy(true);
     setEditError(null);
     try {
-      const line = `${s.terminalName}/ ${s.businessNameRaw}/ ${editText.trim()}${s.memo ? ` #${s.memo}` : ''}`;
+      const line = `${s.terminalName}/ ${s.businessNameRaw}/ ${text}${s.memo ? ` #${s.memo}` : ''}`;
       const result = await suggestOrderLines(line, orderDate, round);
-      if (result.length === 0) return setEditError('읽을 수 있는 상품이 없습니다.');
+      if (result.length === 0) {
+        openOnError();
+        return setEditError('읽을 수 있는 상품이 없습니다.');
+      }
       setSuggestions((prev) =>
         prev ? prev.flatMap((x) => (x.key === s.key ? result.map((r, i) => ({ ...r, key: `${s.key}~e${i}`, edited: true })) : [x])) : prev,
       );
       setEditingKey(null);
     } catch (e) {
+      openOnError();
       setEditError(e instanceof Error ? e.message : '수정을 적용하지 못했습니다.');
     } finally {
       setEditBusy(false);
@@ -278,6 +290,7 @@ export function NewOrderClient({
                       {s.isNewTerminal && <span className="new-tag">신규 터미널</span>}
                       {s.isNewBusiness && <span className="new-tag">신규 업체</span>}
                       <span className="review-product">{s.product.productName}</span>
+                      {s.isNewProduct && <span className="new-tag" title="상품 목록에 없는 이름입니다. 확정하면 새 상품으로 자동 등록됩니다.">신규 상품</span>}
                       {s.kind !== 'cancel_line' && !s.product.isCancel && (
                         s.undecidedQuantity ? (
                           <span className="review-qty review-qty-undecided">수량 미정</span>
@@ -305,6 +318,27 @@ export function NewOrderClient({
                       {s.needsReview && (
                         <span className="review-flag">
                           <AlertTriangle size={12} /> {s.reviewReason ?? '확인 필요'}
+                        </span>
+                      )}
+                      {s.isNewProduct && s.similarProducts.length > 0 && (
+                        <span className="similar-hint">
+                          비슷한 기존 상품:
+                          {s.similarProducts.map((name) => (
+                            <button
+                              key={name}
+                              type="button"
+                              className="row-btn"
+                              disabled={editBusy}
+                              title="이 줄의 상품 이름을 기존 상품으로 바꿔서 다시 읽기"
+                              onClick={() => {
+                                const next = replaceProductName(s.product.raw, s.product.productName, name);
+                                if (next === null) startEdit(s); // 원문에서 이름을 찾지 못하면 직접 고치게 한다
+                                else void applyEdit(s, next);
+                              }}
+                            >
+                              {name}
+                            </button>
+                          ))}
                         </span>
                       )}
                     </div>
@@ -514,6 +548,7 @@ export function NewOrderClient({
         .review-biz { font-weight: 700; color: var(--primary); font-size: var(--fs-md); }
         .review-product { font-size: var(--fs-md); color: var(--foreground); }
         .review-qty { font-size: var(--fs-sm); font-weight: 600; color: var(--primary); background: var(--primary-light); padding: 0.15rem 0.6rem; border-radius: 6px; }
+        .similar-hint { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; font-size: var(--fs-xs); color: var(--muted-foreground); font-weight: 600; }
         .review-flag { display: flex; align-items: center; gap: 0.3rem; font-size: var(--fs-xs); color: var(--warning); font-weight: 500; }
         .badge-ai { display: inline-flex; align-items: center; gap: 0.25rem; background: #f5f3ff; color: #7c3aed; }
         .kind-badge { font-size: var(--fs-sm); font-weight: 700; padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid; white-space: nowrap; }
