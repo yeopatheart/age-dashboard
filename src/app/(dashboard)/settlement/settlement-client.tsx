@@ -4,7 +4,7 @@ import { saveSales, type SalesPatch } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { DataTable, SearchInput, type Column } from '@/components/admin/admin-kit';
 import { useIsMobile } from '@/lib/use-is-mobile';
-import { formatWon, formatWonInput, parseWon } from '@/lib/money';
+import { formatWon, formatWonDraft, parseWon, wonInputError } from '@/lib/money';
 import { amountFromUnitPrice, canAutoFillPrice, type IssuedReceiptKey } from '@/lib/settlement/receipt';
 import type { SalesRow } from '@/lib/settlement/sales';
 import { ReceiptIssuePanel } from './receipt-issue-panel';
@@ -327,21 +327,25 @@ export function SettlementClient({
       hideable: false,
       render: (r0) => {
         const r = view(r0);
+        const invalid = wonInputError(drafts[r.itemId]?.unitPrice ?? '') !== null;
         return (
           <input
             className="ak-input"
-            style={{ width: '7.5rem', height: 'var(--ctl-h)', textAlign: 'right' }}
+            style={{ width: '7.5rem', height: 'var(--ctl-h)', textAlign: 'right', ...(invalid ? { borderColor: 'var(--danger)' } : {}) }}
+            aria-invalid={invalid}
             inputMode="numeric"
             enterKeyHint="next"
             placeholder="단가→판매가 자동"
             disabled={!canEdit}
             aria-label={`${r.customer} ${r.product} 단가`}
             value={drafts[r.itemId]?.unitPrice ?? formatWon(r.unitPrice)}
-            onChange={(e) => setDraft(r.itemId, 'unitPrice', formatWonInput(e.target.value))}
+            onChange={(e) => setDraft(r.itemId, 'unitPrice', formatWonDraft(e.target.value))}
             onBlur={() => {
               const draft = drafts[r.itemId]?.unitPrice;
               if (draft === undefined) return;
               clearDraft(r.itemId, 'unitPrice');
+              const problem = wonInputError(draft);
+              if (problem) return flash(`단가를 저장하지 않았습니다. ${problem}`);
               const next = parseWon(draft);
               if (next === r.unitPrice) return;
               // 단가를 입력하면 판매가를 단가 × 수량(원 단위 반올림)으로 채운다. 단, 판매가가 비어 있거나 이전 단가로 자동 계산된 값일 때만이다 —
@@ -365,21 +369,25 @@ export function SettlementClient({
       hideable: false,
       render: (r0) => {
         const r = view(r0);
+        const invalid = wonInputError(drafts[r.itemId]?.price ?? '') !== null;
         return (
           <input
             className="ak-input"
-            style={{ width: '9.5rem', height: 'var(--ctl-h)', textAlign: 'right' }}
+            style={{ width: '9.5rem', height: 'var(--ctl-h)', textAlign: 'right', ...(invalid ? { borderColor: 'var(--danger)' } : {}) }}
+            aria-invalid={invalid}
             inputMode="numeric"
             enterKeyHint="next"
             placeholder="0"
             disabled={!canEdit}
             aria-label={`${r.customer} ${r.product} 판매가`}
             value={drafts[r.itemId]?.price ?? formatWon(r.price)}
-            onChange={(e) => setDraft(r.itemId, 'price', formatWonInput(e.target.value))}
+            onChange={(e) => setDraft(r.itemId, 'price', formatWonDraft(e.target.value))}
             onBlur={() => {
               const draft = drafts[r.itemId]?.price;
               if (draft === undefined) return;
               clearDraft(r.itemId, 'price');
+              const problem = wonInputError(draft);
+              if (problem) return flash(`판매가를 저장하지 않았습니다. ${problem}`);
               const next = parseWon(draft);
               if (next !== r.price) void commit([r.itemId], { price: next });
             }}

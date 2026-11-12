@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { barcodeOrderDate, isValidBoxBarcode } from '@/lib/labels/barcode';
+import { barcodeOrderDate, barcodeProblem, normalizeBarcodeInput, type BarcodeProblem } from '@/lib/labels/barcode';
 import { nameWithRound } from '@/lib/orders';
 import { todayKST } from '@/lib/order-date';
 import { mergeGroupOf, normalizeMergeGroups } from '@/lib/box-merge';
@@ -26,7 +26,7 @@ export interface ScannedBox {
 export type ScanResult =
   | { status: 'loaded'; box: ScannedBox } // 방금 상차 완료로 처리됨
   | { status: 'duplicate'; box: ScannedBox } // 이미 상차 완료된 박스를 다시 스캔함
-  | { status: 'invalid'; code: string } // 우리 바코드 형식이 아님
+  | { status: 'invalid'; code: string; reason: BarcodeProblem } // 우리 바코드가 아님: format = 숫자 12자리가 아님, check = 확인 숫자가 맞지 않음
   | { status: 'unknown'; code: string } // 형식은 맞지만 발급된 적 없는 번호
   | { status: 'past'; code: string; date: string }; // 오늘이 아닌 날짜의 라벨(어제 스티커 등) — 상차하지 않는다
 
@@ -65,10 +65,11 @@ async function mergedSeqsOf(supabase: Awaited<ReturnType<typeof createClient>>, 
 
 // 바코드를 스캔해서 상차 완료로 처리한다. 같은 박스를 다시 스캔하면 상태를 바꾸지 않고 "이미 상차됨"으로 알려준다.
 export async function scanBarcode(raw: string): Promise<ScanResult> {
-  const code = raw.replace(/\s+/g, '');
-  if (!isValidBoxBarcode(code)) {
+  const code = normalizeBarcodeInput(raw);
+  const problem = barcodeProblem(code);
+  if (problem) {
     await requirePermission('scan:scan');
-    return { status: 'invalid', code: code.slice(0, 20) || '빈 값' };
+    return { status: 'invalid', code: code.slice(0, 20) || '빈 값', reason: problem };
   }
   // 라벨 번호 앞 6자리가 주문일이다. 오늘이 아닌 날짜의 라벨(어제 스티커 등)은 상차하지 않는다(자정을 넘겨 상차하는 날은 없다는 현장 확인, 2026-11-09).
   const labelDate = barcodeOrderDate(code);

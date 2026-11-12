@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { savePurchases, type PurchasePatch } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { DataTable, type Column } from '@/components/admin/admin-kit';
-import { formatWon, formatWonInput, parseWon } from '@/lib/money';
+import { formatWon, formatWonDraft, parseWon, wonInputError } from '@/lib/money';
 import { profitOf, totalsOf, type PurchaseRow } from '@/lib/settlement/purchases';
 
 const PAGE_SIZE = 100; // 월 조회는 행이 많을 수 있어 100줄씩 나눠 보여 준다
@@ -191,17 +191,20 @@ export function PurchasesClient({
         return (
           <input
             className="ak-input"
-            style={{ width: '9.5rem', height: '2.1rem', textAlign: 'right' }}
+            style={{ width: '9.5rem', height: '2.1rem', textAlign: 'right', ...(wonInputError(drafts[r.key]?.price ?? '') !== null ? { borderColor: 'var(--danger)' } : {}) }}
+            aria-invalid={wonInputError(drafts[r.key]?.price ?? '') !== null}
             inputMode="numeric"
             placeholder="0"
             disabled={!canEdit}
             aria-label={`${r.product} 매입가`}
             value={drafts[r.key]?.price ?? formatWon(r.price)}
-            onChange={(e) => setDraft(r.key, 'price', formatWonInput(e.target.value))}
+            onChange={(e) => setDraft(r.key, 'price', formatWonDraft(e.target.value))}
             onBlur={() => {
               const draft = drafts[r.key]?.price;
               if (draft === undefined) return;
               clearDraft(r.key, 'price');
+              const problem = wonInputError(draft);
+              if (problem) return setError(`매입가를 저장하지 않았습니다. ${problem}`);
               const next = parseWon(draft);
               if (next !== r.price) void commit([r.key], { price: next });
             }}
