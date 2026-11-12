@@ -136,7 +136,6 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ak-section-sales { order: 1; }
   .ak-section-purchases { order: 2; }
-  .ak-section-receipts { grid-column: 1 / -1; order: 3; }
 }
 
 /* 정산 기간 줄(PeriodBar): [일 주 월] + [‹ 기간 › 오늘]. 알약·구분 버튼 모양은 공용 컨트롤(globals.css .dn-* · .sg-*)이다. 휴대폰에서도 한 줄에 둔다. */
