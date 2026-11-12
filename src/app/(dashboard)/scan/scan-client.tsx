@@ -9,6 +9,7 @@ import { useCan } from '@/components/permissions-context';
 import { playTone, unlockAudio } from '@/lib/sound/tones';
 import { NO_TERMINAL, type PackageCount } from '@/lib/scan-share-text';
 import { undoneSummary, type UndoneBox } from '@/lib/scan-text';
+import { normalizeBarcodeInput } from '@/lib/labels/barcode';
 
 export interface ScanCard {
   id: string;
@@ -123,7 +124,12 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         const [, month, day] = result.date.split('-');
         next = { tone: 'bad', title: `${Number(month)}/${Number(day)} 날짜의 라벨입니다`, detail: `오늘(${today}) 박스가 아니라서 상차하지 않았습니다 · ${result.code}` };
       } else {
-        next = { tone: 'bad', title: result.status === 'invalid' ? '우리 라벨이 아닙니다' : '출력된 적 없는 번호', detail: result.code };
+        next =
+          result.status === 'invalid'
+            ? result.reason === 'check'
+              ? { tone: 'bad', title: '번호를 다시 확인해 주세요', detail: `확인 숫자가 맞지 않습니다 · ${result.code}` }
+              : { tone: 'bad', title: '우리 라벨이 아닙니다', detail: `번호는 숫자 12자리입니다 · ${result.code}` }
+            : { tone: 'bad', title: '출력된 적 없는 번호', detail: result.code };
       }
       if (result.status === 'loaded') loadedCount.current += 1;
       const bannerSeq = ++seq.current;
@@ -138,7 +144,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
 
   const submitCode = useCallback(
     async (raw: string) => {
-      const code = raw.replace(/\s+/g, '');
+      const code = normalizeBarcodeInput(raw);
       if (!code || busy.current) return;
       const now = Date.now();
       if (last.current && last.current.code === code) {

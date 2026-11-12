@@ -16,8 +16,20 @@ export function makeBoxBarcode(orderDate: string, businessNumber: number, seq: n
   return `${first11}${checkDigit(first11)}`;
 }
 
+// 입력·스캔한 글자에서 공백과 하이픈(붙여넣기로 섞이는 - – −)을 뺀다. 번호는 숫자 12자리라서 이 글자들은 번호의 일부가 아니다.
+export function normalizeBarcodeInput(raw: string): string {
+  return raw.replace(/[\s\-–−]+/g, '');
+}
+
+// 번호가 틀린 이유: 'format' = 숫자 12자리가 아님, 'check' = 12자리지만 확인 숫자가 맞지 않음(잘못 입력했거나 스캔이 틀림). 맞으면 null.
+export type BarcodeProblem = 'format' | 'check';
+export function barcodeProblem(code: string): BarcodeProblem | null {
+  if (!/^\d{12}$/.test(code)) return 'format';
+  return checkDigit(code.slice(0, 11)) === Number(code[11]) ? null : 'check';
+}
+
 export function isValidBoxBarcode(code: string): boolean {
-  return /^\d{12}$/.test(code) && checkDigit(code.slice(0, 11)) === Number(code[11]);
+  return barcodeProblem(code) === null;
 }
 
 // 번호 앞 6자리(YYMMDD)가 곧 주문일이다. 올바른 번호(isValidBoxBarcode)에서만 쓴다.
