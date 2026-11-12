@@ -18,6 +18,8 @@ import { primeVoice } from '@/lib/sound/voice';
 const BURST_QUIET_MS = 1500; // 이벤트가 이 시간 동안 더 오지 않으면 모아서 한 번에 알린다
 const BURST_MAX_MS = 4000; // 계속 오더라도 이 시간이 지나면 일단 알린다
 const RECENT_LIMIT = 12;
+const TITLE_BADGE = /^\(변경 \d+\) /; // 탭 제목 앞에 붙이는 "(변경 N)" 배지
+const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'keydown', 'touchend'] as const; // 브라우저가 "사용자 조작"으로 치는 입력
 const STALE_MS = 3 * 60_000; // 마지막 갱신이 이 시간보다 오래되면 낡은 화면으로 본다(안전 새로고침이 1분 간격이라 그보다 충분히 길게)
 
 interface RecentEvent {
@@ -70,6 +72,8 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
   };
   const audioRunning = useSyncExternalStore(subscribeAudioState, isAudioRunning, () => false);
   const [recent, setRecent] = useState<RecentEvent[]>([]);
+  // 브라우저가 소리를 막아 알리지 못하고 버린 변경 수. 소리가 켜진 뒤에 "놓친 변경"으로 한 번 알려 준다(묵은 소리를 다시 내지는 않는다).
+  const [missed, setMissed] = useState(0);
   const [listOpen, setListOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false); // 알림 버튼을 누르면 버튼 아래로 떠오르는 설정 패널(툴바 크기는 변하지 않는다)
 
@@ -137,7 +141,13 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
         [...batch.filter((e) => e.kind !== 'item-packed').map((e) => ({ at: now, text: describeEvent(e), urgent: e.kind === 'packed-item-changed' })), ...list].slice(0, RECENT_LIMIT),
       );
       const { soundOn: on, settings: s } = live.current;
-      if (on) void playCues(planCues(batch, s.mode, s.disabled), s);
+      if (!on) return;
+      const cues = planCues(batch, s.mode, s.disabled);
+      if (cues.length === 0) return;
+      const audible = batch.filter((e) => e.kind !== 'item-packed' && !s.disabled.includes(e.kind)).length;
+      void playCues(cues, s).then((played) => {
+        if (!played && audible > 0) setMissed((n) => n + audible);
+      });
     };
     clearTimeout(quietTimer.current);
     quietTimer.current = setTimeout(flush, BURST_QUIET_MS);
@@ -151,6 +161,29 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
     },
     [],
   );
+
+  // 소리가 막혀 있는 동안에는 화면의 아무 곳이나 처음 누르는 순간 오디오와 음성을 함께 깨운다(브라우저가 허용하는 "사용자 조작").
+  // 앰버 버튼을 정확히 눌러야만 풀리면, 새로고침 뒤에 칠판을 만진 작업자는 소리가 꺼진 줄 모르고 지나친다. 풀리면 이 이펙트가 정리된다.
+  useEffect(() => {
+    if (!soundOn || audioRunning) return;
+    const attempt = () => {
+      primeVoice();
+      void unlockAudio();
+    };
+    for (const type of UNLOCK_EVENTS) document.addEventListener(type, attempt, { capture: true, passive: true });
+    return () => {
+      for (const type of UNLOCK_EVENTS) document.removeEventListener(type, attempt, { capture: true });
+    };
+  }, [soundOn, audioRunning]);
+
+  // 탭이 뒤로 가 있어도(소리가 없어도) 새 변경이 있는지 탭 제목으로 알린다. 제목을 되돌릴 때는 배지만 떼어서, 그 사이 바뀐 제목을 덮어쓰지 않는다.
+  useEffect(() => {
+    if (!mode || recent.length === 0) return;
+    document.title = `(변경 ${recent.length}) ${document.title.replace(TITLE_BADGE, '')}`;
+    return () => {
+      document.title = document.title.replace(TITLE_BADGE, '');
+    };
+  }, [mode, recent.length]);
 
   // 연결이 끊기면 소리로도 알린다(낡은 화면을 믿고 작업하는 것이 가장 위험하다).
   useEffect(() => {
@@ -201,8 +234,25 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
       )}
 
       {soundOn && !audioRunning && (
-        <button type="button" onClick={turnOn} className="h-8 px-3 rounded-lg bg-amber-500 text-white text-xs font-bold shadow-sm hover:bg-amber-600">
-          소리가 꺼져 있습니다 — 눌러서 켜기
+        <button
+          type="button"
+          onClick={turnOn}
+          className={`h-8 px-3 rounded-lg bg-amber-500 text-white text-xs font-bold shadow-sm hover:bg-amber-600 ${missed > 0 ? 'animate-pulse' : ''}`}
+        >
+          소리가 꺼져 있습니다 — 눌러서 켜기{missed > 0 ? ` (놓친 변경 ${missed}건)` : ''}
+        </button>
+      )}
+
+      {soundOn && audioRunning && missed > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            setMissed(0);
+            setListOpen(true);
+          }}
+          className="h-8 px-3 rounded-lg border border-amber-400 bg-amber-50 text-amber-800 text-xs font-bold shadow-sm hover:bg-amber-100"
+        >
+          소리가 꺼진 동안 변경 {missed}건 — 눌러서 보기
         </button>
       )}
 
@@ -226,6 +276,7 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
                     type="button"
                     onClick={() => {
                       setRecent([]);
+                      setMissed(0);
                       setListOpen(false);
                     }}
                     className="text-xs font-bold text-slate-600 hover:text-slate-900"
