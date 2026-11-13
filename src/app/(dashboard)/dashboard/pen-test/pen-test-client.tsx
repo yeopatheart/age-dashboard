@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import { clearCanvas, endInk, extendInk, fitCanvas, startInk, type InkCursor } from '@/lib/ink/canvas';
 
 // 스마트 칠판 입력 진단 화면: 칠판의 브라우저가 펜·손가락·손바닥·지우개를 어떤 입력(pointerType, 접촉 크기, 압력)으로 전달하는지 기록한다.
 // 펜으로 상품에 동그라미를 치면 포장 완료로 올리는 기능이 가능한지는 이 값에 달려 있다(2026-11-14 조사). 중량 인식은 하지 않기로 했다. 서버에는 아무것도 보내지 않는다.
@@ -38,7 +39,8 @@ export function PenTestClient() {
   const [last, setLast] = useState('');
   const [copied, setCopied] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const active = useRef(new Map<number, { x: number; y: number }>());
+  const active = useRef(new Map<number, InkCursor>());
+  const inkStyle = (pointerType: string) => ({ color: TYPE_COLOR[pointerType] ?? '#9333ea', width: 3 });
   // 환경 정보는 브라우저에서만 읽는다(서버 렌더에는 navigator가 없어 빈 문자열). 값이 문자열이라 같은 값이면 다시 그리지 않는다.
   const env = useSyncExternalStore(subscribeNothing, readEnv, () => '');
 
@@ -46,14 +48,12 @@ export function PenTestClient() {
     kindRef.current = kind;
   }, [kind]);
 
-  // 캔버스 해상도를 화면 크기에 맞춘다(그림이 흐려지거나 좌표가 어긋나지 않게).
+  // 캔버스 그림 해상도를 화면의 실제 픽셀(CSS 크기 × devicePixelRatio)에 맞춘다 — 칠판은 배율이 3이라 CSS 크기로 그리면 선이 깨져 보인다.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const resize = () => {
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.round(rect.width);
-      canvas.height = Math.round(rect.height);
+      fitCanvas(canvas);
     };
     resize();
     window.addEventListener('resize', resize);
@@ -72,21 +72,23 @@ export function PenTestClient() {
       } catch {
         // 이미 사라진 접촉(유령 터치 등)은 캡처할 수 없다. 진단 도구는 어떤 입력에도 멈추지 않고 그대로 기록한다.
       }
-      active.current.set(e.pointerId, { x, y });
+      active.current.set(e.pointerId, startInk({ x, y }));
     }
-    const from = active.current.get(e.pointerId);
-    if (phase === 'move' && from) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.strokeStyle = TYPE_COLOR[e.pointerType] ?? '#9333ea';
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(from.x, from.y);
-        ctx.lineTo(x, y);
-        ctx.stroke();
+    const cursor = active.current.get(e.pointerId);
+    const ctx = canvas.getContext('2d');
+    if (ctx && cursor) {
+      const style = inkStyle(e.pointerType);
+      ctx.strokeStyle = style.color;
+      ctx.lineWidth = style.width;
+      if (phase === 'move') {
+        // 브라우저가 모아 둔 중간 점까지 모두 이어서(보고 빈도가 낮은 칠판에서도) 선이 끊기지 않게 한다. 지원하지 않으면 현재 점만 쓴다.
+        const points = e.nativeEvent.getCoalescedEvents?.() ?? [];
+        let next = cursor;
+        for (const p of points.length > 0 ? points : [e.nativeEvent]) next = extendInk(ctx, next, { x: p.clientX - rect.left, y: p.clientY - rect.top });
+        active.current.set(e.pointerId, next);
+      } else if (phase === 'up') {
+        endInk(ctx, cursor);
       }
-      active.current.set(e.pointerId, { x, y });
     }
     if (phase === 'up') active.current.delete(e.pointerId);
 
@@ -109,12 +111,12 @@ export function PenTestClient() {
     setLast(`${phase} · pointerType=${e.pointerType || '(빈 값)'} · id=${e.pointerId} · 폭×높이=${Math.round(e.width)}×${Math.round(e.height)} · pressure=${e.pressure} · buttons=${e.buttons} · primary=${e.isPrimary}`);
   };
 
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+  const clearInk = () => {
+    const ctx = canvasRef.current?.getContext('2d');
+    if (ctx) clearCanvas(ctx);
   };
   const resetAll = () => {
-    clearCanvas();
+    clearInk();
     setStats(Object.fromEntries(KINDS.map((k) => [k, emptyStat()])) as Record<Kind, Stat>);
     setLast('');
   };
@@ -165,7 +167,7 @@ export function PenTestClient() {
             {k} <span className="font-medium opacity-80">· 획 {stats[k].strokes}</span>
           </button>
         ))}
-        <button type="button" onClick={clearCanvas} className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700">그림 지우기</button>
+        <button type="button" onClick={clearInk} className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700">그림 지우기</button>
         <button type="button" onClick={resetAll} className="h-11 rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700">기록 모두 지우기</button>
       </div>
 
