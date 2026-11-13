@@ -61,7 +61,6 @@
 
   /* Sidebar width (접기 기능용) */
   --sidebar-width: 248px;
-  --sidebar-width-collapsed: 76px;
 }
 
 @theme inline {
