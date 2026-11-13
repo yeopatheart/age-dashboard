@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { MASTER_EMAIL, normalizePermissions } from '@/lib/permissions/catalog';
 import { PermissionError, getAccess } from '@/lib/permissions/access';
+import { passwordConfirmError } from '@/lib/password-check';
 
 // 사용자·권한 관리는 master 계정만 할 수 있다. 화면 접근과 별개로 모든 동작에서 다시 확인한다.
 async function requireMasterAccess() {
@@ -14,11 +15,14 @@ async function requireMasterAccess() {
 
 const MIN_PASSWORD_LENGTH = 8;
 
-export async function createUser(input: { email: string; password: string; displayName: string }): Promise<{ error: string | null; userId: string | null }> {
+export async function createUser(input: { email: string; password: string; passwordConfirm: string; displayName: string }): Promise<{ error: string | null; userId: string | null }> {
   await requireMasterAccess();
   const email = input.email.trim().toLowerCase();
   const displayName = input.displayName.trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: '이메일 형식이 올바르지 않습니다.', userId: null };
+  // 화면에서도 막지만 서버 액션은 직접 호출될 수 있어 확인 값을 서버에서 다시 비교한다.
+  const mismatch = passwordConfirmError(input.password, input.passwordConfirm);
+  if (mismatch) return { error: mismatch, userId: null };
   if (input.password.length < MIN_PASSWORD_LENGTH) return { error: `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.`, userId: null };
 
   const admin = createAdminClient();
@@ -33,10 +37,12 @@ export async function createUser(input: { email: string; password: string; displ
 }
 
 // 이름과 비밀번호를 고친다(이메일은 로그인 ID라 바꾸지 않는다). 비밀번호를 비워 두면 그대로 둔다.
-export async function updateUser(userId: string, input: { displayName: string; password: string }): Promise<{ error: string | null }> {
+export async function updateUser(userId: string, input: { displayName: string; password: string; passwordConfirm: string }): Promise<{ error: string | null }> {
   await requireMasterAccess();
   const displayName = input.displayName.trim();
   if (!displayName) return { error: '이름을 입력하세요.' };
+  const mismatch = passwordConfirmError(input.password, input.passwordConfirm);
+  if (mismatch) return { error: mismatch };
   if (input.password && input.password.length < MIN_PASSWORD_LENGTH) return { error: `비밀번호는 ${MIN_PASSWORD_LENGTH}자 이상이어야 합니다.` };
 
   const admin = createAdminClient();
