@@ -45,9 +45,10 @@ test('undo history keeps the last 30 steps and pops the newest first', () => {
   assert.deepEqual(popHistory([]), { entry: null, rest: [] });
 });
 
-test('a history entry remembers which chip the stroke packed', () => {
-  const history = pushHistory([], { before: 'strokes-before', packedItemId: 'item-1' });
-  assert.equal(popHistory(history).entry?.packedItemId, 'item-1');
+test('a history entry remembers which chips the action packed and which it unpacked', () => {
+  const history = pushHistory(pushHistory([], { before: 'a', packed: ['item-1'] }), { before: 'b', unpacked: ['item-2', 'item-3'] });
+  assert.deepEqual(popHistory(history).entry?.unpacked, ['item-2', 'item-3']);
+  assert.deepEqual(popHistory(popHistory(history).rest).entry?.packed, ['item-1']);
 });
 
 test('a free stroke is stored relative to the layer and comes back at any layer size', () => {

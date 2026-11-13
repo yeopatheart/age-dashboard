@@ -32,6 +32,12 @@ test('a loop covering about half of the chip still counts (40% threshold)', () =
   assert.ok(r.kind === 'circle' && r.coverage >= GESTURE.circleMinCoverage && r.coverage < 0.9);
 });
 
+test('a loop that only covers the left 40% of the chip counts when it is the closest chip', () => {
+  // A의 왼쪽 약 절반만 감싸는 원(중심이 A의 왼쪽 부분)
+  const r = classifyStroke(ellipse(135, 115, 40, 20), targets);
+  assert.equal(r.kind === 'circle' && r.itemId, 'A');
+});
+
 test('a small loop that covers well under 40% of the chip is ignored', () => {
   assert.deepEqual(classifyStroke(ellipse(170, 115, 25, 10), targets), { kind: 'none', reason: 'no-target' });
 });
@@ -40,10 +46,21 @@ test('a circle around two chips is ambiguous and ignored', () => {
   assert.deepEqual(classifyStroke(ellipse(250, 115, 170, 30), targets), { kind: 'none', reason: 'ambiguous' });
 });
 
-test('a circle that only grazes the neighbour is still assigned to the chip it mostly covers', () => {
-  // A을 거의 다 감싸고 B의 가장자리를 조금 걸친다.
+test('a circle that only grazes the neighbour is assigned to the chip it is centred on', () => {
   const r = classifyStroke(ellipse(190, 115, 110, 28), targets);
   assert.equal(r.kind === 'circle' && r.itemId, 'A');
+});
+
+test('a tall circle that also covers over 40% of the chip in the next row still goes to the chip it is centred on', () => {
+  // 사진의 상황: 칸이 위아래로 촘촘해서 큰 원이 아래 줄 칸 C도 40% 넘게 감싼다. 예전 규칙은 이것을 "애매함"으로 무시했다.
+  const tall = ellipse(170, 115, 100, 44);
+  assert.ok(coverage(C, tall) >= GESTURE.circleMinCoverage);
+  const r = classifyStroke(tall, targets);
+  assert.equal(r.kind === 'circle' && r.itemId, 'A');
+});
+
+test('a loop centred between two stacked chips is ambiguous', () => {
+  assert.deepEqual(classifyStroke(ellipse(170, 135, 100, 36), targets), { kind: 'none', reason: 'ambiguous' });
 });
 
 test('a loop far bigger than the chip is rejected as too big', () => {
@@ -52,10 +69,6 @@ test('a loop far bigger than the chip is rejected as too big', () => {
 
 test('an open arc is not a circle', () => {
   assert.deepEqual(classifyStroke(ellipse(170, 115, 60, 60, 0.5), targets), { kind: 'none', reason: 'not-closed' });
-});
-
-test('a nearly flat arc counts as a straight stroke, not a circle', () => {
-  assert.deepEqual(classifyStroke(ellipse(170, 115, 100, 30, 0.5), targets), { kind: 'none', reason: 'bad-angle' });
 });
 
 test('going out and coming back is not a circle', () => {
@@ -68,24 +81,47 @@ test('a tap or a tiny scribble is too short', () => {
   assert.deepEqual(classifyStroke(line({ x: 150, y: 110 }, { x: 160, y: 118 }), targets), { kind: 'none', reason: 'too-short' });
 });
 
-test('a diagonal across a chip is recognised in both directions', () => {
-  const slash = classifyStroke(line({ x: 150, y: 135 }, { x: 190, y: 95 }), targets);
-  assert.equal(slash.kind === 'diagonal' && slash.itemId, 'A');
+test('a straight stroke across more than half of a chip is recognised in any direction', () => {
+  const diagonal = classifyStroke(line({ x: 150, y: 135 }, { x: 190, y: 95 }), targets);
+  assert.equal(diagonal.kind === 'line' && diagonal.itemId, 'A');
   const backslash = classifyStroke(line({ x: 150, y: 95 }, { x: 190, y: 135 }), targets);
-  assert.equal(backslash.kind === 'diagonal' && backslash.itemId, 'A');
+  assert.equal(backslash.kind === 'line' && backslash.itemId, 'A');
+  const horizontal = classifyStroke(line({ x: 90, y: 115 }, { x: 250, y: 117 }), targets);
+  assert.equal(horizontal.kind === 'line' && horizontal.itemId, 'A');
+  const vertical = classifyStroke(line({ x: 170, y: 95 }, { x: 172, y: 135 }), targets);
+  assert.equal(vertical.kind === 'line' && vertical.itemId, 'A');
 });
 
-test('an underline or a vertical line is not a diagonal', () => {
-  assert.deepEqual(classifyStroke(line({ x: 100, y: 132 }, { x: 240, y: 134 }), targets), { kind: 'none', reason: 'bad-angle' });
-  assert.deepEqual(classifyStroke(line({ x: 170, y: 90 }, { x: 172, y: 140 }), targets), { kind: 'none', reason: 'bad-angle' });
+test('a short vertical stroke still counts when it spans most of the chip height', () => {
+  const r = classifyStroke(line({ x: 170, y: 104 }, { x: 170, y: 130 }), targets);
+  assert.equal(r.kind === 'line' && r.itemId, 'A');
 });
 
-test('a long diagonal across two rows belongs to neither chip', () => {
+test('a horizontal stroke over about 40% of the chip width does not count (needs 50%)', () => {
+  assert.deepEqual(classifyStroke(line({ x: 140, y: 115 }, { x: 196, y: 115 }), targets), { kind: 'none', reason: 'no-target' });
+});
+
+test('a slightly wavy stroke across a chip still counts as straight', () => {
+  const wavy = line({ x: 100, y: 115 }, { x: 240, y: 115 }, 14).map((p, i) => ({ x: p.x, y: p.y + (i % 2 === 0 ? 2 : -2) }));
+  const r = classifyStroke(wavy, targets);
+  assert.equal(r.kind === 'line' && r.itemId, 'A');
+});
+
+test('an underline below the chip does not count', () => {
+  assert.deepEqual(classifyStroke(line({ x: 100, y: 133 }, { x: 240, y: 135 }), targets), { kind: 'none', reason: 'no-target' });
+});
+
+test('a long steep stroke across two rows belongs to neither chip', () => {
   assert.deepEqual(classifyStroke(line({ x: 150, y: 95 }, { x: 190, y: 175 }), targets), { kind: 'none', reason: 'no-target' });
 });
 
-test('a diagonal over empty space is ignored', () => {
+test('a stroke over empty space is ignored', () => {
   assert.deepEqual(classifyStroke(line({ x: 500, y: 300 }, { x: 540, y: 340 }), targets), { kind: 'none', reason: 'no-target' });
+});
+
+test('a long line that covers one chip fully and only grazes the next goes to the first', () => {
+  const r = classifyStroke(line({ x: 90, y: 115 }, { x: 330, y: 115 }), targets);
+  assert.equal(r.kind === 'line' && r.itemId, 'A');
 });
 
 test('geometry helpers', () => {

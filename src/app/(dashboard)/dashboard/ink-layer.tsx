@@ -1,24 +1,27 @@
 'use client';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Eraser, PenLine, Undo2 } from 'lucide-react';
-import { clearCanvas, endInk, extendInk, fitCanvas, startInk, type InkCursor, type Pt } from '@/lib/ink/canvas';
+import { Eraser, Palette, PenLine, Undo2 } from 'lucide-react';
+import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
 import { eraseStroke } from '@/lib/ink/erase';
 import { classifyStroke, REASON_LABEL } from '@/lib/ink/gesture';
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
-import { clampToViewport, radialPositions } from '@/lib/ink/radial';
-import { inkKey, parseInk, pruneInk, resolvePoints, serializeInk, toAnchoredStroke, toFreeStroke, type Box, type InkStroke } from '@/lib/ink/store';
+import { cardPosition, clampToViewport, stackPositions } from '@/lib/ink/menu-layout';
+import { inkKey, parseInk, pruneInk, resolvePoints, serializeInk, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, type Box, type InkStroke } from '@/lib/ink/store';
 
-// 칠판 펜 기능의 그림 층: 주문표 위에 얹는 캔버스 + 플로팅 버튼 + 사방으로 펼치는 도구함.
+// 칠판 펜 기능의 그림 층: 주문표 위에 얹는 캔버스 + 플로팅 버튼 + 세로로 쌓이는 메뉴.
 // 확정 설계는 docs/decisions/2026-11-14-board-pen-feature.md. 요약:
-// - 도구(펜·지우개)를 고른 동안만 그려지고, 도구함을 접으면 터치가 그대로 통과한다. 상단 "칠판" 버튼이 켜져 있을 때만 이 컴포넌트가 그려진다.
+// - 플로팅 버튼을 짧게 누르면 펜 켜기/끄기, 길게 누르면 메뉴(펜 설정·지우개·되돌리기)가 버튼 위(또는 아래)로 세로로 쌓인다. 끌면 위치를 옮긴다.
+//   색·굵기·지우개 크기는 한 번 정하면 계속 쓰므로, 설정 카드는 설정할 때만 뜨고 그리기 시작하면 닫힌다(2026-11-14 현장 요청).
 // - 펜·손가락·지우개가 모두 touch로 들어오므로(진단 결과) 도구 선택으로 구분하고, 손바닥은 접촉 크기로 거른다.
-// - 동그라미·대각선은 해당 상품 칸을 포장 완료로 올리고(뒤에서 처리, 표시 없음), 그 획은 상품 칸에 붙는다. 시험 모드(&ink=dry)는 결과만 보여 준다.
-// - 되돌리기는 포장 완료도 되돌리고, 지우개·전체 지우기는 그림만 지운다.
+// - 동그라미·직선은 해당 상품 칸을 포장 완료로 올리고(뒤에서 처리, 표시 없음), 그 획은 상품 칸에 붙는다. 시험 모드(&ink=dry)는 결과만 보여 준다.
+// - 되돌리기는 포장 완료도 되돌린다. 지우개가 동그라미·직선을 지우면 그 상품의 포장 완료도 원복한다(예전에 한 것도 포함, 되돌리기로 복구하면 다시 포장 완료로 올린다).
+//   전체 지우기는 그림만 지우고 포장 상태는 유지한다.
 
 const PALM_PX = 24; // 진단: 손가락·펜 1×1px, 손바닥 52×62px
 const FAB = 56;
-const RING_RADIUS = 92;
+const STACK_PITCH = 64; // 세로 메뉴의 버튼 간격(버튼 56px + 여백 8px)
 const EDGE_MARGIN = 36;
+const LONG_PRESS_MS = 500; // 플로팅 버튼을 이 시간 누르고 있으면 메뉴
 const HOLD_MS = 1000; // 지우개를 이 시간 누르고 있으면 전체 지우기
 const CARD_W = 264;
 const COLORS = [
@@ -40,7 +43,8 @@ interface Prefs {
   penWidth: number;
   eraserSize: number;
 }
-const DEFAULT_PREFS: Prefs = { color: COLORS[0].hex, penWidth: 4, eraserSize: 40 };
+// 지우개 기본 크기는 반지름 16px(지름 32px ≈ 칸 높이): 지우개가 닿으면 그 동그라미의 포장 완료도 원복되므로, 이웃 칸의 동그라미까지 닿지 않게 작게 시작한다.
+const DEFAULT_PREFS: Prefs = { color: COLORS[0].hex, penWidth: 4, eraserSize: 16 };
 
 export interface InkItem {
   id: string;
@@ -58,10 +62,12 @@ interface ActiveStroke {
   pointerId: number;
   tool: Tool;
   points: Pt[];
-  cursor: InkCursor;
+  cursor: LiveInk;
+  tail: Pt | null; // 받았지만 앞 점과 너무 가까워(STORE_MIN_STEP) 아직 쓰지 않은 마지막 점. 획이 끝날 때 마지막 점으로 붙인다.
   before: InkStroke[];
   boxes: Map<string, Box>;
   layer: { width: number; height: number };
+  touched: Set<string>; // 지우개가 닿은(잘라 낸) 획에 붙어 있던 상품 id
 }
 
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
@@ -132,12 +138,6 @@ function chipBoxes(canvas: HTMLCanvasElement): Map<string, Box> {
   return out;
 }
 
-function drawPolyline(ctx: CanvasRenderingContext2D, points: Pt[]) {
-  let cursor = startInk(points[0]);
-  for (let i = 1; i < points.length; i++) cursor = extendInk(ctx, cursor, points[i]);
-  endInk(ctx, cursor);
-}
-
 interface Props {
   date: string;
   monitor: string;
@@ -152,8 +152,9 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
   const previewRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<InkState>(() => ({ strokes: loadStrokes(date, monitor), history: [] }));
   const stateRef = useRef(state);
-  const [tool, setTool] = useState<Tool | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [tool, setTool] = useState<Tool | null>(null); // 그리는 중인 도구(없으면 터치가 그대로 통과한다)
+  const [menuOpen, setMenuOpen] = useState(false); // 길게 눌러 연 메뉴(펜 설정·지우개·되돌리기)
+  const [card, setCard] = useState<Tool | null>(null); // 설정 카드(펜: 색·굵기, 지우개: 크기). 그리기 시작하면 닫힌다.
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [pos, setPos] = useState<Pt>(loadPos);
   const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
@@ -169,8 +170,9 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
   const redrawFrame = useRef(0);
   const noteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const longTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const holdFired = useRef(false);
-  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean; long: boolean } | null>(null);
 
   useEffect(() => {
     toolRef.current = tool;
@@ -204,7 +206,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
       ctx.strokeStyle = stroke.color;
       ctx.fillStyle = stroke.color;
       ctx.lineWidth = stroke.width;
-      drawPolyline(ctx, points);
+      drawPath(ctx, points);
     }
   };
 
@@ -242,6 +244,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
       cancelAnimationFrame(redrawFrame.current);
       clearTimeout(noteTimer.current);
       clearTimeout(holdTimer.current);
+      clearTimeout(longTimer.current);
     },
     [],
   );
@@ -261,6 +264,13 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
     setNote({ text, x: at.x, y: at.y });
     clearTimeout(noteTimer.current);
     noteTimer.current = setTimeout(() => setNote(null), NOTE_MS);
+  };
+
+  const closeMenu = () => {
+    setMenuOpen(false);
+    setCard(null);
+    setHolding(false);
+    clearTimeout(holdTimer.current);
   };
 
   // ── 입력 ──────────────────────────────────────────────────────────────────
@@ -301,6 +311,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
         continue;
       }
       changed = true;
+      if (stroke.anchor !== undefined) active.touched.add(stroke.anchor);
       for (const piece of result.pieces) {
         const base = { id: newId(), color: stroke.color, width: stroke.width };
         next.push(stroke.anchor !== undefined && box ? toAnchoredStroke(base, piece, stroke.anchor, box) : toFreeStroke(base, piece, active.layer));
@@ -318,6 +329,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
     if (!current || !canvas) return;
     if (e.width > PALM_PX || e.height > PALM_PX) return; // 손바닥: 무시한다(먼저 닿아 있어도 뒤에 닿는 작은 접촉은 그린다)
     if (activeRef.current) return; // 한 획이 진행 중일 때 들어오는 다른 접촉은 무시한다
+    closeMenu(); // 그리기 시작하면 열려 있던 메뉴·설정 카드를 닫는다
     try {
       canvas.setPointerCapture(e.pointerId);
     } catch {
@@ -330,9 +342,11 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
       tool: current,
       points: [p],
       cursor: startInk(p),
+      tail: null,
       before: stateRef.current.strokes,
       boxes: chipBoxes(canvas),
       layer: { width: layerRect.width, height: layerRect.height },
+      touched: new Set<string>(),
     };
     activeRef.current = active;
     if (current === 'pen') {
@@ -356,9 +370,17 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
     if (active.tool === 'pen') {
       const ctx = canvasRef.current?.getContext('2d');
       if (!ctx) return;
+      // 저장본과 같은 점 목록으로 그리려고 앞 점에서 STORE_MIN_STEP 이상 떨어진 점만 쓰고, 마지막 점은 획이 끝날 때 붙인다.
+      // 그래서 쓰는 동안 보이는 모양이 획을 마친 뒤 저장본으로 다시 그린 모양과 같다.
       for (const p of points) {
-        active.cursor = extendInk(ctx, active.cursor, p);
-        active.points.push(p);
+        const last = active.points[active.points.length - 1];
+        if (Math.hypot(p.x - last.x, p.y - last.y) >= STORE_MIN_STEP) {
+          extendInk(ctx, active.cursor, p);
+          active.points.push(p);
+          active.tail = null;
+        } else {
+          active.tail = p;
+        }
       }
     } else {
       for (const p of points) applyErase(p, active);
@@ -366,7 +388,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
     }
   };
 
-  // 펜 획이 끝나면 동그라미·대각선인지 판정한다. 맞으면 그 상품을 포장 완료로 올리고 획을 그 칸에 붙인다.
+  // 펜 획이 끝나면 동그라미·직선인지 판정한다. 맞으면 그 상품을 포장 완료로 올리고 획을 그 칸에 붙인다.
   const finishPenStroke = (active: ActiveStroke) => {
     const targets = [...active.boxes].map(([id, box]) => ({ id, ...box }));
     const result = classifyStroke(active.points, targets);
@@ -378,7 +400,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
     if (result.kind === 'none') {
       if (dry) showNote(`인식 안 됨: ${REASON_LABEL[result.reason]}`, end);
     } else {
-      const what = result.kind === 'circle' ? '동그라미' : '대각선';
+      const what = result.kind === 'circle' ? '동그라미' : '직선';
       const item = itemsRef.current.find((i) => i.id === result.itemId);
       const box = active.boxes.get(result.itemId);
       if (!item || !box) {
@@ -398,7 +420,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
       }
     }
     const cur = stateRef.current;
-    commit({ strokes: [...cur.strokes, stroke], history: pushHistory(cur.history, { before: active.before, packedItemId }) });
+    commit({ strokes: [...cur.strokes, stroke], history: pushHistory(cur.history, { before: active.before, packed: packedItemId ? [packedItemId] : undefined }) });
   };
 
   const finishStroke = (e: React.PointerEvent<HTMLCanvasElement>, cancelled: boolean) => {
@@ -408,7 +430,13 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
     movePreview(null);
     if (active.tool === 'pen') {
       const ctx = canvasRef.current?.getContext('2d');
-      if (ctx) endInk(ctx, active.cursor);
+      if (ctx) {
+        if (active.tail) {
+          extendInk(ctx, active.cursor, active.tail);
+          active.points.push(active.tail);
+        }
+        endInk(ctx, active.cursor);
+      }
       if (cancelled || active.points.length < 2) {
         scheduleRedraw();
         return;
@@ -416,18 +444,40 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
       finishPenStroke(active);
     } else if (stateRef.current.strokes !== active.before) {
       const cur = stateRef.current;
-      commit({ strokes: cur.strokes, history: pushHistory(cur.history, { before: active.before }) });
+      // 지우개가 닿은 동그라미·직선이 붙어 있던 상품은 포장 완료를 원복한다(바로 전에 한 것이 아니라 예전에 한 것도 마찬가지, 2026-11-14 현장 요청).
+      // 시험 모드에서는 바꾸지 않고 해제 대상만 알려 준다.
+      const unpacked: string[] = [];
+      const wouldUnpack: string[] = [];
+      for (const id of active.touched) {
+        const item = itemsRef.current.find((i) => i.id === id);
+        if (!item) continue;
+        if (dry) {
+          wouldUnpack.push(item.label);
+        } else if (item.isPacked && !item.cancelled) {
+          unpacked.push(id);
+          onUnpack(id);
+        }
+      }
+      if (dry && wouldUnpack.length > 0) showNote(`지우개 → 포장 해제 대상: ${wouldUnpack.join(', ')} · 시험 모드: 포장 상태는 바꾸지 않음`, local(e));
+      commit({ strokes: cur.strokes, history: pushHistory(cur.history, { before: active.before, unpacked: unpacked.length > 0 ? unpacked : undefined }) });
     }
   };
 
-  // ── 도구함 ────────────────────────────────────────────────────────────────
+  // ── 메뉴 ──────────────────────────────────────────────────────────────────
   const undo = () => {
     const { entry, rest } = popHistory(stateRef.current.history);
     if (!entry) return;
     commit({ strokes: entry.before, history: rest });
-    if (entry.packedItemId && !dry) {
-      const item = itemsRef.current.find((i) => i.id === entry.packedItemId);
-      if (item?.isPacked) onUnpack(item.id); // 이미 다른 곳에서 해제됐으면 건드리지 않는다
+    if (dry) return;
+    // 그 작업이 포장 완료로 올렸던 상품은 해제하고, 지우개가 포장 해제했던 상품은 다시 포장 완료로 올린다.
+    // 그 사이 다른 곳에서 이미 바뀌었으면 건드리지 않는다.
+    for (const id of entry.packed ?? []) {
+      const item = itemsRef.current.find((i) => i.id === id);
+      if (item?.isPacked) onUnpack(id);
+    }
+    for (const id of entry.unpacked ?? []) {
+      const item = itemsRef.current.find((i) => i.id === id);
+      if (item && !item.isPacked && !item.cancelled) onPack(id);
     }
   };
 
@@ -437,11 +487,9 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
     commit({ strokes: [], history: pushHistory(cur.history, { before: cur.strokes }) }); // 포장 상태는 그대로 두고 그림만 지운다
   };
 
-  const collapse = () => {
-    setExpanded(false);
-    setTool(null);
-    setHolding(false);
-    clearTimeout(holdTimer.current);
+  const openPenSettings = () => {
+    setTool('pen');
+    setCard('pen');
   };
 
   const eraserDown = () => {
@@ -461,30 +509,49 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
       holdFired.current = false;
       return;
     }
-    setTool((t) => (t === 'eraser' ? null : 'eraser'));
+    if (tool !== 'eraser') {
+      setTool('eraser');
+      setCard('eraser');
+    } else {
+      setCard((c) => (c === 'eraser' ? null : 'eraser')); // 이미 지우개면 크기 카드를 열고 닫는다
+    }
   };
   const eraserCancel = () => {
     clearTimeout(holdTimer.current);
     setHolding(false);
   };
 
+  // 플로팅 버튼: 짧게 누르면 펜 켜기/끄기, 길게 누르면 메뉴, 끌면 위치 이동.
   const fabDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
       // 캡처하지 못해도 누르기·끌기는 동작한다
     }
-    dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, originX: pos.x, originY: pos.y, moved: false };
+    const drag = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, originX: pos.x, originY: pos.y, moved: false, long: false };
+    dragRef.current = drag;
+    clearTimeout(longTimer.current);
+    longTimer.current = setTimeout(() => {
+      if (dragRef.current === drag && !drag.moved) {
+        drag.long = true;
+        setMenuOpen((open) => !open);
+        setCard(null);
+      }
+    }, LONG_PRESS_MS);
   };
   const fabMove = (e: React.PointerEvent<HTMLButtonElement>) => {
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
     const dx = e.clientX - d.startX;
     const dy = e.clientY - d.startY;
-    if (!d.moved && Math.hypot(dx, dy) > 10) d.moved = true;
+    if (!d.moved && Math.hypot(dx, dy) > 10) {
+      d.moved = true;
+      clearTimeout(longTimer.current);
+    }
     if (d.moved) setPos(clampToViewport({ x: d.originX + dx, y: d.originY + dy }, viewport, FAB / 2));
   };
   const fabUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    clearTimeout(longTimer.current);
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
     dragRef.current = null;
@@ -498,27 +565,21 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
       }
       return;
     }
-    if (expanded) collapse();
-    else setExpanded(true);
+    if (d.long) return; // 길게 눌러 메뉴를 열었으면 펜을 켜고 끄지 않는다
+    if (menuOpen) {
+      closeMenu(); // 메뉴가 열려 있을 때 짧게 누르면 메뉴만 닫는다
+      return;
+    }
+    setTool((t) => (t ? null : 'pen')); // 짧게 누르면 펜 켜기/끄기(켜면 이전에 정한 색·굵기를 그대로 쓴다)
   };
 
-  const ring = radialPositions(pos, 3, RING_RADIUS, viewport, EDGE_MARGIN);
-  const [penPos, eraserPos, undoPos] = ring;
-  const selectedPos = tool === 'pen' ? penPos : tool === 'eraser' ? eraserPos : null;
-  const cardHeight = tool === 'pen' ? 188 : 132;
-  let cardLeft = 0;
-  let cardTop = 0;
-  if (selectedPos) {
-    // 선택한 도구 버튼에서 바깥쪽(버튼 고리 너머)으로 카드를 놓는다.
-    const dx = selectedPos.x - pos.x;
-    const dy = selectedPos.y - pos.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const reach = RING_RADIUS + FAB / 2 + 14 + (Math.abs(dx / len) * CARD_W) / 2 + (Math.abs(dy / len) * cardHeight) / 2;
-    cardLeft = clamp(pos.x + (dx / len) * reach - CARD_W / 2, 8, viewport.width - CARD_W - 8);
-    cardTop = clamp(pos.y + (dy / len) * reach - cardHeight / 2, 8, viewport.height - cardHeight - 8);
-  }
+  // 메뉴는 플로팅 버튼 위(화면 아래쪽에 있을 때) 또는 아래로 세로로 쌓고, 설정 카드는 눌린 버튼 옆에 둔다.
+  const [penPos, eraserPos, undoPos] = stackPositions(pos, 3, STACK_PITCH, viewport, EDGE_MARGIN);
+  const selectedPos = card === 'pen' ? penPos : card === 'eraser' ? eraserPos : null;
+  const cardPos = selectedPos ? cardPosition(pos, selectedPos.y, { width: CARD_W, height: card === 'pen' ? 188 : 132 }, FAB, viewport) : { x: 0, y: 0 };
   const canUndo = state.history.length > 0;
-  const toolButton = (active: boolean) => `fixed z-40 flex h-14 w-14 items-center justify-center rounded-full border-2 shadow-lg transition-colors ${active ? 'border-[#003057] bg-[#003057] text-white' : 'border-slate-300 bg-white text-slate-700'}`;
+  const menuButton = (active: boolean) => `fixed z-40 flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-full border-2 shadow-lg transition-colors ${active ? 'border-[#003057] bg-[#003057] text-white' : 'border-slate-300 bg-white text-slate-700'}`;
+  const FabIcon = tool === 'eraser' ? Eraser : PenLine;
 
   return (
     <>
@@ -532,6 +593,8 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
         onPointerCancel={(e) => finishStroke(e, true)}
         onContextMenu={(e) => e.preventDefault()}
       />
+      {/* 펜이 꺼져 있을 때 메뉴가 열려 있으면, 화면의 다른 곳을 누르는 것으로 메뉴를 닫는다. 펜이 켜져 있으면 그리기 시작이 메뉴를 닫는다. */}
+      {menuOpen && !tool && <div className="fixed inset-0 z-30" onPointerDown={closeMenu} />}
       <div ref={previewRef} className="pointer-events-none absolute left-0 top-0 z-30 hidden rounded-full border-2 border-slate-500 bg-white/40" />
       {dry && (
         <div className="pointer-events-none absolute left-1/2 top-2 z-30 -translate-x-1/2 rounded-lg bg-amber-500 px-3 py-1 text-xs font-bold text-white shadow">
@@ -544,10 +607,11 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
         </div>
       )}
 
-      {expanded && penPos && eraserPos && undoPos && (
+      {menuOpen && penPos && eraserPos && undoPos && (
         <>
-          <button type="button" aria-label="펜" aria-pressed={tool === 'pen'} title="펜" onClick={() => setTool((t) => (t === 'pen' ? null : 'pen'))} className={toolButton(tool === 'pen')} style={{ left: penPos.x - FAB / 2, top: penPos.y - FAB / 2 }}>
-            <PenLine className="h-6 w-6" />
+          <button type="button" aria-label="펜 설정(색·굵기)" aria-pressed={card === 'pen'} title="펜 설정 — 색과 굵기" onClick={openPenSettings} className={menuButton(card === 'pen')} style={{ left: penPos.x - FAB / 2, top: penPos.y - FAB / 2 }}>
+            <Palette className="h-5 w-5" />
+            <span className="text-[10px] font-bold leading-none">펜 설정</span>
           </button>
           <button
             type="button"
@@ -559,23 +623,25 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
             onPointerCancel={eraserCancel}
             onPointerLeave={eraserCancel}
             onContextMenu={(e) => e.preventDefault()}
-            className={toolButton(tool === 'eraser')}
+            className={menuButton(tool === 'eraser')}
             style={{ left: eraserPos.x - FAB / 2, top: eraserPos.y - FAB / 2, touchAction: 'none' }}
           >
-            <Eraser className="h-6 w-6" />
+            <Eraser className="h-5 w-5" />
+            <span className="text-[10px] font-bold leading-none">지우개</span>
             <svg className="pointer-events-none absolute inset-0 -rotate-90" viewBox="0 0 56 56" aria-hidden="true">
               <circle cx="28" cy="28" r="25" fill="none" stroke="#dc2626" strokeWidth="4" strokeLinecap="round" strokeDasharray="157" style={{ strokeDashoffset: holding ? 0 : 157, transition: holding ? `stroke-dashoffset ${HOLD_MS}ms linear` : 'none' }} />
             </svg>
           </button>
-          <button type="button" aria-label="되돌리기" title="되돌리기" disabled={!canUndo} onClick={undo} className={`${toolButton(false)} disabled:opacity-40`} style={{ left: undoPos.x - FAB / 2, top: undoPos.y - FAB / 2 }}>
-            <Undo2 className="h-6 w-6" />
+          <button type="button" aria-label="되돌리기" title="되돌리기" disabled={!canUndo} onClick={undo} className={`${menuButton(false)} disabled:opacity-40`} style={{ left: undoPos.x - FAB / 2, top: undoPos.y - FAB / 2 }}>
+            <Undo2 className="h-5 w-5" />
+            <span className="text-[10px] font-bold leading-none">되돌리기</span>
           </button>
         </>
       )}
 
-      {expanded && tool && (
-        <div className="fixed z-40 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl" style={{ left: cardLeft, top: cardTop, width: CARD_W }}>
-          {tool === 'pen' ? (
+      {menuOpen && card && (
+        <div className="fixed z-40 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl" style={{ left: cardPos.x, top: cardPos.y, width: CARD_W }}>
+          {card === 'pen' ? (
             <>
               <div className="flex items-center justify-between gap-1">
                 {COLORS.map((c) => (
@@ -601,20 +667,21 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
 
       <button
         type="button"
-        aria-label={expanded ? '펜 도구함 접기' : '펜 도구함 펼치기'}
-        aria-expanded={expanded}
-        title="펜 — 누르면 도구함이 펼쳐지고, 끌면 위치를 옮깁니다"
+        aria-label={tool ? '펜 끄기 (길게 누르면 메뉴)' : '펜 켜기 (길게 누르면 메뉴)'}
+        aria-pressed={tool !== null}
+        title="누르면 펜 켜기/끄기 · 길게 누르면 펜 설정·지우개·되돌리기 · 끌면 위치 이동"
         onPointerDown={fabDown}
         onPointerMove={fabMove}
         onPointerUp={fabUp}
         onPointerCancel={() => {
+          clearTimeout(longTimer.current);
           dragRef.current = null;
         }}
         onContextMenu={(e) => e.preventDefault()}
-        className={`fixed z-40 flex h-14 w-14 items-center justify-center rounded-full border-2 shadow-xl ${expanded ? 'border-[#003057] bg-[#003057] text-white' : 'border-[#003057] bg-white text-[#003057]'}`}
+        className={`fixed z-40 flex h-14 w-14 items-center justify-center rounded-full border-2 shadow-xl ${tool ? 'border-[#003057] bg-[#003057] text-white' : 'border-[#003057] bg-white text-[#003057]'} ${menuOpen ? 'ring-4 ring-sky-300' : ''}`}
         style={{ left: pos.x - FAB / 2, top: pos.y - FAB / 2, touchAction: 'none' }}
       >
-        <PenLine className="h-7 w-7" />
+        <FabIcon className="h-7 w-7" />
       </button>
     </>
   );

@@ -1,4 +1,4 @@
-// 펜 획이 "동그라미" 또는 "대각선"인지, 어느 상품 칸에 한 것인지 판정한다(순수 함수). 확정 설계는 docs/decisions/2026-11-14-board-pen-feature.md.
+// 펜 획이 "동그라미" 또는 "직선"인지, 어느 상품 칸에 한 것인지 판정한다(순수 함수). 확정 설계는 docs/decisions/2026-11-14-board-pen-feature.md.
 // 좌표는 모두 같은 화면 좌표(CSS px)다. 기준값은 칠판에서 시험하며 맞추도록 한곳(GESTURE)에 모아 두었다.
 import type { Pt } from './canvas.ts';
 
@@ -11,35 +11,34 @@ export interface Target {
 }
 
 export const GESTURE = {
-  minPoints: 4,
-  minPathPx: 40, // 이보다 짧은 획은 점이나 낙서로 본다
+  minPoints: 3,
+  minPathPx: 24, // 이보다 짧은 획은 점이나 낙서로 본다
   // 동그라미
-  circleMinCoverage: 0.4, // 상품 칸 면적의 이 비율 이상을 감싸야 한다(사용자 결정 2026-11-14: 85% → 40%)
-  circleDominanceGap: 0.15, // 가장 많이 감싼 칸이 두 번째 칸보다 이만큼 앞서야 한다(40%로 낮춘 대신 걸친 옆 칸 오인식을 막는다)
+  circleMinCoverage: 0.4, // 상품 칸 면적의 이 비율 이상을 감싸면 후보가 된다(사용자 결정: 85% → 40%)
+  // 후보가 여럿이면 원의 중심에 가장 가까운 칸을 고른다(칸이 위아래로 촘촘해서 큰 원은 옆줄 칸도 40% 넘게 감싼다 — 2026-11-14 현장).
+  // 거리는 칸 크기(반폭·반높이)로 나눈 값이고, 1등과 2등의 거리 차가 이보다 작으면(원의 중심이 두 칸의 한가운데) 애매해서 무시한다.
+  circleCenterGap: 0.3,
   circleMaxClosure: 0.35, // 시작점과 끝점 사이 거리 ≤ 획 바깥 상자 대각선의 이 비율
   circleMinTurnRad: Math.PI * 1.6, // 한 방향으로 도는 각도(약 290°) 이상
   circleMaxWidthRatio: 3.2, // 원의 바깥 상자가 칸보다 이 배수보다 크면 너무 큰 원
   circleMaxHeightRatio: 4,
-  // 대각선
-  diagMinStraight: 0.85, // 시작-끝 거리 / 획 길이
-  diagMinAngleDeg: 15, // 이보다 완만하면 밑줄·취소선이다
-  diagMaxAngleDeg: 75, // 이보다 가파르면 세로선이다
-  diagMinInside: 0.6, // 획 길이 중 (여백을 넓힌) 칸 안에 있는 비율
-  diagMinVerticalCover: 0.6, // 획이 칸의 세로를 가로지르는 비율
-  diagDominance: 0.5, // 두 번째 칸에 걸친 길이가 가장 큰 칸의 이 비율 이상이면 애매하다
+  // 직선(방향 무관: 대각선·가로선·세로선, 사용자 결정 2026-11-14)
+  lineMinStraight: 0.85, // 시작-끝 거리 / 획 길이
+  lineMinCover: 0.5, // 칸을 선 방향으로 가로지른 길이 / 그 방향으로 잰 칸의 길이 ≥ 이 비율이면 후보
+  lineMinInside: 0.5, // 획 길이 중 칸 안에 있는 비율(칸 밖으로 많이 벗어난 긴 선은 제외)
+  lineDominanceGap: 0.2, // 두 칸이 비슷하게 걸치면(두 번째 칸이 이만큼 못 미치지 않으면) 애매해서 무시
 } as const;
 
-export type GestureReason = 'too-short' | 'not-closed' | 'not-enough-turn' | 'no-target' | 'ambiguous' | 'too-big' | 'bad-angle';
-export type GestureResult = { kind: 'circle' | 'diagonal'; itemId: string; coverage: number } | { kind: 'none'; reason: GestureReason };
+export type GestureReason = 'too-short' | 'not-closed' | 'not-enough-turn' | 'no-target' | 'ambiguous' | 'too-big';
+export type GestureResult = { kind: 'circle' | 'line'; itemId: string; coverage: number } | { kind: 'none'; reason: GestureReason };
 
 export const REASON_LABEL: Record<GestureReason, string> = {
   'too-short': '획이 너무 짧음',
   'not-closed': '원이 닫히지 않음',
   'not-enough-turn': '한 바퀴를 덜 돌림',
-  'no-target': '감싼 상품 칸이 없음',
-  ambiguous: '두 칸에 걸쳐 애매함',
+  'no-target': '기준에 맞는 상품 칸이 없음',
+  ambiguous: '두 칸 사이라 애매함',
   'too-big': '원이 너무 큼',
-  'bad-angle': '대각선 각도가 아님',
 };
 
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -131,36 +130,43 @@ function classifyCircle(points: Pt[], targets: Target[]): GestureResult {
   if (dist(points[0], points[points.length - 1]) > GESTURE.circleMaxClosure * diag) return { kind: 'none', reason: 'not-closed' };
   if (Math.abs(signedTurning(thin(points, 3))) < GESTURE.circleMinTurnRad) return { kind: 'none', reason: 'not-enough-turn' };
 
-  const scored = targets.map((t) => ({ t, c: coverage(t, points) })).sort((x, y) => y.c - x.c);
-  const best = scored[0];
-  if (!best || best.c < GESTURE.circleMinCoverage) return { kind: 'none', reason: 'no-target' };
-  const second = scored[1];
-  if (second && second.c >= GESTURE.circleMinCoverage && best.c - second.c < GESTURE.circleDominanceGap) return { kind: 'none', reason: 'ambiguous' };
+  // 40% 이상 감싼 칸이 후보. 그중 원의 중심(바깥 상자의 중심)에 가장 가까운 칸을 고른다.
+  const gx = (b.left + b.right) / 2;
+  const gy = (b.top + b.bottom) / 2;
+  const candidates = targets
+    .map((t) => ({ t, c: coverage(t, points), d: Math.hypot((t.left + t.width / 2 - gx) / (t.width / 2), (t.top + t.height / 2 - gy) / (t.height / 2)) }))
+    .filter((s) => s.c >= GESTURE.circleMinCoverage)
+    .sort((x, y) => x.d - y.d);
+  const best = candidates[0];
+  if (!best) return { kind: 'none', reason: 'no-target' };
+  const second = candidates[1];
+  if (second && second.d - best.d < GESTURE.circleCenterGap) return { kind: 'none', reason: 'ambiguous' };
   if (w > GESTURE.circleMaxWidthRatio * best.t.width || h > GESTURE.circleMaxHeightRatio * best.t.height) return { kind: 'none', reason: 'too-big' };
   return { kind: 'circle', itemId: best.t.id, coverage: best.c };
 }
 
-function classifyDiagonal(points: Pt[], targets: Target[], length: number): GestureResult {
+// 거의 곧은 획이 칸의 50% 이상을 지나면(방향과 상관없이) 그 칸이다.
+function classifyLine(points: Pt[], targets: Target[], length: number): GestureResult {
   const first = points[0];
   const last = points[points.length - 1];
-  const angle = (Math.atan2(Math.abs(last.y - first.y), Math.abs(last.x - first.x)) * 180) / Math.PI;
-  if (angle < GESTURE.diagMinAngleDeg || angle > GESTURE.diagMaxAngleDeg) return { kind: 'none', reason: 'bad-angle' };
-
+  const chord = dist(first, last);
+  const ux = Math.abs(last.x - first.x) / chord;
+  const uy = Math.abs(last.y - first.y) / chord;
   const dots = sample(points, 2);
-  const b = bounds(points);
-  const candidates: { t: Target; insideLen: number }[] = [];
+  const candidates: { t: Target; cover: number }[] = [];
   for (const t of targets) {
-    const pad = 0.25 * Math.min(t.width, t.height);
-    const inside = dots.filter((p) => p.x >= t.left - pad && p.x <= t.left + t.width + pad && p.y >= t.top - pad && p.y <= t.top + t.height + pad).length / dots.length;
-    const vertical = Math.max(0, Math.min(b.bottom, t.top + t.height) - Math.max(b.top, t.top)) / t.height;
-    if (inside >= GESTURE.diagMinInside && vertical >= GESTURE.diagMinVerticalCover) candidates.push({ t, insideLen: inside * length });
+    const insideRatio = dots.filter((p) => p.x >= t.left && p.x <= t.left + t.width && p.y >= t.top && p.y <= t.top + t.height).length / dots.length;
+    // 선 방향으로 칸을 가로지르는 길이(중심을 지나는 현): 가로선이면 칸의 폭, 세로선이면 높이, 대각선이면 그 사이.
+    const crossing = Math.min(ux > 1e-6 ? t.width / ux : Infinity, uy > 1e-6 ? t.height / uy : Infinity);
+    const cover = (insideRatio * length) / crossing;
+    if (insideRatio >= GESTURE.lineMinInside && cover >= GESTURE.lineMinCover) candidates.push({ t, cover: Math.min(cover, 1) });
   }
-  candidates.sort((x, y) => y.insideLen - x.insideLen);
+  candidates.sort((x, y) => y.cover - x.cover);
   const best = candidates[0];
   if (!best) return { kind: 'none', reason: 'no-target' };
   const second = candidates[1];
-  if (second && second.insideLen >= GESTURE.diagDominance * best.insideLen) return { kind: 'none', reason: 'ambiguous' };
-  return { kind: 'diagonal', itemId: best.t.id, coverage: best.insideLen / length };
+  if (second && best.cover - second.cover < GESTURE.lineDominanceGap) return { kind: 'none', reason: 'ambiguous' };
+  return { kind: 'line', itemId: best.t.id, coverage: best.cover };
 }
 
 // 획 하나를 판정한다. targets는 화면에 보이는 상품 칸 전부(이미 포장된 칸·취소된 칸 포함 — 애매함을 정확히 가리려면 모두 필요하다).
@@ -169,6 +175,6 @@ export function classifyStroke(points: Pt[], targets: Target[]): GestureResult {
   const length = pathLength(points);
   if (points.length < GESTURE.minPoints || length < GESTURE.minPathPx) return { kind: 'none', reason: 'too-short' };
   const chord = dist(points[0], points[points.length - 1]);
-  if (chord / length >= GESTURE.diagMinStraight) return classifyDiagonal(points, targets, length);
+  if (chord / length >= GESTURE.lineMinStraight) return classifyLine(points, targets, length);
   return classifyCircle(points, targets);
 }

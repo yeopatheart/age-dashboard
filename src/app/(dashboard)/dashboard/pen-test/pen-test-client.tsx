@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { clearCanvas, endInk, extendInk, fitCanvas, startInk, type InkCursor } from '@/lib/ink/canvas';
+import { clearCanvas, endInk, extendInk, fitCanvas, startInk, type LiveInk } from '@/lib/ink/canvas';
 
 // 스마트 칠판 입력 진단 화면: 칠판의 브라우저가 펜·손가락·손바닥·지우개를 어떤 입력(pointerType, 접촉 크기, 압력)으로 전달하는지 기록한다.
 // 펜으로 상품에 동그라미를 치면 포장 완료로 올리는 기능이 가능한지는 이 값에 달려 있다(2026-11-14 조사). 중량 인식은 하지 않기로 했다. 서버에는 아무것도 보내지 않는다.
@@ -39,7 +39,7 @@ export function PenTestClient() {
   const [last, setLast] = useState('');
   const [copied, setCopied] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const active = useRef(new Map<number, InkCursor>());
+  const active = useRef(new Map<number, LiveInk>());
   const inkStyle = (pointerType: string) => ({ color: TYPE_COLOR[pointerType] ?? '#9333ea', width: 3 });
   // 환경 정보는 브라우저에서만 읽는다(서버 렌더에는 navigator가 없어 빈 문자열). 값이 문자열이라 같은 값이면 다시 그리지 않는다.
   const env = useSyncExternalStore(subscribeNothing, readEnv, () => '');

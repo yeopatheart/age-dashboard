@@ -12,6 +12,11 @@ export interface LiveInfo {
 }
 
 const SAFETY_REFRESH_MS = 60_000; // 실시간 신호가 조용히 끊겨도(TV 절전 등) 이 간격으로는 화면을 새로 받는다(탭이 보이는 동안만)
+// 연결이 잠깐 흔들려 채널이 닫혔다 곧 다시 붙는 것은 흔하다(네트워크 순간 끊김, 서버의 연결 정리). 그때마다 빨간 경고와 "연결이 끊겼습니다" 소리가 나면
+// 오경보라서(2026-11-14 현장), 이 시간 안에 다시 붙으면 경고하지 않는다. 그 이상 끊겨 있으면 그때 "끊김"으로 알린다.
+const DOWN_GRACE_MS = 8_000;
+// 끊긴 채로 있으면 이 간격으로 스스로 다시 연결을 시도한다(탭이 보이는 동안만).
+const RECONNECT_RETRY_MS = 10_000;
 
 // 다른 기기에서 주문 줄·업체 카드가 바뀌면 이 화면을 서버에서 다시 받아온다(router.refresh).
 // Realtime은 "바뀌었다"는 신호로만 쓰고, 화면 데이터는 지금처럼 서버에서 읽는다(권한·조인 로직을 한 곳에 둔다).
@@ -48,6 +53,7 @@ export function useLiveRefresh(enabled: boolean): LiveInfo {
     let seq = 0;
     let channel: RealtimeChannel | null = null;
     let connecting = false;
+    let downTimer: ReturnType<typeof setTimeout> | undefined;
     const connect = async () => {
       if (connecting) return;
       connecting = true;
@@ -61,10 +67,17 @@ export function useLiveRefresh(enabled: boolean): LiveInfo {
           .subscribe((s) => {
             if (cancelled) return;
             if (s === 'SUBSCRIBED') {
+              clearTimeout(downTimer);
+              downTimer = undefined;
               setStatus('live');
               refreshSoon(); // 화면을 받은 뒤 구독이 붙기 전까지의 변경을 메운다(재연결 때도 같다)
             } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
-              setStatus('down');
+              // 바로 "끊김"으로 알리지 않고 유예 시간 동안은 "연결 중"으로 둔다. supabase-js가 스스로 다시 붙으면 위 SUBSCRIBED가 이 타이머를 지운다.
+              setStatus('connecting');
+              downTimer ??= setTimeout(() => {
+                downTimer = undefined;
+                if (!cancelled) setStatus('down');
+              }, DOWN_GRACE_MS);
             }
           });
       } finally {
@@ -72,26 +85,35 @@ export function useLiveRefresh(enabled: boolean): LiveInfo {
       }
     };
     void connect();
+    // 죽은 채널을 지우고 새로 연결한다. 이미 붙어 있거나 연결 중이면 아무것도 하지 않는다.
+    const reconnectIfDead = () => {
+      if (connecting || String(channel?.state) === 'joined') return;
+      const old = channel;
+      channel = null;
+      setStatus('connecting');
+      void (async () => {
+        if (old) await supabase.removeChannel(old);
+        await connect();
+      })();
+    };
     const wake = () => {
       if (document.visibilityState !== 'visible') return;
-      if (!connecting && String(channel?.state) !== 'joined') {
-        const old = channel;
-        channel = null;
-        setStatus('connecting');
-        void (async () => {
-          if (old) await supabase.removeChannel(old);
-          await connect();
-        })();
-      }
+      reconnectIfDead();
       refreshSoon();
     };
+    // 끊긴 채로 오래 있지 않도록 보이는 동안 주기적으로 확인해 다시 연결한다.
+    const retry = setInterval(() => {
+      if (document.visibilityState === 'visible') reconnectIfDead();
+    }, RECONNECT_RETRY_MS);
     document.addEventListener('visibilitychange', wake);
     window.addEventListener('focus', wake);
     window.addEventListener('online', wake);
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      clearTimeout(downTimer);
       clearInterval(safety);
+      clearInterval(retry);
       document.removeEventListener('visibilitychange', wake);
       window.removeEventListener('focus', wake);
       window.removeEventListener('online', wake);
