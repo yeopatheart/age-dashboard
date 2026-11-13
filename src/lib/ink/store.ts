@@ -22,8 +22,10 @@ export interface Box {
 }
 
 export const MAX_STROKES = 300;
-export const MAX_POINTS = 240; // 획 하나가 저장하는 점 상한
-export const STORE_MIN_STEP = 3; // 저장할 때 이보다 가까운 점은 버린다(CSS px)
+// 저장본으로 다시 그려도 쓰던 모양과 같게 하려고 점을 거의 줄이지 않는다(2026-11-14: 3px로 솎고 240점으로 자르던 것이 글씨 모양을 바꿨다).
+// 쓰는 동안에도 같은 간격(STORE_MIN_STEP)으로만 점을 받으므로(ink-layer) 저장본과 쓰던 점 목록이 같다.
+export const MAX_POINTS = 800; // 획 하나가 저장하는 점 상한(긴 글씨 한 획도 넉넉하다)
+export const STORE_MIN_STEP = 1.5; // 이보다 가까운 점은 버린다(CSS px). 1.5px 미만은 같은 자리로 봐도 눈에 보이지 않는다
 const KEY_PREFIX = 'board-ink:v1:';
 const COLOR = /^#[0-9a-f]{6}$/i;
 

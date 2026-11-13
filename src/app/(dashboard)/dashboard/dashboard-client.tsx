@@ -1,10 +1,10 @@
 'use client';
-import { useState, useRef, useLayoutEffect, useMemo, useOptimistic, useSyncExternalStore, useTransition } from 'react';
+import { useState, useRef, useLayoutEffect, useCallback, useMemo, useOptimistic, useSyncExternalStore, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Presentation, TriangleAlert, Truck } from 'lucide-react';
-import { businessIdsInBothRounds, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
+import { businessIdsInBothRounds, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
@@ -12,6 +12,8 @@ import { useLocalFlag } from '@/lib/use-local-flag';
 import { DashboardMobile } from './dashboard-mobile';
 import { DashboardSound } from './dashboard-sound';
 import { InkLayer, type InkItem } from './ink-layer';
+import { ProductCustomersPopover } from './product-customers-popover';
+import { fitRowHeight } from '@/lib/row-fit';
 import { useToast, useUndoToast } from '@/components/toast';
 import {
   setProductHighlight,
@@ -37,6 +39,7 @@ import {
 const ROW_HEIGHT_TIERS = [40, 36, 32, 30];
 const MIN_ROW_HEIGHT = ROW_HEIGHT_TIERS[ROW_HEIGHT_TIERS.length - 1];
 const MONITOR_COUNT = 2;
+const ROW_FIT_MAX_SHRINK = 6; // 하단 자투리에 한 행을 더 넣으려고 행을 줄일 수 있는 최대 높이(px)
 const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 
 // 헤더와 각 본문 행이 전부 독립된 flexbox였을 때는 같은 칸이라도 행마다 내용에 따라 폭이
@@ -49,14 +52,18 @@ const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 // availHeight를 주면(모니터 2) 품목이 늘어도 스크롤이 생기지 않게, 넘칠 때만 칩 높이·글자를 한 단계씩 줄인다.
 // 안 주면(팝업) 기본 크기로 그리고 넘치면 패널 안에서 스크롤한다.
 const SUMMARY_ITEM_HEIGHTS = [26, 24, 22, 20, 18, 16, 14];
+// 추가(+N)·미정 배지는 칩 글자보다 작게, 위아래 여백을 1px만 둬서 칩 테두리에 닿지 않게 한다(15px 칩에서 배지가 테두리를 넘어 보였다).
+const SUMMARY_BADGE_STYLE: React.CSSProperties = { padding: '1px 3px', fontSize: '0.9em' };
 function ProductSummaryPanel({
   columns,
   chipStyle,
   availHeight,
+  onPick,
 }: {
   columns: ProductSummaryRow[];
   chipStyle: (name: string) => React.CSSProperties;
   availHeight?: number;
+  onPick: (product: ProductSummaryRow, rect: DOMRect) => void;
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
   const signature = `${columns.map((c) => `${c.key}:${c.total}:${c.added}:${c.unshipped}:${c.undecided}`).join('|')}@${availHeight ?? ''}`;
@@ -82,17 +89,22 @@ function ProductSummaryPanel({
         {columns.map((product) => (
           <div
             key={product.key}
-            className="flex items-center justify-between gap-1 px-1.5 rounded border mb-px"
+            role="button"
+            tabIndex={0}
+            title="누르면 이 상품을 주문한 고객사를 봅니다"
+            onClick={(e) => onPick(product, e.currentTarget.getBoundingClientRect())}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onPick(product, e.currentTarget.getBoundingClientRect()))}
+            className="flex items-center justify-between gap-1 px-1.5 rounded border mb-px cursor-pointer"
             style={{ ...chipStyle(product.productName), minHeight: itemHeight - 1, fontSize: Math.min(12, itemHeight - 6), flex: '1 1 auto', maxWidth: '100%' }}
           >
             <span className="font-bold break-keep leading-tight">{product.label}</span>
             <span className="font-black shrink-0 whitespace-nowrap leading-tight">
               {product.undecided > 0 ? (
-                <span className="rounded bg-amber-100 px-1 text-amber-700" title="주문에서 수량을 못 찾은 상품입니다. 주문을 수정해서 수량을 채워 주세요">미정 {product.undecided}곳</span>
+                <span className="inline-block rounded bg-amber-100 leading-none text-amber-700" style={SUMMARY_BADGE_STYLE} title="주문에서 수량을 못 찾은 상품입니다. 주문을 수정해서 수량을 채워 주세요">미정 {product.undecided}곳</span>
               ) : (
                 <>
                   {product.total}{product.unit}
-                  {product.added > 0 && <span className="ml-1 rounded bg-white/70 px-1 text-sky-700" title={`전체 ${product.total}${product.unit} 중 처음 입력 이후 추가된 수량`}>+{product.added}</span>}
+                  {product.added > 0 && <span className="ml-1 inline-block rounded bg-white/70 leading-none text-sky-700" style={SUMMARY_BADGE_STYLE} title={`전체 ${product.total}${product.unit} 중 처음 입력 이후 추가된 수량`}>+{product.added}</span>}
                   {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
                 </>
               )}
@@ -886,11 +898,14 @@ export function DashboardClient({
     void document.fonts?.ready.then(measure);
   }, [nameSignature]);
 
-  const rowHeight =
+  const tierHeight =
     availHeight > 0
       ? ROW_HEIGHT_TIERS.find((h) => MONITOR_COUNT * Math.floor(availHeight / h) >= rows.length) ?? MIN_ROW_HEIGHT
       : ROW_HEIGHT_TIERS[0];
-  const ownCapacity = availHeight > 0 ? Math.max(1, Math.floor(availHeight / rowHeight)) : INITIAL_ROW_CAPACITY;
+  // 단계 높이로 나누고 남는 자투리가 하단의 어정쩡한 빈 공간이 되지 않게, 행을 조금(6px 이하) 줄여서 한 행을 더 넣을 수 있으면 넣는다(2026-11-14 현장 요청).
+  const fitted = availHeight > 0 ? fitRowHeight(availHeight, tierHeight, MIN_ROW_HEIGHT, ROW_FIT_MAX_SHRINK) : { rowHeight: tierHeight, capacity: INITIAL_ROW_CAPACITY };
+  const rowHeight = fitted.rowHeight;
+  const ownCapacity = fitted.capacity;
   const startIndex = effectiveMonitorMode === '2' ? ownCapacity : 0;
   // 화면에 다 못 들어가는 줄은 이 화면에 표시하지 않고 다음 모니터로 넘긴다.
   const monitorSlice = isSplitMode ? rows.slice(startIndex, startIndex + ownCapacity) : rows;
@@ -1144,10 +1159,22 @@ export function DashboardClient({
     const c = resolveColors(productColors[name]?.fill, productColors[name]?.border);
     return { backgroundColor: c.fill, borderColor: c.border, color: c.text };
   };
+  // 상품 칩을 누르면 그 옆에 이 상품을 주문한 고객사 목록(플로팅)을 연다. 목록은 매번 최신 items로 계산한다.
+  const [picked, setPicked] = useState<{ scope: 'main' | 'separate'; productKey: string; anchor: { left: number; top: number; right: number; bottom: number } } | null>(null);
+  const pickProduct = (scope: 'main' | 'separate', product: ProductSummaryRow, rect: DOMRect) => {
+    setPicked({ scope, productKey: product.key, anchor: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } });
+  };
+  const pickedProduct = picked ? (picked.scope === 'main' ? columns : separateColumns).find((c) => c.key === picked.productKey) : undefined;
+  const closePicked = useCallback(() => setPicked(null), []);
   const renderChips = (list: typeof columns) => list.map((product) => (
     <div
       key={product.key}
-      className="flex items-center gap-1.5 border rounded-lg px-3 py-1.5"
+      role="button"
+      tabIndex={0}
+      title="누르면 이 상품을 주문한 고객사를 봅니다"
+      onClick={(e) => pickProduct('main', product, e.currentTarget.getBoundingClientRect())}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), pickProduct('main', product, e.currentTarget.getBoundingClientRect()))}
+      className="flex items-center gap-1.5 border rounded-lg px-3 py-1.5 cursor-pointer"
       style={chipStyle(product.productName)}
     >
       <span className="text-xs font-bold">{product.label}</span>
@@ -1193,13 +1220,17 @@ export function DashboardClient({
     </div>
   );
 
-  const productPanel = <ProductSummaryPanel columns={columns} chipStyle={chipStyle} availHeight={availHeight} />;
+  const productPanel = <ProductSummaryPanel columns={columns} chipStyle={chipStyle} availHeight={availHeight} onPick={(p, r) => pickProduct('main', p, r)} />;
 
   // 모달·확인창은 PC와 휴대폰 화면이 같이 쓴다.
+  const pickedCustomers = picked && pickedProduct
+    ? getProductCustomers(picked.scope === 'main' ? mainItems : separateItems, pickedProduct, new Map((picked.scope === 'main' ? mainRows : separateRows).map((r, index) => [r.dailyBusinessId, index])))
+    : [];
   const overlays = (
     <>
       {toastNode}
       {undoNode}
+      {picked && pickedProduct && <ProductCustomersPopover product={pickedProduct} customers={pickedCustomers} anchor={picked.anchor} chipStyle={chipStyle(pickedProduct.productName)} onClose={closePicked} />}
       {addOrderModal && (
         <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={allRows.map((r) => ({ businessId: r.businessId, round: r.round, terminal: r.terminal }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
       )}
@@ -1313,13 +1344,25 @@ export function DashboardClient({
         <div className="flex gap-2 items-center flex-1 min-w-0">
           <div className="flex items-center gap-1 flex-shrink-0">
             <button onClick={() => shiftDate(-1)} className="w-7 h-7 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100 flex items-center justify-center" title="전날"><ChevronLeft className="w-4 h-4" /></button>
-            <input
-              type="date"
-              value={orderDate}
-              max={today}
-              onChange={(e) => setDate(e.target.value)}
-              className="text-sm font-bold text-slate-800 border border-slate-200 rounded-md px-2 py-1 bg-white"
-            />
+            {/* 날짜 글자만 보이고(달력 아이콘 없음), 같은 크기의 투명한 날짜 입력칸이 겹쳐 있어 누르면 달력이 뜬다. */}
+            <span className="relative inline-flex items-center justify-center text-sm font-bold text-slate-800 border border-slate-200 rounded-md px-2 py-1 bg-white focus-within:border-[#003057]">
+              <span className="tabular-nums whitespace-nowrap" aria-hidden>{orderDate.replaceAll('-', '.')}</span>
+              <input
+                type="date"
+                value={orderDate}
+                max={today}
+                onChange={(e) => e.target.value && setDate(e.target.value)}
+                onClick={(e) => {
+                  try {
+                    e.currentTarget.showPicker();
+                  } catch {
+                    // 지원하지 않는 브라우저는 입력칸을 직접 편집한다
+                  }
+                }}
+                aria-label="날짜"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </span>
             <button onClick={() => shiftDate(1)} disabled={orderDate >= today} className="w-7 h-7 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent flex items-center justify-center" title="다음날"><ChevronRight className="w-4 h-4" /></button>
           </div>
           <div className="w-px h-4 bg-slate-200 flex-shrink-0" />
@@ -1430,17 +1473,16 @@ export function DashboardClient({
               </>
             )}
           </div>
-          {/* 칠판 모드: 켜면 이 기기는 보기 전용이 되고(카드 탭·수정·삭제 막힘) 펜 플로팅 버튼이 나타난다. 강조 상품 버튼(형광펜 아이콘)과 헷갈리지 않게
-              칠판 아이콘에 "칠판" 글자를 붙이고, 켜지면 남색으로 채운다. 스마트 칠판에서만 켠다(이 기기에만 저장). */}
+          {/* 칠판 모드: 켜면 이 기기는 보기 전용이 되고(카드 탭·수정·삭제 막힘) 펜 플로팅 버튼이 나타난다. 칠판 모양 아이콘만 두고(글자는 뺐다, 2026-11-14),
+              켜지면 남색으로 채워서 강조 상품 버튼(형광펜 아이콘·빨강·개수)과 구분한다. 스마트 칠판에서만 켠다(이 기기에만 저장). */}
           <button
             onClick={() => setBoardViewOnly(!boardViewOnly)}
-            className={`h-8 px-2 inline-flex items-center gap-1 text-xs font-bold rounded-lg border transition-colors ${boardViewOnly ? 'bg-[#003057] border-[#003057] text-white hover:opacity-90' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-100'}`}
+            className={`w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ${boardViewOnly ? 'bg-[#003057] border-[#003057] text-white hover:opacity-90' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-100'}`}
             title={boardViewOnly ? '칠판 모드 켜짐 — 보기 전용입니다. 눌러서 끄기' : '칠판 모드 켜기 — 스마트 칠판용(보기 전용 + 펜)'}
             aria-label="칠판 모드"
             aria-pressed={boardViewOnly}
           >
             <Presentation className="w-4 h-4" />
-            <span>칠판</span>
           </button>
           {/* 주문 추가와 엑셀 다운로드는 버튼 하나에서 고른다(보기 전용이면 다운로드만 나온다). */}
           <div className="relative">
@@ -1860,7 +1902,7 @@ export function DashboardClient({
               </SortableContext>
               </DndContext>
             </div>
-            {separateColumns.length > 0 && <ProductSummaryPanel columns={separateColumns} chipStyle={chipStyle} />}
+            {separateColumns.length > 0 && <ProductSummaryPanel columns={separateColumns} chipStyle={chipStyle} onPick={(p, r) => pickProduct('separate', p, r)} />}
             </div>
           </div>
         </div>
