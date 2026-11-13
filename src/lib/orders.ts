@@ -89,6 +89,8 @@ export interface ProductSummaryRow {
   unit: string;
   mulbong: number;
   packed: number;
+  // total 중에서 그날 첫 입력 이후 추가된 품목(change_status 'new')의 수량. 이미 있던 품목의 수량을 늘린 것은 이전 수량을 저장하지 않아 포함되지 않는다.
+  added: number;
   // 수량 미정 줄(수량 0·단위 없음)을 모은 줄이면 미정이 있는 고객 수, 아니면 0. 이 줄은 total 0·unit ''이고 화면에서 "미정 N곳"으로 보인다.
   undecided: number;
 }
@@ -179,6 +181,7 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
           unit: '',
           mulbong: 0,
           packed: 0,
+          added: 0,
           undecided: 0,
         });
       }
@@ -191,6 +194,7 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
       existing.unshipped += item.unshippedQuantity;
       if (item.isMulbong) existing.mulbong += item.quantity;
       if (item.isPacked) existing.packed += item.quantity;
+      if (item.changeStatus === 'new') existing.added += shippable;
     } else {
       map.set(key, {
         key,
@@ -203,6 +207,7 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
         unit: item.unit,
         mulbong: item.isMulbong ? item.quantity : 0,
         packed: item.isPacked ? item.quantity : 0,
+        added: item.changeStatus === 'new' ? shippable : 0,
         undecided: 0,
       });
     }

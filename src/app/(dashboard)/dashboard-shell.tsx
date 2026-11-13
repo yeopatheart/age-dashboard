@@ -113,8 +113,8 @@ export function DashboardShell({
     router.refresh();
   };
 
-  // 모바일 오버레이가 열려있을 땐 항상 펼친 모습으로 보여준다 — collapsed는 데스크톱 레일 전용
-  // 상태라, 좁은 화면에서까지 아이콘만 보이면 오히려 못 쓰게 된다.
+  // 모바일 오버레이가 열려있을 땐 항상 펼친 모습으로 보여준다 — collapsed는 데스크톱 전용 상태라,
+  // 휴대폰에서 메뉴를 열었는데 폭 0으로 보이면 못 쓰게 된다.
   const effectiveCollapsed = collapsed && !sidebarOpen;
 
   const visible = (menu: MenuKey | 'users') => (menu === 'users' ? isMaster : isMaster || allowedMenus.includes(menu));
@@ -135,10 +135,9 @@ export function DashboardShell({
         className={`sidebar-nav-item ${nested ? 'sidebar-nav-sub' : ''} ${inPath(href) ? 'active' : ''}`}
         aria-current={inPath(href) ? 'page' : undefined}
         onClick={() => setSidebarOpen(false)}
-        title={effectiveCollapsed ? label : undefined}
       >
         <Icon size={nested ? 16 : 18} />
-        {!effectiveCollapsed && <span>{label}</span>}
+        <span>{label}</span>
       </Link>
     );
   };
@@ -165,19 +164,12 @@ export function DashboardShell({
           <div className="sidebar-logo">
             <Image src="/logo-navy.png" alt="통영아재수산" width={26} height={26} unoptimized />
           </div>
-          {!effectiveCollapsed && (
-            <div className="sidebar-brand-text">
-              <span className="sidebar-brand-name">통영아재수산</span>
-              <span className="sidebar-brand-sub">주문 관리 시스템</span>
-            </div>
-          )}
-          <button
-            className="sidebar-collapse-btn"
-            onClick={toggleCollapsed}
-            title={effectiveCollapsed ? '펼치기' : '접기'}
-            aria-label={effectiveCollapsed ? '메뉴 펼치기' : '메뉴 접기'}
-          >
-            {effectiveCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+          <div className="sidebar-brand-text">
+            <span className="sidebar-brand-name">통영아재수산</span>
+            <span className="sidebar-brand-sub">주문 관리 시스템</span>
+          </div>
+          <button className="sidebar-collapse-btn" onClick={toggleCollapsed} title="접기" aria-label="메뉴 접기">
+            <PanelLeftClose size={14} />
           </button>
           <button
             className="sidebar-close"
@@ -194,14 +186,6 @@ export function DashboardShell({
           {NAV_GROUPS.map((group) => {
             const items = group.menus.filter(visible);
             if (items.length === 0) return null;
-            // 아이콘만 보이는 좁은 사이드바에는 그룹 제목을 둘 자리가 없어서, 그룹의 메뉴를 구분선 아래에 아이콘으로 모두 보여 준다.
-            if (effectiveCollapsed) {
-              return (
-                <div key={group.id} className="sidebar-rail-group">
-                  {items.map((menu) => renderItem(menu))}
-                </div>
-              );
-            }
             const open = groupOpen[group.id] ?? items.some((menu) => inPath(navEntry(menu).href));
             const GroupIcon = group.icon;
             return (
@@ -230,20 +214,25 @@ export function DashboardShell({
 
         {/* User info at bottom */}
         <div className="sidebar-footer">
-          <div className="sidebar-user" title={effectiveCollapsed ? displayName : undefined}>
+          <div className="sidebar-user">
             <div className="sidebar-avatar">{displayName[0]}</div>
-            {!effectiveCollapsed && (
-              <div className="sidebar-user-info">
-                <p className="sidebar-user-name">{displayName}</p>
-              </div>
-            )}
+            <div className="sidebar-user-info">
+              <p className="sidebar-user-name">{displayName}</p>
+            </div>
           </div>
           <button className="sidebar-logout" onClick={handleLogout} title="로그아웃" aria-label="로그아웃">
             <LogOut size={16} />
-            {!effectiveCollapsed && <span>로그아웃</span>}
+            <span>로그아웃</span>
           </button>
         </div>
       </aside>
+
+      {/* 접힌 사이드바는 화면 왼쪽 끝의 작은 펼치기 탭만 남긴다(가로 폭을 최대한 쓰려고). 휴대폰은 상단 바의 메뉴 버튼을 쓴다. */}
+      {effectiveCollapsed && (
+        <button className="sidebar-expand-tab" onClick={toggleCollapsed} title="메뉴 펼치기" aria-label="메뉴 펼치기">
+          <PanelLeftOpen size={16} />
+        </button>
+      )}
 
       {/* Main content */}
       <div className="main-wrapper">
@@ -310,10 +299,31 @@ export function DashboardShell({
           z-index: 50;
           transition: width 0.2s ease, min-width 0.2s ease, transform 0.25s ease;
         }
+        /* 접으면 폭 0까지 줄이고 화면 밖으로 뺀다(탭 포커스에서도 빠지게 visibility로 숨긴다). 펼치는 것은 .sidebar-expand-tab. */
         .sidebar.sidebar-collapsed {
-          width: var(--sidebar-width-collapsed);
-          min-width: var(--sidebar-width-collapsed);
+          width: 0;
+          min-width: 0;
+          visibility: hidden;
+          transition: width 0.2s ease, min-width 0.2s ease, visibility 0s linear 0.2s;
         }
+        .sidebar-expand-tab {
+          position: fixed;
+          left: 0;
+          top: 12px;
+          z-index: 45;
+          width: 22px;
+          height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: var(--primary);
+          color: rgba(255,255,255,0.85);
+          border: none;
+          border-radius: 0 10px 10px 0;
+          box-shadow: var(--shadow-sm);
+          cursor: pointer;
+        }
+        .sidebar-expand-tab:hover { color: #ffffff; }
         .sidebar-overlay {
           display: none;
           position: fixed;
@@ -328,7 +338,6 @@ export function DashboardShell({
           padding: 1.375rem 1.125rem;
           border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-        .sidebar-collapsed .sidebar-brand { justify-content: center; padding: 1.375rem 0.5rem; }
         .sidebar-logo {
           width: 38px;
           height: 38px;
@@ -399,7 +408,6 @@ export function DashboardShell({
           flex-direction: column;
           gap: 2px;
         }
-        .sidebar-collapsed .sidebar-nav { padding: 0.875rem 0.625rem; align-items: center; }
         .sidebar-group { display: flex; flex-direction: column; flex-shrink: 0; }
         .sidebar-group-head {
           display: flex;
@@ -432,17 +440,6 @@ export function DashboardShell({
         }
         .sidebar-nav-sub { padding: 0.55rem 0.65rem; font-size: 0.8125rem; }
         .sidebar-sub .sidebar-nav-item.active::before { left: calc(-2.4rem - 1px); }
-        .sidebar-rail-group {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 2px;
-          width: 100%;
-          flex-shrink: 0;
-          margin-top: 0.5rem;
-          padding-top: 0.5rem;
-          border-top: 1px solid rgba(255,255,255,0.1);
-        }
         .sidebar-nav-item {
           display: flex;
           align-items: center;
@@ -458,12 +455,6 @@ export function DashboardShell({
           white-space: nowrap;
           width: 100%;
           flex-shrink: 0; /* 화면 높이가 모자라면 항목이 찌그러지지 않고 메뉴 영역이 스크롤된다 */
-        }
-        .sidebar-collapsed .sidebar-nav-item {
-          width: 44px;
-          height: 44px;
-          padding: 0;
-          justify-content: center;
         }
         .sidebar-nav-item:hover {
           background: rgba(255,255,255,0.1);
@@ -485,7 +476,6 @@ export function DashboardShell({
           background: #ffffff;
           border-radius: 0 3px 3px 0;
         }
-        .sidebar-collapsed .sidebar-nav-item.active::before { left: -0.625rem; }
         .sidebar-collapse-btn {
           width: 24px;
           height: 24px;
@@ -511,14 +501,12 @@ export function DashboardShell({
           flex-direction: column;
           gap: 0.625rem;
         }
-        .sidebar-collapsed .sidebar-footer { padding: 0.875rem 0.625rem; align-items: center; }
         .sidebar-user {
           display: flex;
           align-items: center;
           gap: 0.625rem;
           padding: 0.5rem 0.5rem;
         }
-        .sidebar-collapsed .sidebar-user { padding: 0.5rem 0; justify-content: center; }
         .sidebar-avatar {
           width: 36px;
           height: 36px;
@@ -559,7 +547,6 @@ export function DashboardShell({
           width: 100%;
           transition: all 0.15s;
         }
-        .sidebar-collapsed .sidebar-logout { width: 44px; height: 40px; padding: 0; }
         .sidebar-logout:hover {
           background: rgba(239,68,68,0.2);
           border-color: rgba(239,68,68,0.4);
@@ -674,7 +661,7 @@ export function DashboardShell({
             transition: transform 0.25s ease, visibility 0s;
             box-shadow: var(--shadow-lg);
           }
-          .sidebar-collapse-btn { display: none; }
+          .sidebar-collapse-btn, .sidebar-expand-tab { display: none; }
           .sidebar-overlay { display: block; }
           .sidebar-close { display: flex; }
           .topbar { display: flex; }

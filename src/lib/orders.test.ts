@@ -65,3 +65,20 @@ test('품목별 수량: 미정이 없으면 이전과 같은 결과다(undecided
   const rows = getProductSummary([item({ quantity: 2 }), item({ id: 'n', dailyBusinessId: 'd2', productName: '방어', quantity: 1, unit: 'kg' })]);
   assert.deepEqual(rows.map((r) => [r.label, r.total, r.unit, r.undecided]), [['방어', 1, 'kg', 0], ['활전갱이', 2, '미', 0]]);
 });
+
+test('품목별 수량: 추가분은 첫 입력 이후 추가된 품목(new)만이며 전체에 포함되고 취소·미출고는 뺀다', () => {
+  const rows = getProductSummary([
+    item({ id: 'a', quantity: 10 }),
+    item({ id: 'b', dailyBusinessId: 'd2', quantity: 5, changeStatus: 'new' }),
+    item({ id: 'c', dailyBusinessId: 'd3', quantity: 4, unshippedQuantity: 1, changeStatus: 'new' }),
+    item({ id: 'd', dailyBusinessId: 'd4', quantity: 7, changeStatus: 'cancelled' }),
+    item({ id: 'e', dailyBusinessId: 'd5', quantity: 3, changeStatus: 'modified' }),
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].total, 21); // 10 + 5 + 3(4-1) + 3, 취소 제외
+  assert.equal(rows[0].added, 8); // new 두 줄: 5 + (4-1)
+});
+
+test('품목별 수량: 추가된 품목이 없으면 추가분은 0이다', () => {
+  assert.equal(getProductSummary([item({ quantity: 2 }), undecided({ id: 'u', dailyBusinessId: 'd2', changeStatus: 'new' })]).every((r) => r.added === 0), true);
+});
