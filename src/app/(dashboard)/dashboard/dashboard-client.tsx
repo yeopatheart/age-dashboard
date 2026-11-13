@@ -3,14 +3,14 @@ import { useState, useRef, useLayoutEffect, useOptimistic, useSyncExternalStore,
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Truck } from 'lucide-react';
+import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, TriangleAlert, Truck } from 'lucide-react';
 import { businessIdsInBothRounds, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { DashboardMobile } from './dashboard-mobile';
-import { DashboardSound } from './dashboard-sound';
+import { BOARD_VIEW_ONLY_KEY, DashboardSound } from './dashboard-sound';
 import { useToast, useUndoToast } from '@/components/toast';
 import {
   setProductHighlight,
@@ -58,7 +58,7 @@ function ProductSummaryPanel({
   availHeight?: number;
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
-  const signature = `${columns.map((c) => `${c.key}:${c.total}:${c.unshipped}:${c.undecided}`).join('|')}@${availHeight ?? ''}`;
+  const signature = `${columns.map((c) => `${c.key}:${c.total}:${c.added}:${c.unshipped}:${c.undecided}`).join('|')}@${availHeight ?? ''}`;
   // 품목·수량·높이가 바뀌면 가장 큰 크기부터 다시 시도한다.
   const [fit, setFit] = useState<{ signature: string; level: number }>({ signature: '', level: 0 });
   const level = availHeight === undefined ? 0 : fit.signature === signature ? fit.level : 0;
@@ -75,7 +75,7 @@ function ProductSummaryPanel({
   }, [signature, level, availHeight]);
   const itemHeight = SUMMARY_ITEM_HEIGHTS[level];
   return (
-    <aside className="w-64 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ borderTop: '3px solid #003057' }}>
+    <aside className="w-52 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ borderTop: '3px solid #003057' }}>
       <div className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100 flex-shrink-0">품목별 수량</div>
       <div ref={gridRef} className={`flex-1 min-h-0 flex flex-wrap content-start gap-x-1 p-1.5 ${availHeight === undefined ? 'overflow-y-auto' : 'overflow-hidden'}`}>
         {columns.map((product) => (
@@ -91,6 +91,7 @@ function ProductSummaryPanel({
               ) : (
                 <>
                   {product.total}{product.unit}
+                  {product.added > 0 && <span className="ml-1 rounded bg-white/70 px-1 text-sky-700" title={`전체 ${product.total}${product.unit} 중 처음 입력 이후 추가된 수량`}>+{product.added}</span>}
                   {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
                 </>
               )}
@@ -210,22 +211,23 @@ function SortableRow({
 }
 
 // flexible = 모니터 1/2: 열을 화면 폭에 맞춰 줄여서 가로 스크롤이 생기지 않게 한다(스크롤 밖의 상품을 놓치지 않도록).
-// 마지막 칸은 "+" 추가 버튼 자리라 좁게 고정하고, 나머지 폭을 상품 칸이 나눠 쓴다.
-// 전체보기는 열마다 최소 폭을 두고 필요하면 옆으로 스크롤한다.
-const ADD_COLUMN_WIDTH = 36;
+// 전체보기는 열마다 최소 폭을 두고 필요하면 옆으로 스크롤한다. (PC 표에는 상품을 직접 추가하는 "+" 칸이 없다 — 2026-11-14 사용자 결정.)
 // 고객명 열은 이 날짜 고객명 중 가장 긴 것에 맞춘다(모니터 1·2가 같은 폭을 쓰도록 표시 중인 줄이 아니라 전체 줄 기준).
 // 수정/삭제 버튼은 이름 위에 겹쳐 나타나므로 버튼 자리를 따로 잡지 않는다.
+// 모니터 1·2의 상품 열 최대 폭(px). 상품 열이 적을 때(예: 모니터 2에 3열뿐) 열이 화면 폭만큼 늘어나면 65인치 칠판에서 작업자가 고개를 많이 돌려야 해서 상한을 둔다
+// (2026-11-14 현장 요청). 이 폭이면 가장 긴 한 줄 칩("활장어 2kg (키로6-8미, 기포기)")이 한 줄에 들어가고, 1920px 화면에서 열이 9개일 때의 열 폭(사이드바를 펼치면 약 150px,
+// 접으면 약 175px)보다 크다. 열이 그보다 많으면 지금처럼 화면 폭을 나눠 쓰므로 이 상한은 열이 적을 때만 작동한다.
+// 남는 폭은 표 오른쪽에 빈 자리로 남고, 모니터 2의 품목별 수량 패널은 표 바로 옆에 붙는다.
+const PRODUCT_COLUMN_MAX = 200;
 const NAME_COLUMN_DEFAULT = 144;
 const NAME_COLUMN_MIN = 72;
 const NAME_COLUMN_MAX = 220;
 const ROUND_BADGE_WIDTH = 28; // RoundBadge("1차") 폭 + 오른쪽 간격
-// 박스 열 폭. 박스 수 옆에 "합포장" 표시가 한 줄로 들어가는 폭이다.
-const BOX_COLUMN = 80;
+// 박스 열 폭. 박스 수 옆에 "합포장" 표시와 "박스 재확인" 경고 아이콘이 함께 한 줄로 들어가는 폭이다.
+const BOX_COLUMN = 88;
 function productGridTemplate(slotCount: number, flexible = false, nameColumn = NAME_COLUMN_DEFAULT) {
   const fixed = `40px 80px ${nameColumn}px ${BOX_COLUMN}px`;
-  if (!flexible) return `${fixed} repeat(${slotCount}, minmax(130px, 1fr))`;
-  const productColumns = slotCount - 1;
-  return `${fixed} ${productColumns > 0 ? `repeat(${productColumns}, minmax(0, 1fr)) ` : ''}${ADD_COLUMN_WIDTH}px`;
+  return `${fixed} repeat(${slotCount}, ${flexible ? `minmax(0, ${PRODUCT_COLUMN_MAX}px)` : 'minmax(130px, 1fr)'})`;
 }
 // 위 열 정의의 최소 폭 합. 표 전체 폭을 이 값 이상으로 잡아야 옆으로 스크롤해도 헤더·행 배경이 끝까지 이어진다.
 const productGridFixedWidth = (nameColumn: number) => 40 + 80 + nameColumn + BOX_COLUMN;
@@ -235,6 +237,8 @@ function productGridMinWidth(slotCount: number, nameColumn: number) {
 
 // 전체보기 위쪽 "품목별 수량" 카드를 접은 상태. 이 브라우저(PC·TV)마다 따로 기억한다 — 서버에는 저장하지 않는다.
 const SUMMARY_COLLAPSED_KEY = 'dash-summary-collapsed';
+// 툴바 터미널 칩의 [글자 px, 좌우 여백 px] 단계. 첫 단계가 기본이고 한 줄에 안 들어갈 때만 다음 단계로 줄인다.
+const TOOLBAR_CHIP_STEPS: [number, number][] = [[12, 8], [11, 6], [10, 5], [9, 4]];
 
 // 오늘 강조한 상품의 상품명 글자색. 첫 번째는 빨강이고, 두 개 이상 고르면 고른 순서대로 서로 다른 색을 쓴다.
 // 상태 색(신규 초록, 수정 노랑, 취소 빨강)과 헷갈리지 않게 파랑·보라·분홍·청록·갈색 계열로 이어 간다.
@@ -754,8 +758,11 @@ export function DashboardClient({
   // 수정 권한이 없는 계정도 조회 전용이다. 삭제·취소는 별도 권한(dashboard:delete)이다.
   const can = useCan();
   const canDelete = can('dashboard:delete');
-  // 칠판 모드(실시간 알림)를 켜도 수정은 막지 않는다 — 형이 입력하는 PC에서도 소리 알림을 켜고 쓴다(2026-11-07 현장 확인).
-  const readOnly = (isPast && !allowPast) || !can('dashboard:edit');
+  // 칠판(보기 전용) 기기: 스마트 칠판은 마우스처럼 정교하지 않아 카드를 만질 때마다 포장 체크가 바뀌거나 수정 버튼이 눌렸다(2026-11-14 현장).
+  // 포장 체크·수정은 휴대폰이나 보기 전용을 끈 PC에서 한다. 실시간 알림(`board-mode`)과는 따로 둔다 — 형이 입력하는 PC에서도 소리 알림을
+  // 켜고 쓰기 때문이다(2026-11-07 현장 확인). 알림 버튼의 설정 패널에서 기기별로 켠다. 휴대폰 화면에는 알림 컨트롤이 없어 켤 수 없다.
+  const [boardViewOnly] = useLocalFlag(BOARD_VIEW_ONLY_KEY);
+  const readOnly = boardViewOnly || (isPast && !allowPast) || !can('dashboard:edit');
   const [toastNode, showToast] = useToast();
   const [undoNode, showUndo] = useUndoToast();
 
@@ -851,7 +858,7 @@ export function DashboardClient({
   }, []);
 
   // 고객명 열 폭: 가장 긴 고객명(굵은 12px)을 한 줄로 그릴 수 있는 폭. 1·2차 배지가 붙는 고객은 배지 폭만큼 더한다.
-  // 완료·박스 배지는 상태에 따라 붙었다 떨어지므로 열 폭에 넣지 않는다(폭이 흔들리지 않게). 넘치면 2줄로 접힌다.
+  // 완료 배지는 상태에 따라 붙었다 떨어지므로 열 폭에 넣지 않는다(폭이 흔들리지 않게). 넘치면 2줄로 접힌다. "박스 재확인" 경고는 고객명 칸이 아니라 박스 칸에 붙는다.
   const [nameColumn, setNameColumn] = useState(NAME_COLUMN_DEFAULT);
   const nameSignature = rows.map((r) => `${r.businessName}|${splitBusinessIds.has(r.businessId) ? r.round : ''}`).join('\n');
   useLayoutEffect(() => {
@@ -937,8 +944,8 @@ export function DashboardClient({
   // 줄 높이 경계에서 잘린다 — 이 글꼴은 글자 위·아래 여백이 커서 줄 높이를 글자 크기에 가깝게 줄이면 실제로 잘렸다).
   // 잘림은 팁 테두리에서만 일어나므로, 두 줄이 팁 안에 "글자 모양(descender 포함)까지" 들어가는 크기를 고른다.
   // 크기는 가장 큰 크기부터 1px씩 줄인 단계를 준비하고, 어느 단계가 필요한지는 그려진 결과(넘침)를 보고 아래 효과에서 팁마다 정한다.
-  // 팁 안쪽 높이 = 행 높이 − 테두리 1 − 칸 여백 4 − 팁 테두리 2.
-  const pillInnerHeight = rowHeight - 7;
+  // 팁 안쪽 높이 = 행 높이 − 테두리 1 − 칸 여백 2 − 팁 테두리 2. (칸 여백을 4 → 2px로 줄여 글자를 키웠다, 2026-11-14 현장 요청)
+  const pillInnerHeight = rowHeight - 5;
 
   // 열 개수는 "이 화면에 실제로 보이는 행" 중 상품이 가장 많은 업체 기준 + 1(추가 버튼 열)이다.
   // 모니터마다 다른 업체가 보이므로 전체 기준이 아니라 화면에 표시되는 행 기준으로 센다.
@@ -946,20 +953,31 @@ export function DashboardClient({
     const count = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).length;
     return Math.max(max, count);
   }, 0);
-  const productSlotCount = maxProductCount + 1;
+  const productSlotCount = Math.max(1, maxProductCount);
   const gridTemplate = productGridTemplate(productSlotCount, isSplitMode, nameColumn);
   // 모니터 1/2는 열 폭이 화면 폭으로 정해진다. 상품이 많아 열이 좁아지면 글자도 그만큼 줄인다.
-  const colWidth = isSplitMode && availWidth > 0 ? (availWidth - productGridFixedWidth(nameColumn) - ADD_COLUMN_WIDTH) / Math.max(1, productSlotCount - 1) : Infinity;
+  const colWidth = isSplitMode && availWidth > 0 ? (availWidth - productGridFixedWidth(nameColumn)) / productSlotCount : Infinity;
   const widthShrink = colWidth >= 120 ? 0 : colWidth >= 100 ? 1 : colWidth >= 88 ? 2 : 3;
   // 글자 크기 단계: 가장 큰 크기부터 1px씩 줄여 가며, 팁 안쪽 높이에 들어가는 가장 큰 크기를 팁마다 고른다(아래 효과).
   // 한 줄에 들어가면 한 줄로, 안 들어가면 두 줄이 팁 안에 들어가는 크기까지 줄인다. 괄호 표기(사이즈·물봉 등)가 붙은 팁도
   // 같은 규칙이라, 팁에 여백이 있으면 그만큼 크게 보인다. 수량이 품목명·단위보다 크고, 작은 크기에서는 둘이 비슷해진다.
-  const pillSteps = Array.from({ length: 8 }, (_, i) => {
-    const q = Math.max(7, 14 - widthShrink - i);
-    const f = q >= 13 ? q - 3 : q - 1;
-    return { q, f: Math.max(6, f), lh: q <= 8 ? 1.0 : 1.15 };
-  }).filter((step, i, all) => i === 0 || step.q !== all[i - 1].q);
-  const pillStepsAttr = pillSteps.map((p) => `${p.q},${p.f},${p.lh}`).join('|');
+  // 괄호 표기(옵션: "(키로5-6미, 기포기)")는 품목명보다 작게 시작하고, 칩이 넘치면 품목명보다 먼저 7px까지 줄인다.
+  // 품목명·수량은 옵션이 최소 크기가 된 뒤에야 줄어든다(옵션 때문에 품목명이 작아 보이지 않게).
+  const pillSteps = (() => {
+    const nameSizeOf = (q: number) => Math.max(6, q >= 13 ? q - 3 : q - 1);
+    let q = Math.max(7, 15 - widthShrink);
+    let o = Math.max(7, nameSizeOf(q) - 2);
+    const steps: { q: number; f: number; o: number; lh: number }[] = [];
+    for (;;) {
+      const f = nameSizeOf(q);
+      steps.push({ q, f, o: Math.min(o, f), lh: q <= 8 ? 1.0 : 1.15 });
+      if (o > 7) o -= 1;
+      else if (q > 7) q -= 1;
+      else break;
+    }
+    return steps;
+  })();
+  const pillStepsAttr = pillSteps.map((p) => `${p.q},${p.f},${p.lh},${p.o}`).join('|');
 
   // 팁마다 글자 크기 단계를 정한다: 기본 단계부터 시작해, 팁 안쪽 높이를 넘치면 한 단계씩 줄인다.
   useLayoutEffect(() => {
@@ -972,11 +990,42 @@ export function DashboardClient({
         el.style.setProperty('--pq', `${steps[n][0]}px`);
         el.style.setProperty('--pn', `${steps[n][1]}px`);
         el.style.setProperty('--pl', steps[n][2]);
+        el.style.setProperty('--po', `${steps[n][3]}px`);
       };
+      el.style.setProperty('--pshift', '0px');
       apply(step);
-      while (el.scrollHeight > pillInnerHeight - 2 && step < steps.length - 1) apply(++step);
+      while (el.scrollHeight > pillInnerHeight - 3 && step < steps.length - 1) apply(++step);
+      // 옵션이 둘째 줄로 내려간 칩은 첫 줄의 큰 수량과 둘째 줄의 작은 옵션의 글자 상자 차이 때문에 글자가 칩 가운데보다 0.5~0.7px 위에 놓인다
+      // (옵션이 7px까지 작아지면서 세로 중앙 점검에서 위·아래 여백이 1.1px 어긋났다, 2026-11-14). 크기가 정해진 뒤에 그만큼만 내려 맞춘다.
+      const option = el.querySelector<HTMLElement>('[data-pill-opt]');
+      const firstItem = el.firstElementChild;
+      // 같은 줄이면 옵션의 윗선이 첫 항목(품목명)의 아랫선보다 위에 있다(기준선 정렬이라 글자 크기가 달라도 겹친다). 둘째 줄이면 그 아래에서 시작한다.
+      if (option && firstItem instanceof HTMLElement && option.offsetTop >= firstItem.offsetTop + firstItem.offsetHeight - 1) el.style.setProperty('--pshift', '0.6px');
     }
   });
+
+  // 툴바는 무조건 한 줄이다(두 줄로 꺾이면 그만큼 표의 행을 잃는다). 터미널별 박스 수 칩이 남는 폭에 안 들어가면 글자·여백을 단계적으로 줄이고,
+  // 그래도 안 들어가면 칩 줄 안에서만 가로로 밀어 볼 수 있다. 크기는 CSS 변수로만 바꿔서 칩을 다시 그리지 않는다.
+  const chipRowRef = useRef<HTMLDivElement>(null);
+  const chipSignature = terminalBoxTotals.map((t) => `${t.terminal}:${t.boxes}`).join('|');
+  useLayoutEffect(() => {
+    const el = chipRowRef.current;
+    if (!el) return;
+    const fit = () => {
+      for (const [fs, px] of TOOLBAR_CHIP_STEPS) {
+        el.style.setProperty('--tb-fs', `${fs}px`);
+        el.style.setProperty('--tb-px', `${px}px`);
+        if (el.scrollWidth <= el.clientWidth + 1) break;
+      }
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(el);
+    void document.fonts?.ready.then(fit);
+    return () => observer.disconnect();
+  }, [chipSignature]);
+  const [monitorMenuOpen, setMonitorMenuOpen] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
 
   // 별도 주문(택배) 고객의 정산용 엑셀(.xlsx)을 내려받는다. 양식은 src/lib/export/settlement.ts. 엑셀 라이브러리는 클릭할 때만 불러온다.
   const [exporting, setExporting] = useState(false);
@@ -1091,6 +1140,7 @@ export function DashboardClient({
       ) : (
         <>
           <span className="text-xs font-black">{product.total}{product.unit}</span>
+          {product.added > 0 && <span className="text-[10px] font-bold text-sky-700 bg-white/70 rounded px-1" title={`전체 ${product.total}${product.unit} 중 처음 입력 이후 추가된 수량`}>+{product.added}</span>}
           {product.unshipped > 0 && <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded px-1">미출고 {product.unshipped}</span>}
         </>
       )}
@@ -1243,9 +1293,9 @@ export function DashboardClient({
     // (12px/16px) — 여기서 음수 마진으로 상쇄하는 방식은 main-content의 overflow-y:auto가
     // overflow-x까지 auto로 끌어올리는 CSS 규칙과 부딪혀 표 오른쪽이 잘려 보이는 버그가 있었다.
     <div className="flex flex-col h-[calc(100vh-24px)] gap-2">
-      <div className="flex justify-between items-center bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex-shrink-0 flex-wrap gap-x-2 gap-y-1.5">
-        <div className="flex gap-2 items-center flex-wrap">
-          <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm flex-shrink-0 flex-nowrap">
+        <div className="flex gap-2 items-center flex-1 min-w-0">
+          <div className="flex items-center gap-1 flex-shrink-0">
             <button onClick={() => shiftDate(-1)} className="w-7 h-7 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100 flex items-center justify-center" title="전날"><ChevronLeft className="w-4 h-4" /></button>
             <input
               type="date"
@@ -1256,36 +1306,66 @@ export function DashboardClient({
             />
             <button onClick={() => shiftDate(1)} disabled={orderDate >= today} className="w-7 h-7 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent flex items-center justify-center" title="다음날"><ChevronRight className="w-4 h-4" /></button>
           </div>
-          <div className="w-px h-4 bg-slate-200" />
-          {terminalBoxTotals.map(({ terminal, boxes }) => (
-            <div key={terminal} className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-bold ${terminalBadgeProps(terminal, terminalColors).className}`} style={terminalBadgeProps(terminal, terminalColors).style}>
-              <span>{terminal || '(터미널 없음)'}</span>
-              <span className="font-black">{boxes}</span>
-            </div>
-          ))}
+          <div className="w-px h-4 bg-slate-200 flex-shrink-0" />
+          <div ref={chipRowRef} className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {terminalBoxTotals.map(({ terminal, boxes }) => (
+              <div
+                key={terminal}
+                className={`flex items-center gap-1 flex-shrink-0 rounded-md border font-bold ${terminalBadgeProps(terminal, terminalColors).className}`}
+                style={{ ...terminalBadgeProps(terminal, terminalColors).style, fontSize: 'var(--tb-fs, 12px)', padding: '2px var(--tb-px, 8px)' }}
+              >
+                <span>{terminal || '(터미널 없음)'}</span>
+                <span className="font-black">{boxes}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* 실시간 알림 컨트롤(켜기·상태·소리·변경 목록). 화면에 떠 있으면 표의 맨 아래 행을 가려서 툴바 안에 둔다. */}
           <DashboardSound rows={rawRows} items={serverItems} orderDate={orderDate} />
           {/* 모바일은 화면이 하나뿐이라 모니터 분할 자체가 의미 없다 — 전체보기만 강제되므로 */}
           {/* 선택 버튼도 노출하지 않는다(md 이상, 768px부터 노출 — 위 isMobile 판정 기준과 동일). */}
-          <div className="hidden md:flex bg-slate-100 rounded-lg p-1 gap-0.5">
-            {([
-              { mode: 'all', title: '전체보기', content: <LayoutGrid className="w-4 h-4" /> },
-              { mode: '1', title: '모니터 1', content: <><Monitor className="w-4 h-4" /><span>1</span></> },
-              { mode: '2', title: '모니터 2', content: <><Monitor className="w-4 h-4" /><span>2</span></> },
-            ] as const).map(({ mode, title, content }) => (
-              <button
-                key={mode}
-                onClick={() => setMonitorMode(mode)}
-                title={title}
-                aria-label={title}
-                className={`h-7 min-w-8 px-2 inline-flex items-center justify-center gap-1 text-xs font-bold rounded-md transition-colors ${monitorMode === mode ? 'bg-white shadow-sm text-[#003057]' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                {content}
-              </button>
-            ))}
+          {/* 모니터 설정(전체보기·모니터 1·모니터 2)은 버튼 하나에 현재 모드를 보여 주고, 누르면 선택 메뉴가 떠서 툴바 폭을 아낀다. */}
+          <div className="relative hidden md:block">
+            <button
+              onClick={() => setMonitorMenuOpen((v) => !v)}
+              className="h-8 px-2 inline-flex items-center gap-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors"
+              title="모니터 설정 (전체보기·모니터 1·모니터 2)"
+              aria-label="모니터 설정"
+              aria-haspopup="menu"
+              aria-expanded={monitorMenuOpen}
+            >
+              {monitorMode === 'all' ? <LayoutGrid className="w-4 h-4" /> : <><Monitor className="w-4 h-4" /><span>{monitorMode}</span></>}
+              <ChevronDown className="w-3 h-3 text-slate-400" />
+            </button>
+            {monitorMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMonitorMenuOpen(false)} />
+                <div role="menu" aria-label="모니터 설정" className="absolute right-0 top-10 z-50 w-44 rounded-xl bg-white shadow-lg border border-slate-200 p-1.5">
+                  {([
+                    { mode: 'all', title: '전체보기', icon: <LayoutGrid className="w-4 h-4" /> },
+                    { mode: '1', title: '모니터 1', icon: <Monitor className="w-4 h-4" /> },
+                    { mode: '2', title: '모니터 2', icon: <Monitor className="w-4 h-4" /> },
+                  ] as const).map(({ mode, title, icon }) => (
+                    <button
+                      key={mode}
+                      role="menuitemradio"
+                      aria-checked={monitorMode === mode}
+                      onClick={() => {
+                        setMonitorMode(mode);
+                        setMonitorMenuOpen(false);
+                      }}
+                      className={`w-full h-11 px-3 flex items-center gap-2 rounded-lg text-sm font-bold text-left transition-colors ${monitorMode === mode ? 'bg-slate-100 text-[#003057]' : 'text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      {icon}
+                      <span className="flex-1">{title}</span>
+                      {monitorMode === mode && <Check className="w-4 h-4" strokeWidth={3} />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
           {separateNames.size > 0 && (
             <button
@@ -1298,15 +1378,6 @@ export function DashboardClient({
               {separateRows.length}
             </button>
           )}
-          {!readOnly && <button
-            onClick={() => setAddOrderModal(true)}
-            className="w-8 h-8 rounded-lg text-white shadow-sm hover:opacity-90 transition-opacity flex items-center justify-center"
-            style={{ backgroundColor: '#003057' }}
-            title="새 주문 추가"
-            aria-label="새 주문 추가"
-          >
-            <Plus className="w-4 h-4" />
-          </button>}
           <div className="relative">
             <button
               onClick={() => setHlOpen((v) => !v)}
@@ -1343,22 +1414,62 @@ export function DashboardClient({
               </>
             )}
           </div>
-          <button
-            onClick={exportOrders}
-            disabled={mainRows.length === 0}
-            className="w-8 h-8 rounded-lg border border-slate-200 text-slate-600 bg-white hover:bg-slate-100 disabled:opacity-40 transition-colors flex items-center justify-center"
-            title="정산용 엑셀 다운로드 — 별도 주문(택배) 고객"
-            aria-label="정산용 엑셀 다운로드"
-          >
-            <Download className="w-4 h-4" />
-          </button>
+          {/* 주문 추가와 엑셀 다운로드는 버튼 하나에서 고른다(보기 전용이면 다운로드만 나온다). */}
+          <div className="relative">
+            <button
+              onClick={() => setActionMenuOpen((v) => !v)}
+              className="w-8 h-8 rounded-lg text-white shadow-sm hover:opacity-90 transition-opacity flex items-center justify-center"
+              style={{ backgroundColor: '#003057' }}
+              title={readOnly ? '엑셀 다운로드' : '새 주문 추가 · 엑셀 다운로드'}
+              aria-label={readOnly ? '엑셀 다운로드' : '새 주문 추가·엑셀 다운로드'}
+              aria-haspopup="menu"
+              aria-expanded={actionMenuOpen}
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            {actionMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setActionMenuOpen(false)} />
+                <div role="menu" className="absolute right-0 top-10 z-50 w-56 rounded-xl bg-white shadow-lg border border-slate-200 p-1.5">
+                  {!readOnly && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setActionMenuOpen(false);
+                        setAddOrderModal(true);
+                      }}
+                      className="w-full h-11 px-3 flex items-center gap-2 rounded-lg text-sm font-bold text-left text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />새 주문 추가
+                    </button>
+                  )}
+                  <button
+                    role="menuitem"
+                    disabled={mainRows.length === 0}
+                    onClick={() => {
+                      setActionMenuOpen(false);
+                      void exportOrders();
+                    }}
+                    className="w-full h-11 px-3 flex items-center gap-2 rounded-lg text-sm font-bold text-left text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+                    title="정산용 엑셀 다운로드 — 별도 주문(택배) 고객"
+                  >
+                    <Download className="w-4 h-4" />정산용 엑셀 다운로드
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
       {effectiveMonitorMode === 'all' && summaryCard}
 
       <div className="flex flex-1 min-h-0 gap-2">
-      <div className="flex-1 min-w-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden relative">
+      <div
+        className="flex-1 min-w-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden relative"
+        // 모니터 1·2는 표 폭이 [고정 열 + 상품 열 수 × 최대 폭 + 테두리]를 넘지 않게 한다(열 폭 상한과 같은 기준).
+        style={isSplitMode ? { maxWidth: productGridFixedWidth(nameColumn) + productSlotCount * PRODUCT_COLUMN_MAX + 2 } : undefined}
+      >
         {/* 전체 주문이 0건일 땐 어느 모니터를 보든 이유가 같으므로(범위 문제가 아니라 주문
             자체가 없는 것) 병합보기와 같은 일반 문구를 쓴다. 전체엔 주문이 있는데 이 모니터
             범위(모니터 1에 들어간 줄 수 이후)에만 없을 때만 안내한다. */}
@@ -1397,7 +1508,7 @@ export function DashboardClient({
                   key={i}
                   className="border-r last:border-r-0 border-b-2 border-white/20 px-1.5 py-1.5 flex items-center justify-center text-center"
                 >
-                  {isSplitMode && i === productSlotCount - 1 ? '' : `상품 ${i + 1}`}
+                  상품 {i + 1}
                 </div>
               ))}
             </div>
@@ -1456,7 +1567,6 @@ export function DashboardClient({
                           수정/삭제 버튼은 마우스를 올릴 때만 이름 위에 겹쳐 나타난다. */}
                       <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
-                      {row.packingChanged && <span className="ml-1 shrink-0 rounded border border-rose-300 bg-rose-50 px-1 text-[10px] font-extrabold leading-tight text-rose-600" title="주문이 바뀌었습니다 — 박스 할당에서 박스 구성을 다시 확인하세요">박스</span>}
                       <div className={`absolute inset-y-0 right-0 pl-4 pr-1 flex items-center gap-1 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity bg-gradient-to-l from-white via-white to-transparent`}>
                       <button
                         onClick={() => setEditOrderModal(row)}
@@ -1474,8 +1584,13 @@ export function DashboardClient({
                       </button>}
                       </div>
                     </div>
-                    <div className="border-r border-slate-100 px-1 bg-slate-50/60 flex items-center justify-center gap-1 whitespace-nowrap">
-                      <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null ? 'text-slate-300' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{row.totalBoxes ?? '-'}</span>
+                    {/* 박스 구성을 정한 뒤 주문이 바뀌면 이 칸이 붉게 바뀌고 경고 아이콘이 붙는다. 고객명 칸에는 아무것도 붙이지 않는다(이름은 절대 가려지면 안 된다, 2026-11-14). */}
+                    <div
+                      className={`border-r border-slate-100 px-1 flex items-center justify-center gap-1 whitespace-nowrap ${row.packingChanged ? 'bg-rose-100' : 'bg-slate-50/60'}`}
+                      title={row.packingChanged ? '주문이 바뀌었습니다 — 박스 할당에서 박스 구성을 다시 확인하세요' : undefined}
+                    >
+                      <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null ? 'text-slate-300' : row.packingChanged ? 'text-rose-700' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{row.totalBoxes ?? '-'}</span>
+                      {row.packingChanged && <TriangleAlert className="w-3.5 h-3.5 shrink-0 text-rose-600" strokeWidth={2.5} aria-label="박스 재확인 필요" />}
                       {row.mergeGroups.length > 0 && <span className="rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`}>합포장</span>}
                     </div>
 
@@ -1483,9 +1598,9 @@ export function DashboardClient({
                       const item = rowItems[slotIndex];
 
                       if (!item) {
-                        // 업체 메모는 "+" 버튼 뒤 남는 빈 칸들을 하나로 합쳐서 보여준다(칸이 모자라면 이름 옆 점으로 대신).
-                        if (row.memo && slotIndex > rowItems.length) {
-                          if (slotIndex !== rowItems.length + 1) return null;
+                        // 업체 메모는 상품이 끝난 뒤 남는 빈 칸들을 하나로 합쳐서 보여준다(칸이 모자라면 이름 옆 점으로 대신).
+                        if (row.memo) {
+                          if (slotIndex !== rowItems.length) return null;
                           return (
                             <div
                               key={slotIndex}
@@ -1496,24 +1611,9 @@ export function DashboardClient({
                             </div>
                           );
                         }
-                        // 이 업체의 상품이 끝난 바로 다음 칸에만 추가 버튼을 두고, 그 뒤는 완전히
-                        // 빈 칸으로 둔다 — 열이 더 이상 고정 품목이 아니라서 "이 상품이 없다"는
-                        // 뜻의 점선 박스를 칸마다 반복할 이유가 없다.
-                        if (slotIndex !== rowItems.length || readOnly) {
-                          // 테두리는 다른 칸과 똑같이 그려서 열 경계가 행마다 어긋나 보이지
-                          // 않게 한다(내용만 비워둔다 — 이 업체는 그만큼 상품이 없다는 뜻).
-                          return <div key={slotIndex} className="border-r border-slate-100 last:border-r-0" />;
-                        }
-                        return (
-                          <div key={slotIndex} className="border-r border-slate-100 last:border-r-0 p-[2px] flex min-w-0">
-                            <div
-                              onClick={() => setAddItemModal({ row })}
-                              className="w-full flex items-center justify-center rounded-lg border border-dashed border-slate-200 cursor-pointer hover:border-sky-400 hover:bg-sky-50/40 transition-all group"
-                            >
-                              <Plus className="w-3.5 h-3.5 text-slate-300 group-hover:text-sky-400 transition-colors" />
-                            </div>
-                          </div>
-                        );
+                        // 빈 칸은 완전히 비워 둔다. 테두리는 다른 칸과 똑같이 그려서 열 경계가 행마다 어긋나 보이지 않게 한다
+                        // (이 업체는 그만큼 상품이 없다는 뜻이라 "없음" 표시를 칸마다 반복할 이유가 없다).
+                        return <div key={slotIndex} className="border-r border-slate-100 last:border-r-0" />;
                       }
 
                       const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked, item.unshippedQuantity, item.quantity);
@@ -1526,8 +1626,8 @@ export function DashboardClient({
                       const suffix = suffixParts.length ? ` (${suffixParts.join(', ')})` : '';
 
                       return (
-                        <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[2px] flex min-w-0">
-                          <div className={`relative w-full flex items-center justify-center px-1.5 rounded-lg border overflow-hidden ${bg} ${border} transition-all group shadow-sm`}>
+                        <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[1px] flex min-w-0">
+                          <div className={`relative w-full flex items-center justify-center px-1 rounded-lg border overflow-hidden ${bg} ${border} transition-all group shadow-sm`}>
                             {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
                               <span
                                 className="absolute top-0 left-0 z-20 text-[9px] font-bold leading-none px-1 py-[2px] rounded-br bg-amber-500 text-white"
@@ -1546,7 +1646,7 @@ export function DashboardClient({
                               className="w-full min-w-0 flex flex-wrap items-baseline justify-center gap-x-1 z-10 cursor-pointer select-none break-keep [overflow-wrap:anywhere]"
                               // 컨테이너의 글자 크기도 칩 글자 크기에 맞춘다: 안 맞추면 수량을 감싼 상자의 보이지 않는 줄 높이(strut)가 부모의 큰 기본 글자
                               // 크기로 잡혀서, 작은 글자 단계에서 글자가 칩 아래쪽으로 치우친다.
-                              style={{ fontSize: 'var(--pq)', lineHeight: 'var(--pl, 1.15)', maxHeight: pillInnerHeight }}
+                              style={{ fontSize: 'var(--pq)', lineHeight: 'var(--pl, 1.15)', maxHeight: pillInnerHeight, transform: 'translateY(var(--pshift, 0px))' }}
                             >
                               <span className={highlightColor ? 'font-black' : `font-bold ${text}`} style={{ fontSize: 'var(--pn)', ...(highlightColor ? { color: highlightColor } : {}) }}>{item.productName}</span>
                               {isUndecidedQuantity(item) ? (
@@ -1557,7 +1657,7 @@ export function DashboardClient({
                                   <span className={`ml-0.5 font-semibold ${text}`} style={{ fontSize: 'var(--pn)' }}>{item.unit}</span>
                                 </span>
                               )}
-                              {suffix && <span className="font-semibold text-sky-600" style={{ fontSize: 'var(--pn)' }}>{suffix.trim()}</span>}
+                              {suffix && <span data-pill-opt className="font-semibold text-sky-600" style={{ fontSize: 'var(--po)' }}>{suffix.trim()}</span>}
                             </div>
                             <div className={`absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity z-20`}>
                               <button

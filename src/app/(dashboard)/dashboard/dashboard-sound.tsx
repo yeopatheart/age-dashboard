@@ -20,6 +20,8 @@ const BURST_MAX_MS = 4000; // 계속 오더라도 이 시간이 지나면 일단
 const RECENT_LIMIT = 12;
 const TITLE_BADGE = /^\(변경 \d+\) /; // 탭 제목 앞에 붙이는 "(변경 N)" 배지
 const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'keydown', 'touchend'] as const; // 브라우저가 "사용자 조작"으로 치는 입력
+// 칠판(보기 전용) 기기 스위치의 저장 키. 켜면 이 기기의 주문 목록은 카드 탭·수정·삭제가 막힌다(dashboard-client가 읽는다). 실시간 알림과는 따로 켠다.
+export const BOARD_VIEW_ONLY_KEY = 'board-view-only';
 const STALE_MS = 3 * 60_000; // 마지막 갱신이 이 시간보다 오래되면 낡은 화면으로 본다(안전 새로고침이 1분 간격이라 그보다 충분히 길게)
 
 interface RecentEvent {
@@ -74,8 +76,8 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
   const [recent, setRecent] = useState<RecentEvent[]>([]);
   // 브라우저가 소리를 막아 알리지 못하고 버린 변경 수. 소리가 켜진 뒤에 "놓친 변경"으로 한 번 알려 준다(묵은 소리를 다시 내지는 않는다).
   const [missed, setMissed] = useState(0);
-  const [listOpen, setListOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false); // 알림 버튼을 누르면 버튼 아래로 떠오르는 설정 패널(툴바 크기는 변하지 않는다)
+  const [menuOpen, setMenuOpen] = useState(false); // 알림 버튼을 누르면 버튼 아래로 떠오르는 설정 패널(툴바 크기는 변하지 않는다). 최근 변경 목록도 이 안에 있다.
+  const [viewOnly, setViewOnly] = useLocalFlag(BOARD_VIEW_ONLY_KEY);
 
   // 타이머 안에서 최신 설정·소리 여부를 읽기 위한 사본(렌더 중이 아니라 이펙트에서 갱신한다).
   const live = useRef({ soundOn, settings });
@@ -237,9 +239,10 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
         <button
           type="button"
           onClick={turnOn}
-          className={`h-8 px-3 rounded-lg bg-amber-500 text-white text-xs font-bold shadow-sm hover:bg-amber-600 ${missed > 0 ? 'animate-pulse' : ''}`}
+          title="브라우저가 소리를 막고 있습니다 — 눌러서 켜기"
+          className={`h-8 px-2.5 whitespace-nowrap flex-shrink-0 rounded-lg bg-amber-500 text-white text-xs font-bold shadow-sm hover:bg-amber-600 ${missed > 0 ? 'animate-pulse' : ''}`}
         >
-          소리가 꺼져 있습니다 — 눌러서 켜기{missed > 0 ? ` (놓친 변경 ${missed}건)` : ''}
+          소리 켜기{missed > 0 ? ` · 놓침 ${missed}` : ''}
         </button>
       )}
 
@@ -248,57 +251,16 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
           type="button"
           onClick={() => {
             setMissed(0);
-            setListOpen(true);
+            setMenuOpen(true);
           }}
-          className="h-8 px-3 rounded-lg border border-amber-400 bg-amber-50 text-amber-800 text-xs font-bold shadow-sm hover:bg-amber-100"
+          title="소리가 꺼진 동안 바뀐 주문이 있습니다 — 눌러서 최근 변경 보기"
+          className="h-8 px-2.5 whitespace-nowrap flex-shrink-0 rounded-lg border border-amber-400 bg-amber-50 text-amber-800 text-xs font-bold shadow-sm hover:bg-amber-100"
         >
-          소리가 꺼진 동안 변경 {missed}건 — 눌러서 보기
+          놓친 변경 {missed}
         </button>
       )}
 
-      {mode && recent.length > 0 && (
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setListOpen((o) => !o)}
-            aria-expanded={listOpen}
-            className={`h-8 px-3 rounded-lg text-xs font-bold shadow-sm text-white ${urgentRecent ? 'bg-red-600 hover:bg-red-700' : 'bg-sky-600 hover:bg-sky-700'}`}
-          >
-            변경 {recent.length}건
-          </button>
-          {listOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setListOpen(false)} />
-              <div className="absolute right-0 top-10 z-50 w-80 max-h-[60vh] overflow-y-auto rounded-xl bg-white shadow-lg border border-slate-200 p-2">
-                <div className="flex items-center justify-between px-2 py-1">
-                  <span className="text-xs font-bold text-slate-700">최근 변경</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRecent([]);
-                      setMissed(0);
-                      setListOpen(false);
-                    }}
-                    className="text-xs font-bold text-slate-600 hover:text-slate-900"
-                  >
-                    모두 확인
-                  </button>
-                </div>
-                <ul className="space-y-1">
-                  {recent.map((e, i) => (
-                    <li key={`${e.at}-${i}`} className={`text-sm leading-snug rounded-md px-2 py-1 ${e.urgent ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700'}`}>
-                      <span className="text-xs text-slate-400 mr-1">{hhmm(e.at)}</span>
-                      {e.text}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="relative">
+      <div className="relative flex-shrink-0">
         <button
           type="button"
           onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
@@ -306,14 +268,18 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
           aria-haspopup="dialog"
           aria-label={bellLabel}
           title={`${bellLabel} (눌러서 설정)`}
-          className={`w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ${TONE_CLASS[tone]}`}
+          className={`relative w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ${TONE_CLASS[tone]}`}
         >
           <BellIcon className="w-4 h-4" />
+          {/* 확인하지 않은 최근 변경 수(예전의 "변경 N건" 칩을 대신한다). 패널을 열어 "모두 확인"을 누르면 사라진다. */}
+          {mode && recent.length > 0 && (
+            <span className={`absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full text-[10px] font-black leading-4 text-white text-center ${urgentRecent ? 'bg-red-600' : 'bg-sky-600'}`}>{recent.length}</span>
+          )}
         </button>
         {menuOpen && (
           <>
             <div className="fixed inset-0 z-40" onClick={closeMenu} />
-            <div role="dialog" aria-label="실시간 알림 설정" className="absolute right-0 top-10 z-50 w-72 rounded-xl bg-white shadow-lg border border-slate-200 p-3 text-sm">
+            <div role="dialog" aria-label="실시간 알림 설정" className="absolute right-0 top-10 z-50 w-72 max-h-[80vh] overflow-y-auto rounded-xl bg-white shadow-lg border border-slate-200 p-3 text-sm">
               {!mode ? (
                 <>
                   <p className="font-bold text-slate-800">실시간 알림 꺼짐</p>
@@ -329,6 +295,31 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
                     <span>{statusText}</span>
                     <span className="text-xs font-medium text-slate-500">· {lastRefreshAt ? `갱신 ${hhmm(lastRefreshAt)}` : '갱신 대기'}{stale ? ' (오래됨)' : ''}</span>
                   </div>
+                  {recent.length > 0 && (
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-700">최근 변경</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRecent([]);
+                            setMissed(0);
+                          }}
+                          className="text-xs font-bold text-slate-600 hover:text-slate-900"
+                        >
+                          모두 확인
+                        </button>
+                      </div>
+                      <ul className="mt-1 max-h-48 space-y-1 overflow-y-auto">
+                        {recent.map((e, i) => (
+                          <li key={`${e.at}-${i}`} className={`text-sm leading-snug rounded-md px-2 py-1 ${e.urgent ? 'bg-red-50 text-red-700 font-bold' : 'text-slate-700'}`}>
+                            <span className="text-xs text-slate-400 mr-1">{hhmm(e.at)}</span>
+                            {e.text}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <div className="mt-3 flex items-center justify-between">
                     <span className="font-bold text-slate-700">소리</span>
                     <button
@@ -355,6 +346,24 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
                   <p className="mt-2 text-xs leading-relaxed text-slate-400">이 탭이 뒤로 가거나 PC가 절전하면 브라우저가 페이지를 멈춰 소리·갱신이 멈출 수 있습니다. 칠판은 별도 창으로 띄워 두세요.</p>
                 </>
               )}
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                <span>
+                  <span className="block font-bold text-slate-700">칠판(보기 전용)</span>
+                  <span className="block text-xs leading-snug text-slate-400">카드 탭·수정·삭제를 막습니다. 스마트 칠판에서만 켜세요(이 기기에만 저장).</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setViewOnly(!viewOnly)}
+                  role="switch"
+                  aria-checked={viewOnly}
+                  className={`h-8 w-14 flex-shrink-0 rounded-full border text-xs font-bold ${viewOnly ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-slate-100 text-slate-500'}`}
+                >
+                  {viewOnly ? '켬' : '끔'}
+                </button>
+              </div>
+              <Link href="/dashboard/pen-test" onClick={closeMenu} className="mt-2 flex h-9 items-center justify-center rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50">
+                펜 입력 진단 (스마트 칠판 시험용)
+              </Link>
             </div>
           </>
         )}
