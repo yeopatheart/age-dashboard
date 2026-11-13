@@ -1,16 +1,17 @@
 'use client';
-import { useState, useRef, useLayoutEffect, useOptimistic, useSyncExternalStore, useTransition } from 'react';
+import { useState, useRef, useLayoutEffect, useMemo, useOptimistic, useSyncExternalStore, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, TriangleAlert, Truck } from 'lucide-react';
+import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Presentation, TriangleAlert, Truck } from 'lucide-react';
 import { businessIdsInBothRounds, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { DashboardMobile } from './dashboard-mobile';
-import { BOARD_VIEW_ONLY_KEY, DashboardSound } from './dashboard-sound';
+import { DashboardSound } from './dashboard-sound';
+import { InkLayer, type InkItem } from './ink-layer';
 import { useToast, useUndoToast } from '@/components/toast';
 import {
   setProductHighlight,
@@ -237,6 +238,8 @@ function productGridMinWidth(slotCount: number, nameColumn: number) {
 
 // 전체보기 위쪽 "품목별 수량" 카드를 접은 상태. 이 브라우저(PC·TV)마다 따로 기억한다 — 서버에는 저장하지 않는다.
 const SUMMARY_COLLAPSED_KEY = 'dash-summary-collapsed';
+// 칠판(보기 전용) 기기 스위치의 저장 키(이 브라우저에만 저장). 켜면 카드 탭·수정·삭제가 막히고 펜 플로팅 버튼이 나타난다. 툴바의 "칠판" 버튼이 켜고 끈다.
+const BOARD_VIEW_ONLY_KEY = 'board-view-only';
 // 툴바 터미널 칩의 [글자 px, 좌우 여백 px] 단계. 첫 단계가 기본이고 한 줄에 안 들어갈 때만 다음 단계로 줄인다.
 const TOOLBAR_CHIP_STEPS: [number, number][] = [[12, 8], [11, 6], [10, 5], [9, 4]];
 
@@ -761,15 +764,17 @@ export function DashboardClient({
   // 칠판(보기 전용) 기기: 스마트 칠판은 마우스처럼 정교하지 않아 카드를 만질 때마다 포장 체크가 바뀌거나 수정 버튼이 눌렸다(2026-11-14 현장).
   // 포장 체크·수정은 휴대폰이나 보기 전용을 끈 PC에서 한다. 실시간 알림(`board-mode`)과는 따로 둔다 — 형이 입력하는 PC에서도 소리 알림을
   // 켜고 쓰기 때문이다(2026-11-07 현장 확인). 알림 버튼의 설정 패널에서 기기별로 켠다. 휴대폰 화면에는 알림 컨트롤이 없어 켤 수 없다.
-  const [boardViewOnly] = useLocalFlag(BOARD_VIEW_ONLY_KEY);
+  const [boardViewOnly, setBoardViewOnly] = useLocalFlag(BOARD_VIEW_ONLY_KEY);
   const readOnly = boardViewOnly || (isPast && !allowPast) || !can('dashboard:edit');
   const [toastNode, showToast] = useToast();
   const [undoNode, showUndo] = useUndoToast();
 
   // 칠판 창의 `&sound=off`(그 창만 소리 끔)는 모니터·날짜를 바꿔도 유지한다.
   const soundOffParam = searchParams.get('sound') === 'off' ? '&sound=off' : '';
+  // 펜 시험 모드(`&ink=dry`)도 같은 방식으로 유지한다: 동그라미·대각선 인식 결과만 보여 주고 포장 상태는 바꾸지 않는다.
+  const inkDry = searchParams.get('ink') === 'dry';
   const dashboardUrl = (mode: string, date: string) =>
-    `/dashboard?monitor=${mode}${date === today ? '' : `&date=${date}`}${soundOffParam}`;
+    `/dashboard?monitor=${mode}${date === today ? '' : `&date=${date}`}${soundOffParam}${inkDry ? '&ink=dry' : ''}`;
   // 모니터 전환은 데이터가 그대로이고 배치만 바뀌므로 서버에 다시 요청하지 않는다 — 주소만 바꾸면
   // useSearchParams가 즉시 따라온다(날짜 변경은 다른 데이터라 router.push로 서버에서 다시 조회).
   const setMonitorMode = (mode: string) => window.history.pushState(null, '', dashboardUrl(mode, orderDate));
@@ -1085,6 +1090,17 @@ export function DashboardClient({
       if (error) showToast(error);
     });
   };
+  // 펜(동그라미·대각선)이 포장 완료로 올리거나 되돌리기가 해제할 때 쓴다. 이미 원하는 상태이거나 취소된 상품이면 아무것도 하지 않는다.
+  const handleSetPacked = (itemId: string, packed: boolean) => {
+    const item = items.find((i) => i.id === itemId);
+    if (!item || item.changeStatus === 'cancelled' || item.isPacked === packed) return;
+    handleTogglePacked(item);
+  };
+  // 펜 그림 층이 상품 칸을 판정할 때 쓰는 최소 정보(상품 id·포장 여부·취소 여부·시험 모드에 보일 이름).
+  const inkItems = useMemo<InkItem[]>(
+    () => items.map((i) => ({ id: i.id, isPacked: i.isPacked, cancelled: i.changeStatus === 'cancelled', label: `${i.businessName} ${i.productName}` })),
+    [items],
+  );
 
   // 취소는 확인 없이 바로 실행하되, 바로 뒤에 "되돌리기"를 보여 준다(오클릭 대비). 되돌리면 취소하기 전 상태로 돌아간다.
   const handleCancelItem = async (item: OrderItem) => {
@@ -1414,6 +1430,18 @@ export function DashboardClient({
               </>
             )}
           </div>
+          {/* 칠판 모드: 켜면 이 기기는 보기 전용이 되고(카드 탭·수정·삭제 막힘) 펜 플로팅 버튼이 나타난다. 강조 상품 버튼(형광펜 아이콘)과 헷갈리지 않게
+              칠판 아이콘에 "칠판" 글자를 붙이고, 켜지면 남색으로 채운다. 스마트 칠판에서만 켠다(이 기기에만 저장). */}
+          <button
+            onClick={() => setBoardViewOnly(!boardViewOnly)}
+            className={`h-8 px-2 inline-flex items-center gap-1 text-xs font-bold rounded-lg border transition-colors ${boardViewOnly ? 'bg-[#003057] border-[#003057] text-white hover:opacity-90' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-100'}`}
+            title={boardViewOnly ? '칠판 모드 켜짐 — 보기 전용입니다. 눌러서 끄기' : '칠판 모드 켜기 — 스마트 칠판용(보기 전용 + 펜)'}
+            aria-label="칠판 모드"
+            aria-pressed={boardViewOnly}
+          >
+            <Presentation className="w-4 h-4" />
+            <span>칠판</span>
+          </button>
           {/* 주문 추가와 엑셀 다운로드는 버튼 하나에서 고른다(보기 전용이면 다운로드만 나온다). */}
           <div className="relative">
             <button
@@ -1464,7 +1492,7 @@ export function DashboardClient({
 
       {effectiveMonitorMode === 'all' && summaryCard}
 
-      <div className="flex flex-1 min-h-0 gap-2">
+      <div className="relative flex flex-1 min-h-0 gap-2">
       <div
         className="flex-1 min-w-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden relative"
         // 모니터 1·2는 표 폭이 [고정 열 + 상품 열 수 × 최대 폭 + 테두리]를 넘지 않게 한다(열 폭 상한과 같은 기준).
@@ -1634,7 +1662,7 @@ export function DashboardClient({
 
                       return (
                         <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[1px] flex min-w-0">
-                          <div className={`relative w-full flex items-center justify-center px-1 rounded-lg border overflow-hidden ${bg} ${border} transition-all group shadow-sm`}>
+                          <div data-chip={item.id} className={`relative w-full flex items-center justify-center px-1 rounded-lg border overflow-hidden ${bg} ${border} transition-all group shadow-sm`}>
                             {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
                               <span
                                 className="absolute top-0 left-0 z-20 text-[9px] font-bold leading-none px-1 py-[2px] rounded-br bg-amber-500 text-white"
@@ -1716,6 +1744,10 @@ export function DashboardClient({
         </div>
       </div>
         {effectiveMonitorMode === '2' && productPanel}
+        {/* 칠판 펜: 칠판 모드를 켜고(보기 전용) 수정 권한이 있고 오늘(또는 과거 편집 허용)인 모니터 1·2에서만. 전체보기는 스크롤로 그림이 어긋나서 제외한다. */}
+        {boardViewOnly && isSplitMode && can('dashboard:edit') && !(isPast && !allowPast) && (
+          <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} />
+        )}
       </div>
 
       {separateOpen && (
