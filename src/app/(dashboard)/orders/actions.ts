@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { dailyKey } from '@/lib/business-lookup';
+import { assignBusinessNumber, dailyKey, separateTerminalIds } from '@/lib/business-lookup';
 import { colorComboKey, pickUnusedColor } from '@/lib/color-palette';
 import { loadAppSettings } from '@/lib/settings-server';
 import { editableDateError } from '@/lib/order-date';
@@ -499,10 +499,10 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
     for (const d of existing ?? []) dailyIdByKey.set(dailyKey(d.business_id, d.terminal_id), d.id);
 
     const rowsToCreate: { order_date: string; business_id: string; business_number: number; round: OrderRound; terminal_id: string | null }[] = [];
+    const separateIds = await separateTerminalIds(supabase, cardKeys.map((r) => r.terminalId));
     for (const card of cardKeys) {
       if (dailyIdByKey.has(card.key)) continue;
-      const { data: businessNumber, error: numberError } = await supabase.rpc('assign_business_number', { p_order_date: orderDate });
-      if (numberError || businessNumber === null) throw new Error(`업체 번호 발급 실패: ${numberError?.message ?? '응답 없음'}`);
+      const businessNumber = await assignBusinessNumber(supabase, orderDate, card.terminalId !== null && separateIds.has(card.terminalId));
       rowsToCreate.push({ order_date: orderDate, business_id: card.businessId, business_number: businessNumber, round, terminal_id: card.terminalId });
     }
     if (rowsToCreate.length > 0) {
