@@ -1557,32 +1557,39 @@ export function DashboardClient({
                         row.businessNumber
                       )}
                     </div>
-                    <div className="border-r border-slate-100 px-2 flex items-center justify-center">
-                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>
+                    {/* 줄에 마우스를 올리면(또는 키보드로 포커스하면) 터미널 칩이 주문 수정·삭제 버튼으로 바뀐다 — 번호 칸이 끌기 아이콘으로 바뀌는 것과 같은 방식.
+                        고객명 칸에는 아무것도 겹치지 않는다(이름은 절대 가려지면 안 된다, 2026-11-14). 칠판(보기 전용)·수정 권한 없음은 칩만 보인다. */}
+                    <div className="relative border-r border-slate-100 px-2 flex items-center justify-center">
+                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${readOnly ? '' : 'group-hover/row:invisible group-focus-within/row:invisible'} ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>
                         {row.terminal || '-'}
                       </span>
+                      {!readOnly && (
+                        <div className="absolute inset-0 flex items-center justify-center gap-1.5 opacity-0 pointer-events-none group-hover/row:opacity-100 group-hover/row:pointer-events-auto group-focus-within/row:opacity-100 group-focus-within/row:pointer-events-auto transition-opacity">
+                          <button
+                            onClick={() => setEditOrderModal(row)}
+                            className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-600 flex items-center justify-center flex-shrink-0"
+                            title="주문 수정"
+                            aria-label={`${row.businessName} 주문 수정`}
+                          >
+                            <Pencil className="w-3 h-3 text-slate-500 hover:text-white" />
+                          </button>
+                          {canDelete && (
+                            <button
+                              onClick={() => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
+                              className="w-6 h-6 rounded bg-rose-100 hover:bg-rose-500 flex items-center justify-center flex-shrink-0"
+                              title="주문 삭제"
+                              aria-label={`${row.businessName} 주문 삭제`}
+                            >
+                              <Trash2 className="w-3 h-3 text-rose-500 hover:text-white" />
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className={`relative border-r border-slate-100 px-2 flex items-center group overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : ''}`}>
-                      {/* 업체명은 현장에서 정확히 보여야 하므로 말줄임 없이 전체 폭을 쓰고(최대 2줄, 행 높이 고정),
-                          수정/삭제 버튼은 마우스를 올릴 때만 이름 위에 겹쳐 나타난다. */}
+                    <div className={`relative border-r border-slate-100 px-2 flex items-center overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : ''}`}>
+                      {/* 업체명은 현장에서 정확히 보여야 하므로 말줄임 없이 전체 폭을 쓴다(최대 2줄, 행 높이 고정). */}
                       <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
-                      <div className={`absolute inset-y-0 right-0 pl-4 pr-1 flex items-center gap-1 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity bg-gradient-to-l from-white via-white to-transparent`}>
-                      <button
-                        onClick={() => setEditOrderModal(row)}
-                        className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-600 flex items-center justify-center flex-shrink-0"
-                        title="주문 수정"
-                      >
-                        <Pencil className="w-2.5 h-2.5 text-slate-500 hover:text-white" />
-                      </button>
-                      {canDelete && <button
-                        onClick={() => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
-                        className="w-5 h-5 rounded bg-rose-100 hover:bg-rose-500 flex items-center justify-center flex-shrink-0"
-                        title="주문 삭제"
-                      >
-                        <Trash2 className="w-2.5 h-2.5 text-rose-500 hover:text-white" />
-                      </button>}
-                      </div>
                     </div>
                     {/* 박스 구성을 정한 뒤 주문이 바뀌면 이 칸이 붉게 바뀌고 경고 아이콘이 붙는다. 고객명 칸에는 아무것도 붙이지 않는다(이름은 절대 가려지면 안 된다, 2026-11-14). */}
                     <div
