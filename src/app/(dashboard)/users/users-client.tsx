@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { KeyRound, Pencil, ShieldCheck, Trash2, UserPlus, X } from 'lucide-react';
 import { AdminHeader } from '@/components/admin/admin-kit';
 import { MENU_DEFS, MENU_KEYS, permissionKeysOf, type MenuKey } from '@/lib/permissions/catalog';
+import { passwordConfirmError } from '@/lib/password-check';
 import { createUser, deleteUser, savePermissions, updateUser } from './actions';
 
 export interface UserRow {
@@ -160,8 +161,11 @@ function UserModal({ mode, user, onClose, onDone }: { mode: 'create' | 'edit'; u
   const [email, setEmail] = useState(user?.email ?? '');
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 일치 여부는 현재 입력값에서 바로 계산해 확인 칸 아래 한 곳에만 보여 준다(확인 칸을 입력하기 전에는 띄우지 않는다. 비워 둔 채 저장은 칸의 required가 막는다).
+  const confirmMismatch = passwordConfirmError(password, passwordConfirm);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -171,15 +175,16 @@ function UserModal({ mode, user, onClose, onDone }: { mode: 'create' | 'edit'; u
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setBusy(true);
     setError(null);
+    if (confirmMismatch) return;
+    setBusy(true);
     if (mode === 'create') {
-      const result = await createUser({ email, password, displayName });
+      const result = await createUser({ email, password, passwordConfirm, displayName });
       setBusy(false);
       if (result.error) return setError(result.error);
       onDone('사용자를 등록했습니다. 오른쪽에서 권한을 설정하세요.', result.userId);
     } else if (user) {
-      const result = await updateUser(user.id, { displayName, password });
+      const result = await updateUser(user.id, { displayName, password, passwordConfirm });
       setBusy(false);
       if (result.error) return setError(result.error);
       onDone('사용자 정보를 수정했습니다.', null);
@@ -205,6 +210,11 @@ function UserModal({ mode, user, onClose, onDone }: { mode: 'create' | 'edit'; u
           <div className="ak-field">
             <label><KeyRound size={12} style={{ display: 'inline', verticalAlign: '-1px' }} /> {mode === 'create' ? '비밀번호 (8자 이상)' : '새 비밀번호 (바꿀 때만, 8자 이상)'}</label>
             <input className="ak-input" type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required={mode === 'create'} />
+          </div>
+          <div className="ak-field">
+            <label><KeyRound size={12} style={{ display: 'inline', verticalAlign: '-1px' }} /> 비밀번호 확인 (한 번 더 입력)</label>
+            <input className="ak-input" type="password" autoComplete="new-password" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} required={mode === 'create' || password !== ''} aria-invalid={passwordConfirm !== '' && confirmMismatch !== null} />
+            {passwordConfirm && (confirmMismatch ? <p className="ak-error" role="alert" style={{ fontSize: '0.8125rem' }}>{confirmMismatch}</p> : <p className="ak-muted" style={{ fontSize: '0.8125rem' }}>비밀번호가 일치합니다.</p>)}
           </div>
           {error && <p className="ak-error" role="alert">{error}</p>}
           {mode === 'create' && <p className="ak-muted" style={{ fontSize: '0.8125rem' }}>새 사용자는 권한이 없는 상태로 시작합니다. 등록 후 오른쪽에서 열어 줄 메뉴를 고르세요.</p>}
