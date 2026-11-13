@@ -68,6 +68,8 @@ type Product = {
 type OrderDayCounter = {
   order_date: string;
   next_business_number: number;
+  // 별도 주문 번호 카운터(0056). 일반 주문은 1~500, 별도 주문은 501부터.
+  next_separate_number: number;
 };
 
 // 하루 안에서 업체 하나가 갖는 "카드". business_number는 append-only로
@@ -403,7 +405,7 @@ export type Database = {
       >;
       order_day_counters: TableDef<
         OrderDayCounter,
-        Pick<OrderDayCounter, "order_date"> & { next_business_number?: number }
+        Pick<OrderDayCounter, "order_date"> & { next_business_number?: number; next_separate_number?: number }
       >;
       daily_businesses: TableDef<
         DailyBusiness,
@@ -592,6 +594,10 @@ export type Database = {
     Views: Record<string, never>;
     Functions: {
       assign_business_number: {
+        Args: { p_order_date: string };
+        Returns: number;
+      };
+      assign_separate_business_number: {
         Args: { p_order_date: string };
         Returns: number;
       };
