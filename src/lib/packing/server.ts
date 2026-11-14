@@ -99,14 +99,21 @@ async function loadTrainingRecords(supabase: Client, beforeDate: string): Promis
     .filter((r) => r.boxes.length > 0);
 }
 
+let cachedModel: { version: string; model: PackingModel } | null = null;
+
 // 오늘 모델 버전을 돌려준다. 오늘 버전이 아직 없으면 어제까지의 제출 기록으로 새로 학습해 저장한다
 // ("그날 첫 접속 시 자동 갱신"). 학습은 기록 수백 건 규모에서 수십 ms라 접속을 느리게 하지 않는다.
 // 오늘 제출된 기록은 포함하지 않는다 — 하루 동안 추천이 흔들리지 않고, 오늘의 정답이 오늘의 추천에 새지 않는다.
 export async function getTodayModel(supabase: Client, today: string): Promise<PackingModel | null> {
   const version = `v-${today}`;
+  // 한 버전의 모델은 처음 저장된 뒤 바뀌지 않으므로(먼저 저장된 것이 이긴다) 서버 인스턴스의 메모리에 둔다.
+  // 모델은 학습 사례가 담겨 이력에 비례해 커지는 JSON이라, 추천이 필요할 때마다 DB에서 통째로 다시 받지 않게 한다.
+  if (cachedModel?.version === version) return cachedModel.model;
   const read = async () => {
     const { data } = await supabase.from('packing_model_versions').select('model').eq('version', version).maybeSingle();
-    return data && isPackingModel(data.model) ? data.model : null;
+    const model = data && isPackingModel(data.model) ? data.model : null;
+    if (model) cachedModel = { version, model }; // DB에 저장된 것만 기억한다(저장에 실패한 임시 모델은 기억하지 않는다)
+    return model;
   };
   const existing = await read();
   if (existing) return existing;

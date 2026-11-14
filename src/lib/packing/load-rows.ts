@@ -14,9 +14,8 @@ import { todayKST } from '@/lib/order-date';
 // onlyDailyId를 주면 그 카드의 주문·제출 기록·추천·라벨만 읽는다(미제출이고 추천이 없으면 그 카드의 추천만 만든다).
 export async function loadPackingRows(supabase: SupabaseClient<Database>, orderDate: string, onlyDailyId?: string) {
   // 1단계: 서로 의존하지 않는 조회를 한 번에 보낸다.
-  const [{ data: dailies, error: dailyError }, businesses, { data: terminals }, { data: boxes }, products, settings] = await Promise.all([
+  const [{ data: dailies, error: dailyError }, { data: terminals }, { data: boxes }, products, settings] = await Promise.all([
     supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id, display_name, merge_groups').eq('order_date', orderDate).order('sort_order'),
-    fetchAll((from, to) => supabase.from('businesses').select('id, name').order('id').range(from, to), '업체 조회 실패: '),
     supabase.from('terminals').select('id, name, is_parcel'),
     supabase.from('boxes').select('id, name, is_active, inner_width_cm, inner_depth_cm, inner_height_cm, is_mulbong_box').order('name'),
     fetchAll((from, to) => supabase.from('products').select('name, needs_mulbong').order('id').range(from, to), '상품 조회 실패: '),
@@ -28,8 +27,9 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
   const dailyRows = onlyDailyId ? allDailyRows.filter((d) => d.id === onlyDailyId) : allDailyRows;
   const dailyIds = dailyRows.map((d) => d.id);
 
-  // 2단계: 오늘 카드의 주문 줄과 제출 기록.
-  const [{ data: items }, { data: records, error: recordError }] = dailyIds.length
+  // 2단계: 오늘 카드의 주문 줄과 제출 기록, 그리고 이 카드들의 업체 이름(업체 전체 목록은 읽지 않는다).
+  const businessIds = [...new Set(dailyRows.map((d) => d.business_id))];
+  const [{ data: items }, { data: records, error: recordError }, { data: businesses, error: businessError }] = dailyIds.length
     ? await Promise.all([
         selectAll((from, to) => supabase
           .from('order_items')
@@ -37,11 +37,13 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
           .in('daily_business_id', dailyIds)
           .order('product_sequence').order('id').range(from, to), '주문 줄 조회 실패: '),
         supabase.from('packing_records').select('id, daily_business_id, submitted_at, order_signature').in('daily_business_id', dailyIds),
+        supabase.from('businesses').select('id, name').in('id', businessIds),
       ])
-    : [{ data: [] }, { data: [], error: null }];
+    : [{ data: [] }, { data: [], error: null }, { data: [], error: null }];
   if (recordError) throw new Error(`박스 할당 조회 실패: ${recordError.message}`);
+  if (businessError) throw new Error(`업체 조회 실패: ${businessError.message}`);
 
-  const businessById = new Map(businesses.map((b) => [b.id, b]));
+  const businessById = new Map((businesses ?? []).map((b) => [b.id, b]));
   const terminalById = new Map((terminals ?? []).map((t) => [t.id, t.name]));
   const parcelTerminalIds = new Set((terminals ?? []).filter((t) => t.is_parcel).map((t) => t.id));
   const needsMulbong = new Map(products.map((p) => [p.name, p.needs_mulbong]));
@@ -49,9 +51,18 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
 
   // 박스 추천: 미제출 업체의 현재 주문에 대한 추천이 없으면 오늘 모델로 만들어 저장한다.
   const boxByName = new Map((boxes ?? []).map((b) => [b.name, { id: b.id, name: b.name, is_mulbong_box: b.is_mulbong_box }]));
+  // 주문 줄을 카드별로 한 번만 묶는다(카드마다 전체 줄을 다시 훑지 않는다).
+  const itemList = items ?? [];
+  const itemsByDaily = new Map<string, (typeof itemList)[number][]>();
+  for (const i of itemList) {
+    const list = itemsByDaily.get(i.daily_business_id);
+    if (list) list.push(i);
+    else itemsByDaily.set(i.daily_business_id, [i]);
+  }
+  const itemsOf = (dailyId: string) => itemsByDaily.get(dailyId) ?? [];
   const liveItemsOf = (dailyId: string): LiveOrderItem[] =>
-    (items ?? [])
-      .filter((i) => i.daily_business_id === dailyId && i.change_status !== 'cancelled' && Number(i.quantity) - Number(i.unshipped_quantity ?? 0) > 0)
+    itemsOf(dailyId)
+      .filter((i) => i.change_status !== 'cancelled' && Number(i.quantity) - Number(i.unshipped_quantity ?? 0) > 0)
       .map((i) => ({
         id: i.id,
         name: i.product_name_raw,
@@ -72,7 +83,25 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
       : { data: [] };
     return { packedBoxes: packedBoxes ?? [], packedItems: packedItems ?? [] };
   };
-  const [{ packedBoxes, packedItems }, recommendations] = await Promise.all([
+  // 라벨 출력 여부: 제출한 업체 카드의 박스 라벨 중 출력 이력이 있는 순번. 카드 안 라벨 영역과 같은 기준(box_labels + 'print' 이력)이다.
+  // 제출 기록만 있으면 읽을 수 있으므로 박스 상세·추천과 같이 보낸다(예전에는 그 뒤에 두 단계를 더 기다렸다).
+  const submittedDailyIds = dailyRows.filter((d) => recordByDaily.has(d.id)).map((d) => d.id);
+  const loadLabels = async () => {
+    const labelRows = await mapChunks(submittedDailyIds, 100, async (chunk) => {
+      const { data, error } = await supabase.from('box_labels').select('id, daily_business_id, seq').in('daily_business_id', chunk).limit(5000);
+      if (error) throw new Error(`라벨 조회 실패: ${error.message}`);
+      return data ?? [];
+    });
+    const printedLabelIds = new Set(
+      await mapChunks(labelRows.map((l) => l.id), 100, async (chunk) => {
+        const { data, error } = await supabase.from('box_label_events').select('label_id').eq('event', 'print').in('label_id', chunk).limit(5000);
+        if (error) throw new Error(`라벨 출력 이력 조회 실패: ${error.message}`);
+        return (data ?? []).map((e) => e.label_id);
+      }),
+    );
+    return { labelRows, printedLabelIds };
+  };
+  const [{ packedBoxes, packedItems }, recommendations, { labelRows, printedLabelIds }] = await Promise.all([
     loadPacked(),
     dailyRows.length
       ? ensureRecommendations(
@@ -82,22 +111,9 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
           boxByName,
         )
       : Promise.resolve(new Map<string, RecommendationState>()),
+    loadLabels(),
   ]);
 
-  // 라벨 출력 여부: 제출한 업체 카드의 박스 라벨 중 출력 이력이 있는 순번. 카드 안 라벨 영역과 같은 기준(box_labels + 'print' 이력)이다.
-  const submittedDailyIds = dailyRows.filter((d) => recordByDaily.has(d.id)).map((d) => d.id);
-  const labelRows = await mapChunks(submittedDailyIds, 100, async (chunk) => {
-    const { data, error } = await supabase.from('box_labels').select('id, daily_business_id, seq').in('daily_business_id', chunk).limit(5000);
-    if (error) throw new Error(`라벨 조회 실패: ${error.message}`);
-    return data ?? [];
-  });
-  const printedLabelIds = new Set(
-    await mapChunks(labelRows.map((l) => l.id), 100, async (chunk) => {
-      const { data, error } = await supabase.from('box_label_events').select('label_id').eq('event', 'print').in('label_id', chunk).limit(5000);
-      if (error) throw new Error(`라벨 출력 이력 조회 실패: ${error.message}`);
-      return (data ?? []).map((e) => e.label_id);
-    }),
-  );
   const printedSeqsByDaily = new Map<string, number[]>();
   for (const l of labelRows) if (printedLabelIds.has(l.id)) printedSeqsByDaily.set(l.daily_business_id, [...(printedSeqsByDaily.get(l.daily_business_id) ?? []), l.seq]);
 
@@ -112,9 +128,9 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
       businessName: d.display_name ?? business?.name ?? '',
       terminal: d.terminal_id ? terminalById.get(d.terminal_id) ?? '' : '',
       parcel: !!d.terminal_id && parcelTerminalIds.has(d.terminal_id),
-      items: (items ?? [])
+      items: itemsOf(d.id)
         // 미출고 수량은 박스에 담을 대상이 아니므로 뺀다(전량 미출고면 상품 자체를 제외).
-        .filter((i) => i.daily_business_id === d.id && i.change_status !== 'cancelled' && Number(i.quantity) - Number(i.unshipped_quantity ?? 0) > 0)
+        .filter((i) => i.change_status !== 'cancelled' && Number(i.quantity) - Number(i.unshipped_quantity ?? 0) > 0)
         .map((i) => ({
           id: i.id,
           name: i.product_name_raw,
@@ -128,12 +144,12 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
           orderMulbong: i.is_mulbong && !i.has_aerator,
         })),
       // 박스에 담을 대상이 아니라 위 목록에서 빠진 상품(수량 미정·전량 미출고). 화면이 안내한다.
-      excludedItems: (items ?? []).flatMap((i) => {
-        if (i.daily_business_id !== d.id || i.change_status === 'cancelled') return [];
+      excludedItems: itemsOf(d.id).flatMap((i) => {
+        if (i.change_status === 'cancelled') return [];
         const reason = excludedReason(Number(i.quantity), i.unit, Number(i.unshipped_quantity ?? 0));
         return reason ? [{ name: i.product_name_raw, reason }] : [];
       }),
-      cancelled: (items ?? []).some((i) => i.daily_business_id === d.id) && (items ?? []).filter((i) => i.daily_business_id === d.id).every((i) => i.change_status === 'cancelled'),
+      cancelled: itemsOf(d.id).length > 0 && itemsOf(d.id).every((i) => i.change_status === 'cancelled'),
       mergeGroups: normalizeMergeGroups(d.merge_groups),
       recommendation: recommendations.get(d.id)?.current ?? null,
       // 택배 터미널과 미제출 업체는 라벨 표시를 하지 않는다.
