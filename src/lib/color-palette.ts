@@ -66,3 +66,35 @@ export function pickUnusedColor(used: Set<string>): { fill_color: string; border
 }
 
 export const colorComboKey = (fill: string | null, border: string | null) => `${fill}|${border}`;
+
+// 밝은 파스텔이 눈부시지 않게 채도·밝기를 낮춘 색(주문 목록 톤다운, 2026-11-14).
+// 예전에는 칩마다 CSS filter: saturate(0.75) brightness(0.96)를 걸었는데, 필터가 걸린 요소는 따로 그려져서 칩이 많은 칠판(약한 GPU)에서 부담이 컸다.
+// 같은 결과를 색 값으로 미리 계산해서 필터 없이 쓴다. 계산은 CSS 필터와 같다: saturate는 휘도 행렬(0.213·0.715·0.072), brightness는 곱셈.
+const SOFT_SATURATE = 0.75;
+const SOFT_BRIGHTNESS = 0.96;
+const softCache = new Map<string, string>();
+
+export function softenHex(hex: string): string {
+  const cached = softCache.get(hex);
+  if (cached) return cached;
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const s = SOFT_SATURATE;
+  const lum = (v: number) => Math.round(Math.min(255, Math.max(0, v * SOFT_BRIGHTNESS)));
+  const out = [
+    (0.213 + 0.787 * s) * r + (0.715 - 0.715 * s) * g + (0.072 - 0.072 * s) * b,
+    (0.213 - 0.213 * s) * r + (0.715 + 0.285 * s) * g + (0.072 - 0.072 * s) * b,
+    (0.213 - 0.213 * s) * r + (0.715 - 0.715 * s) * g + (0.072 + 0.928 * s) * b,
+  ].map(lum);
+  const result = `#${out.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  softCache.set(hex, result);
+  return result;
+}
+
+export function softenColors(c: { fill: string; border: string; text: string }) {
+  return { fill: softenHex(c.fill), border: softenHex(c.border), text: softenHex(c.text) };
+}

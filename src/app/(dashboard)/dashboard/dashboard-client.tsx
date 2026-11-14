@@ -6,7 +6,7 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { Check, GripVertical, Plus, Pencil, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PenLine, TriangleAlert, Truck } from 'lucide-react';
 import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, productDelta, formatDelta, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
-import { resolveColors } from '@/lib/color-palette';
+import { resolveColors, softenColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { DashboardMobile } from './dashboard-mobile';
@@ -323,7 +323,7 @@ const STATUS_LABEL: Record<ChangeStatus, string> = {
 // ─── Modal wrapper (Figma Dashboard.tsx 포팅) ──────────────────────────────────
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-[70] flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-slate-900/40 z-[70] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl" style={{ backgroundColor: 'var(--soft-head, #003057)' }}>
           <h3 className="text-sm font-bold text-white tracking-wide">{title}</h3>
@@ -1364,8 +1364,8 @@ export function DashboardClient({
 
   // 품목별 수량: 모니터 2는 오른쪽 세로 패널, 전체보기(모바일 포함)는 표 위 카드로 보여준다.
   const chipStyle = (name: string): React.CSSProperties => {
-    const c = resolveColors(productColors[name]?.fill, productColors[name]?.border);
-    return { backgroundColor: c.fill, borderColor: c.border, color: c.text, filter: 'saturate(0.75) brightness(0.96)' }; // 밝은 파스텔이 눈부시지 않게 채도·밝기를 낮춘다
+    const c = softenColors(resolveColors(productColors[name]?.fill, productColors[name]?.border));
+    return { backgroundColor: c.fill, borderColor: c.border, color: c.text }; // 밝은 파스텔이 눈부시지 않게 채도·밝기를 낮춘다
   };
   // 상품 칩을 누르면 그 옆에 이 상품을 주문한 고객사 목록(플로팅)을 연다. 목록은 매번 최신 items로 계산한다.
   const [customerPanel, setCustomerPanel] = useState<{ dailyBusinessId: string; anchor: { left: number; top: number; right: number; bottom: number } } | null>(null);
@@ -1947,7 +1947,7 @@ export function DashboardClient({
 
                       return (
                         <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[1px] flex min-w-0">
-                          <div data-chip={item.id} className={`relative w-full flex items-center justify-start px-1.5 rounded-lg border overflow-hidden ${bg} ${border} transition-all group shadow-sm`}>
+                          <div data-chip={item.id} className={`relative w-full flex items-center justify-start px-1.5 rounded-lg border overflow-hidden ${bg} ${border} group shadow-sm`}>
                             {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
                               <span
                                 className="absolute top-0 left-0 z-20 text-[9px] font-bold leading-none px-1 py-[2px] rounded-br bg-amber-500 text-white"
@@ -2005,7 +2005,7 @@ export function DashboardClient({
       </div>
 
       {separateOpen && (
-        <div className="fixed inset-0 z-[60] overflow-hidden overscroll-contain bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4" onClick={() => setSeparateOpen(false)}>
+        <div className="fixed inset-0 z-[60] overflow-hidden overscroll-contain bg-slate-900/40 flex items-center justify-center p-4" onClick={() => setSeparateOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[88vh] flex flex-col border border-slate-200" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl flex-shrink-0" style={{ backgroundColor: 'var(--soft-head, #003057)' }}>
               <h3 className="text-sm font-bold text-white tracking-wide">별도 주문 ({separateRows.length}) — {[...separateNames].join(', ')}</h3>

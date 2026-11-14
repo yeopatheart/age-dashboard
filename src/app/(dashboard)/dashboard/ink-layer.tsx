@@ -249,8 +249,10 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     if (!canvas || !ctx) return;
     clearCanvas(ctx);
     const layer = canvas.getBoundingClientRect();
-    const boxes = chipBoxes(canvas);
-    for (const stroke of stateRef.current.strokes) {
+    // 상품 칸에 붙은 획이 하나라도 있을 때만 칸 위치를 잰다(칸마다 위치를 재는 것은 강제 레이아웃이라, 낙서뿐일 때는 건너뛴다).
+    const strokes = stateRef.current.strokes;
+    const boxes = strokes.some((stroke) => stroke.anchor !== undefined) ? chipBoxes(canvas) : new Map<string, Box>();
+    for (const stroke of strokes) {
       const points = resolvePoints(stroke, { width: layer.width, height: layer.height }, stroke.anchor !== undefined ? boxes.get(stroke.anchor) ?? null : undefined);
       if (!points || points.length < 2) continue; // 붙은 상품 칸이 지금 화면에 없으면 그리지 않고 보관만 한다
       ctx.strokeStyle = stroke.color;
@@ -284,11 +286,20 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     });
     observer.observe(canvas);
     // 안쪽 목록이 스크롤되면(별도 주문 팝업) 상품 칸이 움직이므로 상품 칸에 붙은 획을 다시 그린다.
+    // 스크롤 이벤트는 프레임보다 자주 오므로 프레임당 한 번만 다시 그리게 모은다(이벤트마다 상태를 바꾸면 그때마다 전체를 다시 그렸다).
     const parent = canvas.parentElement;
-    const onScroll = () => setLayoutTick((t) => t + 1);
+    let scrollFrame = 0;
+    const onScroll = () => {
+      if (scrollFrame) return;
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = 0;
+        setLayoutTick((t) => t + 1);
+      });
+    };
     parent?.addEventListener('scroll', onScroll, true);
     return () => {
       observer.disconnect();
+      cancelAnimationFrame(scrollFrame);
       parent?.removeEventListener('scroll', onScroll, true);
     };
   }, []);
