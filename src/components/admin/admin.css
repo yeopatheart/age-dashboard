@@ -148,11 +148,15 @@ select.ak-input { padding-right: 2.25rem; }
 .st-sheet td { padding: 0 0.2rem; height: 2.5rem; }
 .st-sheet th { padding: 0 0.6rem; }
 .st-sheet th.ak-check, .st-sheet td.ak-check { padding-left: 0.75rem; }
-.st-sheet th:nth-child(2) { width: 26%; } /* 품목 */
-.st-sheet th:nth-child(3) { width: 9%; } /* 수량 */
-.st-sheet th:nth-child(4) { width: 7%; } /* 단위 */
-.st-sheet th:nth-child(5) { width: 13%; } /* 단가 */
-.st-sheet th:nth-child(6) { width: 14%; } /* 판매가 */
+.st-sheet th:nth-child(2) { width: 17%; } /* 품목 */
+.st-sheet th:nth-child(3) { width: 7%; } /* 수량 */
+.st-sheet th:nth-child(4) { width: 5%; } /* 단위 */
+.st-sheet th:nth-child(5) { width: 9%; } /* 단가 */
+.st-sheet th:nth-child(6) { width: 10%; } /* 판매가 */
+.st-sheet th:nth-child(7) { width: 11%; } /* 매입처 */
+.st-sheet th:nth-child(8) { width: 9%; } /* 매입단가 */
+.st-sheet th:nth-child(9) { width: 10%; } /* 매입가 */
+.st-sheet th:nth-child(10) { width: 8%; } /* 수익 */
 .st-sheet th:last-child { width: 1%; }
 .st-cell { width: 100%; min-width: 4.5rem; height: 2.1rem; border: 1px solid transparent; border-radius: var(--radius-input); background: transparent; padding: 0 0.45rem; font: inherit; font-size: var(--input-fs, var(--fs-md)); color: var(--foreground); outline: none; }
 .st-cell:hover:not(:disabled) { border-color: var(--border); }
@@ -160,9 +164,14 @@ select.ak-input { padding-right: 2.25rem; }
 .st-cell.is-num { text-align: right; font-variant-numeric: tabular-nums; }
 .st-cell.is-edited { background: #fffbeb; }
 .st-cell.is-auto { color: var(--muted-foreground); }
-.st-sheet td:nth-child(2) .st-cell { min-width: 9rem; font-weight: 600; }
-.st-sheet td:nth-child(4) .st-cell { min-width: 3.5rem; }
-.st-sheet td:nth-child(7) .st-cell { min-width: 10rem; }
+.st-sheet td:nth-child(2) .st-cell { min-width: 8rem; font-weight: 600; }
+.st-sheet td:nth-child(4) .st-cell { min-width: 3.2rem; }
+.st-sheet td:nth-child(7) .st-cell { min-width: 6.5rem; }
+.st-sheet td:nth-child(11) .st-cell { min-width: 8rem; }
+.st-prices, .st-suppliers { display: flex; flex-direction: column; gap: var(--space-inner); }
+.st-price-table td, .st-supplier-table td { height: 2.4rem; }
+.st-price-table td:nth-child(3) .st-cell, .st-price-table td:nth-child(5) .st-cell { min-width: 6rem; }
+.st-price-table td:nth-child(4) .st-cell { min-width: 9rem; }
 .st-group td { background: #f1f5f9; height: auto; padding-top: 0.35rem; padding-bottom: 0.35rem; border-top: 1px solid var(--border); }
 .st-group-inner { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: var(--fs-sm); padding: 0 0.4rem; }
 .st-group-name { font-size: var(--fs-md); }

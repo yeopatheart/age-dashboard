@@ -5,7 +5,7 @@ import { todayKST } from '@/lib/order-date';
 import { migrationsFor, rowsOrMissing } from '@/lib/supabase/missing-table';
 import { MigrationNotice } from '@/components/migration-notice';
 import { buildPurchaseRows } from '@/lib/settlement/purchases';
-import { loadSalesRows, loadStoredPurchases } from '@/lib/settlement/server';
+import { loadSalesRows, loadSupplierPayments } from '@/lib/settlement/server';
 import { bucketsOf } from '@/lib/reports/buckets';
 import { groupReview, byCustomer as inputByCustomer, byProduct as inputByProduct, byTerminal as inputByTerminal, inputSummary, inputTrend, reviewReasons } from '@/lib/reports/input-quality';
 import { groupLabels, labelSummary, labelTrend } from '@/lib/reports/label-quality';
@@ -74,17 +74,17 @@ export default async function OpsReportPage({ searchParams }: { searchParams: Pr
     return <OpsReportClient {...base} label={{ summary: labelSummary(recs), trend: labelTrend(recs, buckets, granularity), groups: groupLabels(recs) }} />;
   }
 
-  const [sales, stored, purchaseTimes] = await Promise.all([
+  const [sales, payments, purchaseTimes] = await Promise.all([
     rowsOrMissing(loadSalesRows(supabase, period.from, period.to)),
-    rowsOrMissing(loadStoredPurchases(supabase, period.from, period.to)),
+    loadSupplierPayments(supabase, period.from, period.to),
     rowsOrMissing(loadPurchaseInputTimes(supabase, period.from, period.to).then((m) => [...m])),
   ]);
-  // 정산 마이그레이션(0042·0043·0044)이 없으면 운영 화면이 서버 오류로 죽으므로 안내를 보여 준다.
-  const missing = [sales.missing, stored.missing, purchaseTimes.missing].filter((x): x is string => !!x);
+  // 정산 마이그레이션(0042·0043)이 없으면 운영 화면이 서버 오류로 죽으므로 안내를 보여 준다.
+  const missing = [sales.missing, purchaseTimes.missing].filter((x): x is string => !!x);
   if (missing.length > 0) return <MigrationNotice feature="정산 마감 리포트" migrations={migrationsFor(missing)} />;
 
   const salesTimes = await loadSalesInputTimes(supabase, sales.rows.filter((r) => r.price !== null).map((r) => r.itemId));
-  const purchaseRows = buildPurchaseRows(sales.rows, stored.rows);
+  const purchaseRows = buildPurchaseRows(sales.rows, payments ?? new Set());
   const purchaseTimeMap = new Map(purchaseTimes.rows);
   const saleLites = sales.rows.map((r) => ({ orderDate: r.orderDate, customer: r.customer, price: r.price, paid: r.paid }));
   const purchaseLites = purchaseRows.map((r) => ({ orderDate: r.orderDate, product: r.product, price: r.price, paid: r.paid, salesCount: r.salesCount }));

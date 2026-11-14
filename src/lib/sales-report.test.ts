@@ -7,10 +7,10 @@ import type { SalesRow } from './settlement/sales.ts';
 
 const sale = (over: Partial<SalesRow>): SalesRow => ({
   itemId: 'i', cardId: 'c', orderDate: '2026-11-09', customer: '바다횟집', terminal: '대구', secondaryWeightKg: null, product: '활전갱이', quantity: 3, unit: '미',
-  original: { product: '활전갱이', quantity: 3, unit: '미' }, edited: false, sellerId: null, price: 30000, unitPrice: null, paid: false, memo: '', ...over,
+  original: { product: '활전갱이', quantity: 3, unit: '미' }, edited: false, sellerId: null, price: 30000, unitPrice: null, unitPriceOwn: null, priceOwn: null, supplierOwn: null, purchaseUnitOwn: null, purchaseOwn: null, supplierId: null, purchaseUnitPrice: null, purchasePrice: null, paid: false, memo: '', ...over,
 });
 const purchase = (over: Partial<PurchaseRow>): PurchaseRow => ({
-  key: 'k', orderDate: '2026-11-09', product: '활전갱이', sellerId: null, supplierId: null, price: 20000, paid: false, memo: '', salesTotal: 30000, salesCount: 1, salesPriced: 1, ...over,
+  key: 'k', orderDate: '2026-11-09', product: '활전갱이', price: 20000, paid: false, salesTotal: 30000, salesCount: 1, salesPriced: 1, ...over,
 });
 
 test('csvCell: 따옴표 이스케이프, 숫자는 그대로, 수식 시작 글자는 막는다', () => {

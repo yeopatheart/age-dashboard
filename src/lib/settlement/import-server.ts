@@ -2,27 +2,12 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
-import { fetchAll } from '@/lib/supabase/fetch-all';
-import { rowsOrMissing, valueOrMissing } from '@/lib/supabase/missing-table';
-import { loadSalesAndCards, loadShippingRows, loadStoredPurchases, loadSupplierDirectory } from './server';
-import { buildPurchaseRows } from './purchases';
+import { valueOrMissing } from '@/lib/supabase/missing-table';
+import { loadSalesAndCards, loadShippingRows } from './server';
 import type { ImportContext } from './excel-import';
 
 export async function loadImportContext(supabase: SupabaseClient<Database>, date: string): Promise<ImportContext> {
-  const [{ rows: sales, doneCards }, sellers, stored, directory] = await Promise.all([
-    loadSalesAndCards(supabase, date, date),
-    fetchAll((a, b) => supabase.from('seller_businesses').select('id, name').order('name').order('id').range(a, b), '사업자 조회 실패: '),
-    rowsOrMissing(loadStoredPurchases(supabase, date, date)),
-    valueOrMissing(loadSupplierDirectory(supabase)),
-  ]);
+  const { rows: sales, doneCards } = await loadSalesAndCards(supabase, date, date);
   const shipping = await valueOrMissing(loadShippingRows(supabase, doneCards, sales));
-  const purchasesAvailable = !stored.missing && !directory.missing && directory.value;
-  return {
-    date,
-    sales,
-    shipping: shipping.value,
-    purchases: purchasesAvailable ? buildPurchaseRows(sales, stored.rows) : null,
-    sellers,
-    suppliers: directory.value?.suppliers ?? [],
-  };
+  return { date, sales, shipping: shipping.value };
 }

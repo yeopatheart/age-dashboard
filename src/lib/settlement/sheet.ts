@@ -2,12 +2,12 @@
 // 화면(sheet-client.tsx)은 칸 하나 수정·여러 칸 붙여넣기·아래로 채우기를 모두 editLine / editShipping 한 길로 처리한다. 결정은 docs/decisions/2026-11-14-settlement-sheet.md.
 import type { SalesRow } from './sales.ts'; // 상대 경로+.ts: 단위 테스트(node --test)가 @ 별칭을 못 푼다
 import { MAX_PRODUCT_LEN, MAX_QUANTITY, MAX_UNIT_LEN, type SalesLineFields } from './sales-edit.ts';
-import { amountFromUnitPrice, canAutoFillPrice } from './receipt.ts';
+import { amountOf, isAutoAmount, resolveLine, priceKey, type PriceEntry } from './pricing.ts';
 import { MAX_BOXES, suggestAmount, type ShippingRow } from './shipping.ts';
 import { parseWon, wonInputError } from '../money.ts';
 
-// 표의 열(왼쪽부터). 배송비 줄은 수량(박스 수)·판매가(배송비)·메모 칸만 있다.
-export const SHEET_COLS = ['product', 'quantity', 'unit', 'unitPrice', 'price', 'memo'] as const;
+// 표의 열(왼쪽부터). 배송비 줄은 수량(박스 수)·판매가(배송비)·메모 칸만 있다. 수익 칸은 계산값이라 입력 열에 없다.
+export const SHEET_COLS = ['product', 'quantity', 'unit', 'unitPrice', 'price', 'supplier', 'purchaseUnit', 'purchase', 'memo'] as const;
 export type SheetCol = (typeof SHEET_COLS)[number];
 export const SHIPPING_COLS: readonly SheetCol[] = ['quantity', 'price', 'memo'];
 
@@ -45,10 +45,22 @@ export function buildGroups(sales: SalesRow[], shipping: ShippingRow[]): SheetGr
 }
 
 // 고객 합계: 판매가를 입력한 상품 줄 + 배송비(자동 산정 포함, 뺀 줄은 0원)
-export function groupTotals(g: SheetGroup): { goods: number; shipping: number; total: number; unpriced: number } {
+export function groupTotals(g: SheetGroup): { goods: number; shipping: number; total: number; unpriced: number; purchase: number; unpurchased: number } {
   const goods = g.lines.reduce((sum, l) => sum + (l.price ?? 0), 0);
   const shipping = g.shipping.reduce((sum, s) => sum + (s.amount ?? 0), 0);
-  return { goods, shipping, total: goods + shipping, unpriced: g.lines.filter((l) => l.price === null).length };
+  return {
+    goods,
+    shipping,
+    total: goods + shipping,
+    unpriced: g.lines.filter((l) => l.price === null).length,
+    purchase: g.lines.reduce((sum, l) => sum + (l.purchasePrice ?? 0), 0),
+    unpurchased: g.lines.filter((l) => l.purchasePrice === null).length,
+  };
+}
+
+// 줄에서 고친 값(own)과 날짜별 품목 단가표로 "실제로 쓰는 값"을 다시 계산한 줄(칸을 고치거나 단가표를 고치면 화면이 이 함수로 다시 그려진다).
+export function withEffective(row: SalesRow, prices: ReadonlyMap<string, PriceEntry>): SalesRow {
+  return { ...row, ...resolveLine(row, row.quantity, prices.get(priceKey(row.orderDate, row.product))) };
 }
 
 // 수량 칸: "1.1", "1,200.5" 같은 숫자(소수 둘째 자리까지). 아니면 null.
@@ -67,9 +79,12 @@ export interface LineEdit {
 
 // 상품 줄의 한 칸에 적은 글자를 저장할 값으로 바꾼다. 바뀐 것이 없으면 null, 잘못된 값이면 { error }.
 //  - 품목·수량·단위: 비우면 주문 목록 값으로 되돌린다. 주문 목록 값과 같아지면 수정값을 지운다(null).
-//  - 단가·판매가: 비우면 값을 지운다. 단가나 수량을 고치면, 판매가가 비어 있거나 이전 단가 × 수량 그대로일 때 판매가를 다시 계산한다(직접 적은 판매가는 건드리지 않는다).
-export function editLine(row: SalesRow, col: SheetCol, text: string): LineEdit | CellError | null {
-  const t = (col === 'unitPrice' || col === 'price' ? text.replace(/₩/g, '') : text).trim(); // 엑셀의 통화 서식(₩1,000)을 그대로 붙여넣을 수 있게
+//  - 단가·판매가·매입처·매입단가·매입가: 줄에서 직접 고친 값(own)이다. 비우면 지우고 날짜별 품목 단가표를 따른다.
+//    판매가는 줄에 값이 없으면 "단가 × 수량"으로 계산된다. 직접 적은 총액이 단가 × 수량 그대로이면 단가나 수량을 고칠 때 다시 계산하고, 보정한 총액은 건드리지 않는다.
+//  view에는 own 값만 담는다 — 실제로 쓰는 값(effective)은 withEffective가 단가표와 함께 다시 계산한다.
+export function editLine(row: SalesRow, col: SheetCol, text: string, suppliers: readonly { id: string; name: string }[] = []): LineEdit | CellError | null {
+  const money = col === 'unitPrice' || col === 'price' || col === 'purchaseUnit' || col === 'purchase';
+  const t = (money ? text.replace(/₩/g, '') : text).trim(); // 엑셀의 통화 서식(₩1,000)을 그대로 붙여넣을 수 있게
   const o = row.original;
   const withEdited = (view: Partial<SalesRow>): Partial<SalesRow> => {
     const next = { product: view.product ?? row.product, quantity: view.quantity ?? row.quantity, unit: view.unit ?? row.unit };
@@ -88,22 +103,50 @@ export function editLine(row: SalesRow, col: SheetCol, text: string): LineEdit |
     if (q === row.quantity) return null;
     const fields: SalesLineFields = { quantity: q === o.quantity ? null : q };
     const view: Partial<SalesRow> = { quantity: q };
-    if (row.unitPrice !== null && canAutoFillPrice(row.price, row.unitPrice, row.quantity)) {
-      fields.price = amountFromUnitPrice(row.unitPrice, q);
-      view.price = fields.price;
+    if (isAutoAmount(row.priceOwn, row.unitPriceOwn, row.quantity)) {
+      fields.price = amountOf(row.unitPriceOwn as number, q);
+      view.priceOwn = fields.price;
+    }
+    if (isAutoAmount(row.purchaseOwn, row.purchaseUnitOwn, row.quantity)) {
+      fields.purchasePrice = amountOf(row.purchaseUnitOwn as number, q);
+      view.purchaseOwn = fields.purchasePrice;
     }
     return { fields, view: withEdited(view) };
   }
-  if (col === 'unitPrice' || col === 'price') {
+  if (col === 'supplier') {
+    if (t === '') return row.supplierOwn === null ? null : { fields: { supplierId: null }, view: { supplierOwn: null } };
+    const supplier = suppliers.find((x) => x.name === t) ?? suppliers.find((x) => x.name.toLowerCase() === t.toLowerCase());
+    if (!supplier) return { error: `상품 관리에 없는 매입처입니다: ${t}` };
+    return supplier.id === row.supplierOwn ? null : { fields: { supplierId: supplier.id }, view: { supplierOwn: supplier.id } };
+  }
+  if (money) {
     const problem = wonInputError(t);
-    if (problem) return { error: `${col === 'unitPrice' ? '단가' : '판매가'}: ${problem}` };
+    if (problem) return { error: `${{ unitPrice: '단가', price: '판매가', purchaseUnit: '매입 단가', purchase: '매입가' }[col]}: ${problem}` };
     const next = parseWon(t);
-    if (next === row[col]) return null;
-    const fields: SalesLineFields = { [col]: next };
-    const view: Partial<SalesRow> = { [col]: next };
-    if (col === 'unitPrice' && next !== null && canAutoFillPrice(row.price, row.unitPrice, row.quantity)) {
-      fields.price = amountFromUnitPrice(next, row.quantity);
-      view.price = fields.price;
+    const own = { unitPrice: row.unitPriceOwn, price: row.priceOwn, purchaseUnit: row.purchaseUnitOwn, purchase: row.purchaseOwn }[col];
+    if (next === own) return null;
+    const fields: SalesLineFields = {};
+    const view: Partial<SalesRow> = {};
+    if (col === 'unitPrice') {
+      fields.unitPrice = next;
+      view.unitPriceOwn = next;
+      if (next !== null && isAutoAmount(row.priceOwn, row.unitPriceOwn, row.quantity)) {
+        fields.price = amountOf(next, row.quantity);
+        view.priceOwn = fields.price;
+      }
+    } else if (col === 'price') {
+      fields.price = next;
+      view.priceOwn = next;
+    } else if (col === 'purchaseUnit') {
+      fields.purchaseUnitPrice = next;
+      view.purchaseUnitOwn = next;
+      if (next !== null && isAutoAmount(row.purchaseOwn, row.purchaseUnitOwn, row.quantity)) {
+        fields.purchasePrice = amountOf(next, row.quantity);
+        view.purchaseOwn = fields.purchasePrice;
+      }
+    } else {
+      fields.purchasePrice = next;
+      view.purchaseOwn = next;
     }
     return { fields, view };
   }
@@ -140,12 +183,12 @@ export function editShipping(row: ShippingRow, col: SheetCol, text: string): { n
 }
 
 // 한 줄의 여러 칸을 한꺼번에 고친다(여러 칸 붙여넣기). 앞 칸의 결과를 반영한 줄에 다음 칸을 적용해서, 수량과 단가를 같이 붙여넣어도 판매가가 한 번에 맞게 계산된다.
-export function editLineCells(row: SalesRow, cells: [SheetCol, string][]): LineEdit | CellError | null {
+export function editLineCells(row: SalesRow, cells: [SheetCol, string][], suppliers: readonly { id: string; name: string }[] = []): LineEdit | CellError | null {
   let current = row;
   let fields: SalesLineFields = {};
   let view: Partial<SalesRow> = {};
   for (const [col, text] of cells) {
-    const edit = editLine(current, col, text);
+    const edit = editLine(current, col, text, suppliers);
     if (edit === null) continue;
     if ('error' in edit) return edit;
     fields = { ...fields, ...edit.fields };

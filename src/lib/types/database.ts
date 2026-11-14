@@ -342,6 +342,28 @@ type SettlementSale = {
   unit_override: string | null;
   paid: boolean;
   memo: string | null;
+  // 줄 단위 매입(0065): 줄에서 고친 값. null이면 날짜별 품목 단가표를 따른다
+  supplier_id: string | null;
+  purchase_unit_price: number | null;
+  purchase_price: number | null;
+  updated_at: string;
+};
+
+// 날짜별 품목 단가표(0065): 줄에 값이 없으면 이 표를 따른다. 키는 (출고일, 품목명).
+type SettlementPrice = {
+  order_date: string;
+  product_name: string;
+  sale_unit_price: number | null;
+  supplier_id: string | null;
+  purchase_unit_price: number | null;
+  updated_at: string;
+};
+
+// 매입처별 지급 체크(0065): 그날 그 매입처에 지급했는지
+type SettlementSupplierPayment = {
+  order_date: string;
+  supplier_id: string;
+  paid: boolean;
   updated_at: string;
 };
 
@@ -538,8 +560,10 @@ export type Database = {
       >;
       settlement_sales: TableDef<
         SettlementSale,
-        Pick<SettlementSale, "order_item_id"> & { seller_id?: string | null; price?: number | null; unit_price?: number | null; product_override?: string | null; quantity_override?: number | null; unit_override?: string | null; paid?: boolean; memo?: string | null; updated_at?: string }
+        Pick<SettlementSale, "order_item_id"> & { seller_id?: string | null; price?: number | null; unit_price?: number | null; product_override?: string | null; quantity_override?: number | null; unit_override?: string | null; paid?: boolean; memo?: string | null; supplier_id?: string | null; purchase_unit_price?: number | null; purchase_price?: number | null; updated_at?: string }
       >;
+      settlement_prices: TableDef<SettlementPrice, Pick<SettlementPrice, "order_date" | "product_name"> & { sale_unit_price?: number | null; supplier_id?: string | null; purchase_unit_price?: number | null; updated_at?: string }>;
+      settlement_supplier_payments: TableDef<SettlementSupplierPayment, Pick<SettlementSupplierPayment, "order_date" | "supplier_id"> & { paid?: boolean; updated_at?: string }>;
       settlement_cards: TableDef<SettlementCard, Pick<SettlementCard, "daily_business_id"> & { seller_id?: string | null; paid?: boolean; updated_at?: string }>;
       settlement_shipping: TableDef<
         SettlementShipping,

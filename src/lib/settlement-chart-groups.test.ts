@@ -4,11 +4,11 @@ import { buildProductGroups, buildSellerGroups, topGroups } from './settlement/c
 import { totalsOf, type PurchaseRow } from './settlement/purchases.ts';
 import type { SalesRow } from './settlement/sales.ts';
 
-const sale = (product: string, price: number | null, sellerId: string | null = null): SalesRow => ({
-  itemId: `${product}-${price}-${sellerId}`, cardId: 'c', orderDate: '2026-11-07', customer: '엔야', terminal: '남부', secondaryWeightKg: null, product, quantity: 1, unit: '미', sellerId, price, unitPrice: null, original: { product, quantity: 1, unit: '미' }, edited: false, paid: false, memo: '',
+const sale = (product: string, price: number | null, sellerId: string | null = null, purchasePrice: number | null = null): SalesRow => ({
+  itemId: `${product}-${price}-${sellerId}`, cardId: 'c', orderDate: '2026-11-07', customer: '엔야', terminal: '남부', secondaryWeightKg: null, product, quantity: 1, unit: '미', sellerId, price, unitPrice: null, unitPriceOwn: null, priceOwn: null, supplierOwn: null, purchaseUnitOwn: null, purchaseOwn: null, supplierId: null, purchaseUnitPrice: null, purchasePrice, original: { product, quantity: 1, unit: '미' }, edited: false, paid: false, memo: '',
 });
-const prow = (orderDate: string, product: string, salesTotal: number, price: number | null, sellerId: string | null = null): PurchaseRow => ({
-  key: `${orderDate}|${product}`, orderDate, product, sellerId, supplierId: null, price, paid: false, memo: '', salesTotal, salesCount: 1, salesPriced: 1,
+const prow = (orderDate: string, product: string, salesTotal: number, price: number | null): PurchaseRow => ({
+  key: `${orderDate}|${product}`, orderDate, product, price, paid: false, salesTotal, salesCount: 1, salesPriced: 1,
 });
 
 test('품목별은 출고일을 합치고 전체 합계와 같다', () => {
@@ -24,19 +24,18 @@ test('품목별은 출고일을 합치고 전체 합계와 같다', () => {
   assert.equal(g.reduce((s, x) => s + x.profit, 0), t.profitTotal);
 });
 
-test('사업자별은 판매·매입을 각자 내역의 사업자로 합친다', () => {
+test('사업자별은 판매가·매입가를 상품 줄의 사업자구분으로 합치고, 매입가 없는 줄을 센다', () => {
   const sellers = [{ id: 'a', name: '통영아재수산' }, { id: 'b', name: '바른수산' }];
-  const sales = [sale('광어', 100, 'a'), sale('광어', 50, 'b'), sale('도미', 70, null), sale('도미', null, 'a')];
-  const purchases = [prow('2026-11-07', '광어', 150, 80, 'b'), prow('2026-11-07', '도미', 70, null, null)];
-  const g = buildSellerGroups(sales, purchases, sellers);
+  const sales = [sale('광어', 100, 'a', 60), sale('광어', 50, 'b', 80), sale('도미', 70, null), sale('도미', null, 'a')];
+  const g = buildSellerGroups(sales, sellers);
   const by = Object.fromEntries(g.map((x) => [x.name, x]));
-  assert.deepEqual([by['통영아재수산'].sales, by['통영아재수산'].purchase, by['통영아재수산'].profit], [100, 0, 100]);
+  assert.deepEqual([by['통영아재수산'].sales, by['통영아재수산'].purchase, by['통영아재수산'].profit, by['통영아재수산'].missingPrice], [100, 60, 40, 1]);
   assert.deepEqual([by['바른수산'].sales, by['바른수산'].purchase, by['바른수산'].profit], [50, 80, -30]);
   assert.deepEqual([by['미지정'].sales, by['미지정'].missingPrice], [70, 1]);
 });
 
 test('삭제된 사업자는 미지정으로 센다', () => {
-  const g = buildSellerGroups([sale('광어', 10, 'gone')], [], [{ id: 'a', name: 'A' }]);
+  const g = buildSellerGroups([sale('광어', 10, 'gone')], [{ id: 'a', name: 'A' }]);
   assert.equal(g.length, 1);
   assert.equal(g[0].name, '미지정');
 });

@@ -18,7 +18,6 @@ type Line = { sheet: string; label: string; diffs: Diff[] };
 const linesOf = (plan: ImportPlan): Line[] => [
   ...plan.sales.map((c) => ({ sheet: '판매', label: c.label, diffs: c.diffs })),
   ...plan.shipping.map((c) => ({ sheet: '배송비', label: c.label, diffs: c.diffs })),
-  ...plan.purchases.map((c) => ({ sheet: '매입', label: c.label, diffs: c.diffs })),
 ];
 
 // 정산 화면 맨 위 한 줄: [‹ 날짜 › 오늘] + 엑셀 내보내기·가져오기. 스크롤해도 위에 붙어 있다(날짜 알약 모양은 공용 컨트롤 date-nav.tsx).
@@ -74,16 +73,16 @@ export function SettlementBar({ date, today, data }: { date: string; today: stri
     if (!preview) return;
     setBusy('apply');
     setError(null);
-    const result = await applySettlementImport(date, preview.workbook).catch(() => ({ error: '저장하지 못했습니다. 권한이나 연결을 확인한 뒤 다시 시도해주세요.', applied: { sales: 0, shipping: 0, purchases: 0 } }));
+    const result = await applySettlementImport(date, preview.workbook).catch(() => ({ error: '저장하지 못했습니다. 권한이나 연결을 확인한 뒤 다시 시도해주세요.', applied: { sales: 0, shipping: 0 } }));
     setBusy(null);
-    const { sales, shipping, purchases } = result.applied;
+    const { sales, shipping } = result.applied;
     if (result.error) {
       setError(result.error);
-      if (sales + shipping + purchases > 0) setPreview(null); // 일부 저장됨: 다시 가져와 남은 것만 저장하게 한다
+      if (sales + shipping > 0) setPreview(null); // 일부 저장됨: 다시 가져와 남은 것만 저장하게 한다
       return;
     }
     setPreview(null);
-    setNotice(sales + shipping + purchases === 0 ? '변경할 내용이 없었습니다.' : `저장했습니다: 판매 ${sales}건 · 배송비 ${shipping}건 · 매입 ${purchases}건`);
+    setNotice(sales + shipping === 0 ? '변경할 내용이 없었습니다.' : `저장했습니다: 판매 ${sales}건 · 배송비 ${shipping}건`);
     // 화면에 남아 있던 입력 중 값이 새 값을 가리지 않게 구역들을 새로 그린다(key가 바뀐다).
     router.replace(`${settlementUrl(date)}&v=${Date.now()}`);
   };
@@ -96,7 +95,7 @@ export function SettlementBar({ date, today, data }: { date: string; today: stri
     <>
       <div className="ak-toolbar ak-sticky ak-period-bar">
         <DateNav value={date} today={today} grow label="정산 날짜" onChange={(d) => router.push(settlementUrl(d))} />
-        <button className="ak-btn" style={{ flex: 'none' }} onClick={() => void exportFile()} disabled={busy !== null} aria-label="엑셀 내보내기" title="이 날짜의 판매·배송비·매입을 한 파일(엑셀)로 내려받습니다. 노란 칸을 고쳐 다시 가져오면 일괄 수정됩니다.">
+        <button className="ak-btn" style={{ flex: 'none' }} onClick={() => void exportFile()} disabled={busy !== null} aria-label="엑셀 내보내기" title="이 날짜의 판매·배송비를 한 파일(엑셀)로 내려받습니다. 노란 칸을 고쳐 다시 가져오면 일괄 수정됩니다.">
           <Download size={14} />{!isMobile && ' 엑셀 내보내기'}
         </button>
         {canEdit && (
@@ -128,7 +127,7 @@ export function SettlementBar({ date, today, data }: { date: string; today: stri
           <div className="ak-bulk-head" style={{ flexWrap: 'wrap' }}>
             <strong>{preview.fileName}</strong>
             <span>
-              판매 {preview.plan.sales.length}건 · 배송비 {preview.plan.shipping.length}건 · 매입 {preview.plan.purchases.length}건 변경
+              판매 {preview.plan.sales.length}건 · 배송비 {preview.plan.shipping.length}건 변경
               {preview.plan.skippedSheets.length > 0 && <span className="ak-sub"> (파일에 없는 시트: {preview.plan.skippedSheets.join(', ')})</span>}
             </span>
             <span className="ak-spacer" />

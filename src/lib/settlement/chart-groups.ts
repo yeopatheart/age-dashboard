@@ -1,8 +1,8 @@
 // 정산 그래프의 품목별·사업자별 집계(순수 함수). 숫자의 정의는 전체 그래프·매입내역 요약 줄과 같다(purchases.ts의 totalsOf).
 //  - 품목별: 기간 안의 모든 출고일을 품목 이름으로 합친다. 판매가·매입가·수익 모두 매입내역 행(출고일 × 품목) 기준이라 품목별 합계가 전체와 같다.
-//  - 사업자별: 판매가는 판매내역의 "사업자 구분", 매입가는 매입내역의 "사업자 구분"으로 각각 합친다(둘은 따로 저장되고 서로 다를 수 있다).
-//    수익은 사업자별 (판매가 − 매입가)이다. 매입가를 아직 안 넣은 품목은 매입가가 0으로 잡혀 수익이 크게 보일 수 있어 missingPrice로 알려 준다
-//    (사업자별 수익의 합은 전체의 "총 수익"과 다를 수 있다 — 전체는 매입가를 입력한 품목만 센다).
+//  - 사업자별: 판매가·매입가 모두 상품 줄의 "사업자 구분"(고객 카드 단위 값)으로 합친다. 수익은 사업자별 (판매가 − 매입가)이다.
+//    매입가가 없는 줄은 매입가가 0으로 잡혀 수익이 크게 보일 수 있어 missingPrice(매입가 없는 줄 수)로 알려 준다
+//    (사업자별 수익의 합은 전체의 "총 수익"과 다를 수 있다 — 전체는 매입가가 모두 있는 품목만 센다).
 import { totalsOf, type PurchaseRow } from './purchases.ts';
 import type { SalesRow } from './sales.ts';
 
@@ -30,7 +30,8 @@ export function buildProductGroups(rows: PurchaseRow[]): GroupPoint[] {
   });
 }
 
-export function buildSellerGroups(sales: SalesRow[], purchases: PurchaseRow[], sellers: { id: string; name: string }[]): GroupPoint[] {
+// 사업자별: 판매가·매입가는 모두 상품 줄의 사업자구분(고객 카드 단위 값)으로 센다. rows는 줄 수, missingPrice는 매입가가 없는 줄 수.
+export function buildSellerGroups(sales: SalesRow[], sellers: { id: string; name: string }[]): GroupPoint[] {
   const nameById = new Map(sellers.map((s) => [s.id, s.name]));
   const byKey = new Map<string, GroupPoint>();
   const group = (sellerId: string | null): GroupPoint => {
@@ -42,12 +43,12 @@ export function buildSellerGroups(sales: SalesRow[], purchases: PurchaseRow[], s
     }
     return g;
   };
-  for (const s of sales) if (s.price !== null) group(s.sellerId).sales += s.price;
-  for (const p of purchases) {
-    const g = group(p.sellerId);
+  for (const s of sales) {
+    const g = group(s.sellerId);
+    if (s.price !== null) g.sales += s.price;
     g.rows += 1;
-    if (p.price === null) g.missingPrice += 1;
-    else g.purchase += p.price;
+    if (s.purchasePrice === null) g.missingPrice += 1;
+    else g.purchase += s.purchasePrice;
   }
   const out = [...byKey.values()];
   for (const g of out) g.profit = g.sales - g.purchase;

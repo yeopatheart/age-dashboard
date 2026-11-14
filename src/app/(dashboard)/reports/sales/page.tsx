@@ -8,7 +8,7 @@ import { MigrationNotice } from '@/components/migration-notice';
 import { buildDailySeries } from '@/lib/settlement/chart';
 import { buildProductGroups, buildSellerGroups } from '@/lib/settlement/chart-groups';
 import { buildPurchaseRows, totalsOf } from '@/lib/settlement/purchases';
-import { loadSalesRows, loadStoredPurchases } from '@/lib/settlement/server';
+import { loadSalesRows, loadSupplierPayments } from '@/lib/settlement/server';
 import { customerStats, marginOf, productStats, terminalStats, unpricedLines } from '@/lib/reports/sales-report';
 import { SalesReportClient, type SalesView } from './sales-report-client';
 
@@ -29,19 +29,19 @@ export default async function SalesReportPage({ searchParams }: { searchParams: 
   const currentView = VIEWS.find((x) => x === view) ?? 'trend';
 
   const supabase = await createClient();
-  const [, , sales, sellers, stored] = await Promise.all([
+  const [, , sales, sellers, payments] = await Promise.all([
     reportsCheck,
     settlementCheck,
     rowsOrMissing(loadSalesRows(supabase, period.from, period.to)),
     rowsOrMissing(fetchAll((a, b) => supabase.from('seller_businesses').select('id, name').order('name').order('id').range(a, b), '사업자 조회 실패: ')),
-    rowsOrMissing(loadStoredPurchases(supabase, period.from, period.to)),
+    loadSupplierPayments(supabase, period.from, period.to),
   ]);
 
-  // 정산 마이그레이션(사업자 0042, 판매 0043, 매입 0044)이 없으면 운영 화면이 서버 오류로 죽으므로 안내를 보여 준다.
-  const missing = [sales.missing, sellers.missing, stored.missing].filter((x): x is string => !!x);
+  // 정산 마이그레이션(사업자 0042, 판매 0043)이 없으면 운영 화면이 서버 오류로 죽으므로 안내를 보여 준다.
+  const missing = [sales.missing, sellers.missing].filter((x): x is string => !!x);
   if (missing.length > 0) return <MigrationNotice feature="판매·수익 리포트" migrations={migrationsFor(missing)} />;
 
-  const purchaseRows = buildPurchaseRows(sales.rows, stored.rows);
+  const purchaseRows = buildPurchaseRows(sales.rows, payments ?? new Set());
   return (
     <SalesReportClient
       view={currentView}
@@ -54,7 +54,7 @@ export default async function SalesReportPage({ searchParams }: { searchParams: 
       margin={marginOf(purchaseRows).margin}
       unpricedLines={unpricedLines(sales.rows)}
       byProduct={buildProductGroups(purchaseRows)}
-      bySeller={buildSellerGroups(sales.rows, purchaseRows, sellers.rows)}
+      bySeller={buildSellerGroups(sales.rows, sellers.rows)}
       productStats={productStats(sales.rows, purchaseRows)}
       customerStats={customerStats(sales.rows)}
       terminalStats={terminalStats(sales.rows)}
