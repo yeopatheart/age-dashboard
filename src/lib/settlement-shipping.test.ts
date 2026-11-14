@@ -16,6 +16,7 @@ const card = (over: Partial<ShippingCard> = {}): ShippingCard => ({
   boxes: 3,
   rates: { bus: 10000, quick: 5000, parcel: null },
   sellerId: SELLER,
+  paid: null,
   ...over,
 });
 const stored = (over: Partial<StoredShipping> = {}): StoredShipping => ({ id: 's1', cardId: CARD_A, method: 'bus', boxes: 3, amount: 25000, sellerId: null, paid: false, memo: null, ...over });
@@ -68,9 +69,15 @@ test('buildShippingRows: 출고일 → 고객명(가나다) 순으로 정렬한�
   assert.deepEqual(rows.filter((r) => r.method === 'bus').map((r) => `${r.orderDate} ${r.customer}`), ['2026-11-13 가고객', '2026-11-13 나고객', '2026-11-14 가고객']);
 });
 
-test('shippingTotals: 저장한 줄만 합계에 넣고 제안 줄은 따로 센다', () => {
+test('shippingTotals: 자동 산정 줄도 합계에 넣고, 저장 전 줄 수는 따로 센다', () => {
   const totals = shippingTotals(buildShippingRows([card()], [stored({ paid: true })]));
-  assert.deepEqual(totals, { rows: 2, total: 25000, suggested: 1, unpaid: 0 });
+  // 버스 25,000(저장·입금) + 퀵 15,000(자동 산정·미입금)
+  assert.deepEqual(totals, { rows: 2, total: 40000, suggested: 1, unpaid: 1 });
+});
+
+test('buildShippingRows: 카드 단위 입금·사업자(0064)가 있으면 줄에 저장한 값 대신 그 값을 쓴다', () => {
+  const rows = buildShippingRows([card({ paid: true, sellerId: 'card-seller' })], [stored({ paid: false, sellerId: 'line-seller' })]);
+  assert.deepEqual(rows.map((r) => [r.method, r.paid, r.sellerId]), [['bus', true, 'card-seller'], ['quick', true, 'card-seller']]);
 });
 
 test('shippingUnitPrice: 나눠떨어질 때만 단가를 돌려준다', () => {
@@ -102,14 +109,16 @@ test('shippingInputError: 형식·범위를 검사한다', () => {
 const sale = (over: Partial<ReceiptSourceRow> = {}): ReceiptSourceRow => ({ itemId: 'i1', orderDate: '2026-11-13', customer: '가고객', product: '광어', quantity: 2, unit: 'kg', sellerId: SELLER, price: 40000, unitPrice: 20000, ...over });
 const seller: ReceiptSeller = { name: '통영아재수산', registrationNo: '1234567890', representative: null, address: null, businessType: null, businessItem: null };
 
-test('shippingReceiptRow: 저장하지 않은 제안·0원 줄은 영수증에 넣지 않는다', () => {
-  const [suggested, saved] = buildShippingRows([card()], [stored({ method: 'quick', amount: 0 })]).filter((r) => r.method !== 'quick' || r.saved).concat([]);
-  assert.equal(shippingReceiptRow(suggested), null); // 제안(버스)
-  assert.equal(shippingReceiptRow(saved), null); // 저장했지만 0원(퀵)
+test('shippingReceiptRow: 자동 산정 줄도 영수증에 들어가고, 0원 줄(그날 뺀 수단)은 넣지 않는다', () => {
+  const rows = buildShippingRows([card()], [stored({ method: 'quick', amount: 0 })]);
+  const bus = rows.find((r) => r.method === 'bus')!; // 자동 산정
+  const quick = rows.find((r) => r.method === 'quick')!; // 저장했지만 0원
+  assert.equal(shippingReceiptRow(bus)?.price, 30000);
+  assert.equal(shippingReceiptRow(quick), null);
 });
 
 test('attachShippingLines: 같은 고객·사업자·출고일 묶음의 맨 뒤에 배송비 줄이 붙고 합계에 들어간다', () => {
-  const rows = buildShippingRows([card()], [stored({ amount: 30000 })]);
+  const rows = buildShippingRows([card({ rates: { bus: 10000, quick: null, parcel: null } })], [stored({ amount: 30000 })]);
   const ship = rows.map(shippingReceiptRow).filter((r): r is ReceiptSourceRow => r !== null);
   assert.equal(ship.length, 1);
   const { groups } = groupForReceipts([sale()]);

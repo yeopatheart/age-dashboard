@@ -345,6 +345,14 @@ type SettlementSale = {
   updated_at: string;
 };
 
+// 정산의 고객 카드 단위 값(0064): 사업자구분과 입금 여부. 행은 그날 고객 카드(daily_businesses) 하나당 최대 하나다.
+type SettlementCard = {
+  daily_business_id: string;
+  seller_id: string | null;
+  paid: boolean;
+  updated_at: string;
+};
+
 // 정산 배송비(0062). 행은 출고 완료된 그날 고객 카드(daily_businesses) × 수단(bus/quick/parcel) 하나다.
 type SettlementShipping = {
   id: string;
@@ -532,6 +540,7 @@ export type Database = {
         SettlementSale,
         Pick<SettlementSale, "order_item_id"> & { seller_id?: string | null; price?: number | null; unit_price?: number | null; product_override?: string | null; quantity_override?: number | null; unit_override?: string | null; paid?: boolean; memo?: string | null; updated_at?: string }
       >;
+      settlement_cards: TableDef<SettlementCard, Pick<SettlementCard, "daily_business_id"> & { seller_id?: string | null; paid?: boolean; updated_at?: string }>;
       settlement_shipping: TableDef<
         SettlementShipping,
         Pick<SettlementShipping, "daily_business_id" | "method" | "amount"> & { id?: string; boxes?: number; seller_id?: string | null; paid?: boolean; memo?: string | null; updated_at?: string }

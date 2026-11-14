@@ -20,6 +20,7 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
   label_printed_box_type: '0051_label_printed_box_type.sql', // 테이블이 아니라 box_labels에 더한 열(출력한 박스 종류)
   label_print_jobs: '0061_label_print_spooler.sql', // 라벨 출력 확정(스풀러 방식)
   settlement_shipping: '0062_settlement_shipping.sql',
+  settlement_cards: '0064_settlement_cards.sql',
   shipping_settings: '0062_settlement_shipping.sql', // 테이블이 아니라 terminals(quick_allowed)에 더한 열
   shipping_rates: '0063_customer_seller_terminal_rates.sql', // terminals에 더한 배송비 기본 금액 열(bus_rate·quick_rate·parcel_rate)
   business_fields: '0063_customer_seller_terminal_rates.sql', // businesses에 더한 열(legal_name·seller_id·uses_quick)

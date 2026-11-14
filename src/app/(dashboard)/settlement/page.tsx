@@ -10,15 +10,13 @@ import { parseSettlementDate } from '@/lib/settlement/url';
 import { loadSalesAndCards, loadShippingRows, loadStoredPurchases, loadSupplierDirectory } from '@/lib/settlement/server';
 import { loadReceipts } from '@/lib/settlement/receipt-server';
 import { buildPurchaseRows } from '@/lib/settlement/purchases';
-import { DateBar } from './date-bar';
-import { ExcelBar } from './excel-bar';
+import { SettlementBar } from './settlement-bar';
 import { SettlementSection } from './settlement-section';
-import { SettlementClient } from './settlement-client';
+import { SheetClient } from './sheet-client';
 import { PurchasesClient } from './purchases-client';
-import { ShippingClient } from './shipping-client';
 
-// 정산: 출고가 끝난 주문을 판매내역과 매입내역으로 보여 주고 가격·사업자 구분·입금 여부·메모를 입력한다. 매입내역·판매내역을 한 화면에 함께 보여 준다.
-// 정산은 하루(출고일) 단위다. ?d=YYYY-MM-DD(기본 오늘, 미래는 오늘로 본다)로 날짜를 정하고, 세 구역(판매내역·배송비·매입내역)이 같은 날짜를 쓴다.
+// 정산: 출고가 끝난 주문을 정산표(판매 + 배송비, 고객별 묶음)와 매입내역으로 보여 주고 수량·단가·판매가·사업자 구분·입금 여부·메모를 입력한다.
+// 정산은 하루(출고일) 단위다. ?d=YYYY-MM-DD(기본 오늘, 미래는 오늘로 본다)로 날짜를 정하고, 두 구역(정산표·매입내역)이 같은 날짜를 쓴다.
 export default async function SettlementPage({ searchParams }: { searchParams: Promise<{ d?: string; v?: string }> }) {
   const accessCheck = requireMenu('settlement'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 await로 확정)
   const { d, v } = await searchParams;
@@ -26,7 +24,7 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
   const date = parseSettlementDate(d, today);
   const supabase = await createClient();
 
-  const header = <AdminHeader icon={<Receipt size={20} />} title="정산" sub="출고가 끝난 주문이 판매내역과 매입내역으로 올라옵니다. 가격, 사업자 구분, 입금 여부, 메모를 입력하세요. 입력하면 바로 저장됩니다. 기간별 매출·이익 그래프는 리포트의 판매·수익에서 봅니다." />;
+  const header = <AdminHeader icon={<Receipt size={20} />} title="정산" sub="출고가 끝난 주문이 고객별로 묶인 정산표로 올라옵니다. 수량(실중량)·단가·판매가를 엑셀처럼 입력하면 바로 저장되고, 배송비는 터미널 설정으로 자동 계산됩니다. 기간별 매출·이익 그래프는 리포트의 판매·수익에서 봅니다." />;
 
   const [, salesAndCards, sellers, inputsTable, stored, directory, receipts] = await Promise.all([
     accessCheck,
@@ -72,25 +70,18 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
 
   // 배송비(0062): 출고 완료 카드마다 저장한 값 + 설정으로 만든 제안. 마이그레이션 전이면 배송비 구역만 안내를 보여 주고 나머지는 계속 쓴다.
   const shipping = await valueOrMissing(loadShippingRows(supabase, salesAndCards.value?.doneCards ?? [], sales.rows));
-  const shippingCardOptions = (shipping.value?.cards ?? []).map((c) => ({
-    cardId: c.cardId,
-    orderDate: c.orderDate,
-    customer: c.customer,
-    terminal: c.terminal,
-    label: `${c.customer} · ${c.terminal}`,
-    boxes: c.boxes,
-    sellerId: c.sellerId,
-  }));
+  // 고객 단위 사업자·입금(0064)·배송비(0062·0063) 마이그레이션 전이면 정산표 위에 안내를 보여 주고, 표의 나머지는 계속 쓴다.
+  const sheetMissing = [...(salesAndCards.value?.cardSettingsAvailable === false ? ['settlement_cards'] : []), ...(shipping.missing ? [shipping.missing] : [])];
 
   // 날짜를 옮기면 입력 중이던 값·선택을 새로 시작한다(key가 바뀌면 화면 상태가 초기화된다).
   const key = `${date}-${v ?? ''}`; // v: 엑셀 가져오기 뒤 구역을 새로 그리려고 붙이는 값
   return (
     <div className="ak-page">
       {header}
-      <DateBar date={date} today={today} />
-      <ExcelBar
+      <SettlementBar
         key={date}
         date={date}
+        today={today}
         data={{
           date,
           sales: sales.rows,
@@ -102,22 +93,17 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
         }}
       />
       <div className="ak-split">
-        <SettlementSection id="sales" title="판매내역" openOnMobile>
-          <SettlementClient
+        <SettlementSection id="sales" title="정산표" hint="판매 · 배송비" openOnMobile>
+          {sheetMissing.length > 0 && <MigrationNotice feature="정산표의 고객 단위 입금·사업자구분과 배송비" migrations={migrationsFor(sheetMissing)} />}
+          <SheetClient
             key={key}
             rows={sales.rows}
+            shipping={shipping.value?.rows ?? null}
+            cards={(shipping.value?.cards ?? []).map((c) => ({ cardId: c.cardId, boxes: c.boxes }))}
             sellers={sellers.rows}
-           
             date={date}
             issued={receipts.missing ? [] : receipts.rows.map((r) => ({ orderDate: r.orderDate, customerName: r.customerName, sellerId: r.sellerId, receiptNo: r.receiptNo }))}
           />
-        </SettlementSection>
-        <SettlementSection id="shipping" title="배송비" hint="버스·퀵·택배">
-          {shipping.value ? (
-            <ShippingClient key={key} rows={shipping.value.rows} sellers={sellers.rows} cardOptions={shippingCardOptions} />
-          ) : (
-            <MigrationNotice feature="배송비" migrations={migrationsFor([shipping.missing ?? 'settlement_shipping'])} />
-          )}
         </SettlementSection>
         <SettlementSection id="purchases" title="매입내역">
           {purchaseRows && directory.value ? (

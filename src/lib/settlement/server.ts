@@ -34,13 +34,28 @@ export interface DoneCard {
   terminalId: string | null;
   terminal: string;
   boxes: number; // 제출한 박스 수(택배는 제출 전이면 1)
+  sellerId: string | null; // 고객 카드의 사업자구분(없으면 고객사 기본값)
+  paid: boolean | null; // 고객 카드의 입금 여부. null = settlement_cards 테이블이 아직 없음(마이그레이션 0064 전)
 }
 
 export async function loadSalesRows(supabase: Client, from: string, to: string): Promise<SalesRow[]> {
   return (await loadSalesAndCards(supabase, from, to)).rows;
 }
 
-export async function loadSalesAndCards(supabase: Client, from: string, to: string): Promise<{ rows: SalesRow[]; doneCards: DoneCard[] }> {
+// 고객 카드 단위로 정한 사업자·입금(0064). 테이블이 아직 없으면 null(예전처럼 줄에 저장한 값을 쓴다).
+async function loadCardSettings(supabase: Client, cardIds: string[]): Promise<Map<string, { sellerId: string | null; paid: boolean }> | null> {
+  try {
+    const rows = await mapChunks(cardIds, CHUNK, (chunk) =>
+      fetchAll((a, b) => supabase.from('settlement_cards').select('daily_business_id, seller_id, paid').in('daily_business_id', chunk).order('daily_business_id').range(a, b), '정산 고객 설정 조회 실패: '),
+    );
+    return new Map(rows.map((r) => [r.daily_business_id, { sellerId: r.seller_id, paid: r.paid }]));
+  } catch (e) {
+    if (missingTable(e) !== null) return null;
+    throw e;
+  }
+}
+
+export async function loadSalesAndCards(supabase: Client, from: string, to: string): Promise<{ rows: SalesRow[]; doneCards: DoneCard[]; cardSettingsAvailable: boolean }> {
   const [dailies, businesses, terminalsResult, sellerDefaults] = await Promise.all([
     fetchAll(
       (a, b) =>
@@ -59,10 +74,10 @@ export async function loadSalesAndCards(supabase: Client, from: string, to: stri
     loadBusinessSellerDefaults(supabase),
   ]);
   if (terminalsResult.error) throw new Error(`터미널 조회 실패: ${terminalsResult.error.message}`);
-  if (dailies.length === 0) return { rows: [], doneCards: [] };
+  if (dailies.length === 0) return { rows: [], doneCards: [], cardSettingsAvailable: true };
   const ids = dailies.map((d) => d.id);
 
-  const [itemRows, labelRows, recordRows] = await Promise.all([
+  const [itemRows, labelRows, recordRows, cardSettings] = await Promise.all([
     mapChunks(ids, CHUNK, (chunk) =>
       fetchAll(
         (a, b) =>
@@ -77,6 +92,7 @@ export async function loadSalesAndCards(supabase: Client, from: string, to: stri
     ),
     mapChunks(ids, CHUNK, (chunk) => fetchAll((a, b) => supabase.from('box_labels').select('id, daily_business_id, seq, loaded_at').in('daily_business_id', chunk).order('id').range(a, b), '라벨 조회 실패: ')),
     mapChunks(ids, CHUNK, (chunk) => fetchAll((a, b) => supabase.from('packing_records').select('id, daily_business_id').in('daily_business_id', chunk).order('id').range(a, b), '박스 기록 조회 실패: ')),
+    loadCardSettings(supabase, ids),
   ]);
   const boxRows = await mapChunks(
     recordRows.map((r) => r.id),
@@ -114,7 +130,7 @@ export async function loadSalesAndCards(supabase: Client, from: string, to: stri
       parcel: parcelOf(d.terminal_id),
     });
     const name = d.display_name ?? businessName.get(d.business_id) ?? '';
-    return { id: d.id, orderDate: d.order_date, name: split.has(d.business_id) ? `${name} ${roundLabel(d.round)}` : name, sortOrder: d.sort_order, stage, defaultSellerId: sellerDefaults.get(d.business_id) ?? null, terminal: (d.terminal_id && terminalName.get(d.terminal_id)) || '미지정' };
+    return { id: d.id, orderDate: d.order_date, name: split.has(d.business_id) ? `${name} ${roundLabel(d.round)}` : name, sortOrder: d.sort_order, stage, defaultSellerId: sellerDefaults.get(d.business_id) ?? null, settings: cardSettings ? (cardSettings.get(d.id) ?? { sellerId: null, paid: false }) : null, terminal: (d.terminal_id && terminalName.get(d.terminal_id)) || '미지정' };
   });
 
   const items: SalesSourceItem[] = itemRows.map((i) => ({
@@ -140,13 +156,13 @@ export async function loadSalesAndCards(supabase: Client, from: string, to: stri
 
   const doneCards: DoneCard[] = dailies.flatMap((d, i) =>
     cards[i].stage === 'done'
-      ? [{ id: d.id, orderDate: d.order_date, name: cards[i].name, businessId: d.business_id, terminalId: d.terminal_id, terminal: cards[i].terminal, boxes: submittedBoxes.get(d.id) ?? (parcelOf(d.terminal_id) ? 1 : 0) }]
+      ? [{ id: d.id, orderDate: d.order_date, name: cards[i].name, businessId: d.business_id, terminalId: d.terminal_id, terminal: cards[i].terminal, boxes: submittedBoxes.get(d.id) ?? (parcelOf(d.terminal_id) ? 1 : 0), sellerId: cards[i].settings?.sellerId ?? cards[i].defaultSellerId, paid: cards[i].settings ? cards[i].settings.paid : null }]
       : [],
   );
-  return { rows: buildSalesRows(cards, items, stored), doneCards };
+  return { rows: buildSalesRows(cards, items, stored), doneCards, cardSettingsAvailable: cardSettings !== null };
 }
 
-// 정산 배송비 줄: 출고 완료 카드마다 저장한 값 + 설정(고객사 박스당 금액·터미널 퀵 가능)으로 만든 제안.
+// 정산 배송비 줄: 출고 완료 카드마다 저장한 값 + 설정(터미널 박스당 금액·퀵 가능, 고객사 퀵 이용)으로 자동 산정한 줄.
 // 설정 열(0062)이나 settlement_shipping 테이블이 없으면 missingTable 오류가 그대로 던져진다(호출한 화면이 rowsOrMissing로 안내한다).
 export async function loadShippingRows(supabase: Client, doneCards: DoneCard[], sales: SalesRow[]): Promise<{ rows: ShippingRow[]; cards: ShippingCard[] }> {
   if (doneCards.length === 0) return { rows: [], cards: [] };
@@ -182,7 +198,9 @@ export async function loadShippingRows(supabase: Client, doneCards: DoneCard[], 
       rates: terminal
         ? ratesFor({ isParcel: terminal.is_parcel, quickAllowed: terminal.quick_allowed, bus: terminal.bus_rate, quick: terminal.quick_rate, parcel: terminal.parcel_rate }, business?.uses_quick ?? false)
         : { bus: null, quick: null, parcel: null },
-      sellerId: sellerByCustomer.get(`${c.orderDate}|${c.name}`) ?? business?.seller_id ?? null,
+      // 카드 단위 설정(0064)이 있으면 그 값, 아직 없으면 예전처럼 그 고객의 판매 줄 사업자를 따른다.
+      sellerId: c.paid !== null ? c.sellerId : (sellerByCustomer.get(`${c.orderDate}|${c.name}`) ?? business?.seller_id ?? null),
+      paid: c.paid,
     };
   });
   return { rows: buildShippingRows(cards, stored), cards };

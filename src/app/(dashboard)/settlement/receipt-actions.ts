@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/permissions/access';
 import { loadSalesAndCards, loadShippingRows } from '@/lib/settlement/server';
 import { attachShippingLines, buildSnapshot, groupForReceipts, shippingReceiptRow, type ReceiptSeller, type ReceiptSkipReason, type ReceiptSnapshot, type ReceiptSourceRow } from '@/lib/settlement/receipt';
 import { migrationsFor, missingTable, valueOrMissing } from '@/lib/supabase/missing-table';
+import { upsertShippingRows } from '@/lib/settlement/write';
 import { isIsoDate } from '@/lib/validate';
 
 const MAX_ITEMS = 2000;
@@ -84,6 +85,14 @@ export async function issueReceipts(input: { itemIds: string[]; from: string; to
     }
     const issuable = groups.filter((g) => sellers.has(g.sellerId));
     if (issuable.length === 0) return { ...fail('사업자를 찾지 못했습니다. 화면을 새로고침한 뒤 다시 시도해주세요.'), skipped: skippedLines, notFound };
+
+    // 터미널 설정으로 자동 산정한 배송비 줄은 발행할 때 저장해 금액을 고정한다(나중에 터미널 금액을 바꿔도 발행한 날의 값이 달라지지 않게).
+    const issuedKeys = new Set(issuable.map((g) => g.key));
+    const autoShipping = (shipping.value?.rows ?? []).filter((r) => !r.saved && r.amount !== null && r.amount > 0 && issuedKeys.has(`${r.orderDate}|${r.sellerId}|${r.customer}`));
+    if (autoShipping.length > 0) {
+      const saved = await upsertShippingRows(supabase, autoShipping.map((r) => ({ cardId: r.cardId, method: r.method, boxes: r.boxes, amount: r.amount ?? 0, sellerId: null, paid: false, memo: null })));
+      if (saved.error) return { ...fail(`배송비를 저장하지 못해 영수증을 만들지 않았습니다: ${saved.error}`), skipped: skippedLines, notFound };
+    }
 
     // 영수증 번호(NO.): 같은 출고일 안에서 이미 발행한 번호 다음부터 붙인다.
     const dates = [...new Set(issuable.map((g) => g.orderDate))];

@@ -5,7 +5,7 @@ import { totalsOf, type PurchaseRow } from './settlement/purchases.ts';
 import type { SalesRow } from './settlement/sales.ts';
 
 const sale = (product: string, price: number | null, sellerId: string | null = null): SalesRow => ({
-  itemId: `${product}-${price}-${sellerId}`, orderDate: '2026-11-07', customer: '엔야', terminal: '남부', secondaryWeightKg: null, product, quantity: 1, unit: '미', sellerId, price, unitPrice: null, original: { product, quantity: 1, unit: '미' }, edited: false, paid: false, memo: '',
+  itemId: `${product}-${price}-${sellerId}`, cardId: 'c', orderDate: '2026-11-07', customer: '엔야', terminal: '남부', secondaryWeightKg: null, product, quantity: 1, unit: '미', sellerId, price, unitPrice: null, original: { product, quantity: 1, unit: '미' }, edited: false, paid: false, memo: '',
 });
 const prow = (orderDate: string, product: string, salesTotal: number, price: number | null, sellerId: string | null = null): PurchaseRow => ({
   key: `${orderDate}|${product}`, orderDate, product, sellerId, supplierId: null, price, paid: false, memo: '', salesTotal, salesCount: 1, salesPriced: 1,
