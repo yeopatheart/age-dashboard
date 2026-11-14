@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useLayoutEffect, useCallback, useMemo, useOptimistic, useSyncExternalStore, useTransition } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, useOptimistic, useSyncExternalStore, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -882,6 +882,26 @@ export function DashboardClient({
   // 별도 주문 행·상품 수나 창 높이가 바뀌면 촘촘함 단계를 처음으로 되돌린다(줄어든 주문에서 계속 촘촘하게 남지 않도록). 팝업을 열 때도 처음부터(버튼에서 비운다).
   const sepFitKey = `${separateRows.length}:${items.filter((i) => separateRows.some((r) => r.dailyBusinessId === i.dailyBusinessId)).length}:${viewportHeight}`;
   const sepDensity = sepFit.key === sepFitKey ? sepFit.level : 0;
+  // 별도 주문 팝업이 떠 있는 동안 뒤의 화면(주문 목록을 감싼 컨테이너들)이 스크롤되지 않게 한다.
+  // 이 컨테이너들은 overflow가 hidden이라 사용자는 스크롤할 수 없지만, 팝업 안 스크롤이 끝에서 뒤로 번지거나(스크롤 연쇄) 브라우저가
+  // 포커스·선택 때문에 코드로 스크롤해 버리면 화면이 아래로 밀린 채 되돌릴 수 없게 된다(2026-11-14 현장: 메뉴를 펼쳐 위로 올려야 풀렸다).
+  // 스크롤이 생기면 바로 0으로 되돌리고, 팝업을 닫을 때도 한 번 되돌린다. 모바일은 이 팝업이 없다.
+  useEffect(() => {
+    if (!separateOpen) return;
+    const holders: HTMLElement[] = [];
+    for (let el = document.querySelector<HTMLElement>('main.main-content'); el && el !== document.body; el = el.parentElement) holders.push(el);
+    const reset = () => {
+      for (const el of holders) {
+        if (el.scrollTop !== 0) el.scrollTop = 0;
+        if (el.scrollLeft !== 0) el.scrollLeft = 0;
+      }
+    };
+    for (const el of holders) el.addEventListener('scroll', reset, { passive: true });
+    return () => {
+      for (const el of holders) el.removeEventListener('scroll', reset);
+      reset();
+    };
+  }, [separateOpen]);
   // 행 높이 측정: 렌더 뒤마다 재서 달라졌을 때만 상태를 바꾼다(같으면 다시 그리지 않는다).
   useLayoutEffect(() => {
     if (!separateOpen) return;
@@ -1546,7 +1566,7 @@ export function DashboardClient({
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* 실시간 알림 컨트롤(켜기·상태·소리·변경 목록). 화면에 떠 있으면 표의 맨 아래 행을 가려서 툴바 안에 둔다. */}
-          <DashboardSound rows={rawRows} items={serverItems} orderDate={orderDate} />
+          <DashboardSound key={orderDate} rows={rawRows} items={serverItems} orderDate={orderDate} />
           {/* 모바일은 화면이 하나뿐이라 모니터 분할 자체가 의미 없다 — 전체보기만 강제되므로 */}
           {/* 선택 버튼도 노출하지 않는다(md 이상, 768px부터 노출 — 위 isMobile 판정 기준과 동일). */}
           {/* 모니터 설정(전체보기·모니터 1·모니터 2)은 버튼 하나에 현재 모드를 보여 주고, 누르면 선택 메뉴가 떠서 툴바 폭을 아낀다. */}
@@ -1719,14 +1739,16 @@ export function DashboardClient({
             </p>
           </div>
         )}
-        {isSplitMode && rows.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400 pointer-events-none z-10">
+        {/* 주문이 하나도 없으면 빈 표(머리줄·빈 행)를 보여 주지 않고 문구만 보인다. 표는 숨기기만 하고 그대로 두어서(hidden),
+            주문이 생겨 다시 보일 때 크기 관찰자(ResizeObserver)가 표 높이를 새로 재도록 한다. */}
+        {rows.length === 0 && (
+          <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-2 text-slate-400">
             <Inbox className="w-8 h-8 text-slate-300" strokeWidth={1.5} />
             <p className="text-sm font-medium">주문이 없습니다</p>
             <p className="text-xs text-slate-400">&apos;새 주문 추가&apos; 버튼을 누르거나, &apos;주문 입력&apos; 메뉴에서 카카오톡 메시지로 등록하세요</p>
           </div>
         )}
-        <div ref={scrollRef} className={`flex-1 min-h-0 overflow-x-auto ${isSplitMode ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
+        <div ref={scrollRef} className={`flex-1 min-h-0 overflow-x-auto ${rows.length === 0 ? 'hidden' : ''} ${isSplitMode ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
           <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`} style={isSplitMode ? undefined : { minWidth: productGridMinWidth(productSlotCount, nameColumn, terminalColumn) }}>
             {/* 헤더 */}
             <div
@@ -1910,14 +1932,6 @@ export function DashboardClient({
                   </SortableRow>
                 );
               })}
-
-              {rows.length === 0 && !isSplitMode && (
-                <div className="py-20 flex flex-col items-center gap-2 text-slate-400">
-                  <Inbox className="w-8 h-8 text-slate-300" strokeWidth={1.5} />
-                  <p className="text-sm font-medium">주문이 없습니다</p>
-                  <p className="text-xs text-slate-400">&apos;새 주문 추가&apos; 버튼을 누르거나, &apos;주문 입력&apos; 메뉴에서 카카오톡 메시지로 등록하세요</p>
-                </div>
-              )}
             </div>
             </SortableContext>
             </DndContext>
@@ -1935,7 +1949,7 @@ export function DashboardClient({
       </div>
 
       {separateOpen && (
-        <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4" onClick={() => setSeparateOpen(false)}>
+        <div className="fixed inset-0 z-[60] overflow-hidden overscroll-contain bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4" onClick={() => setSeparateOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[88vh] flex flex-col border border-slate-200" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl flex-shrink-0" style={{ backgroundColor: 'var(--soft-head, #003057)' }}>
               <h3 className="text-sm font-bold text-white tracking-wide">별도 주문 ({separateRows.length}) — {[...separateNames].join(', ')}</h3>
@@ -1951,7 +1965,7 @@ export function DashboardClient({
               <button onClick={() => setSeparateOpen(false)} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
             </div>
             <div className="relative flex-1 min-h-0 flex gap-3 p-4">
-            <div ref={sepListRef} className="relative flex-1 min-w-0 overflow-auto flex flex-col rounded-lg border border-slate-200">
+            <div ref={sepListRef} className="relative flex-1 min-w-0 overflow-auto overscroll-contain flex flex-col rounded-lg border border-slate-200">
               {separateRows.length === 0 && (
                 <p className="text-sm text-slate-400 text-center py-10">별도 주문이 없습니다. 터미널 관리에서 &apos;별도 주문&apos;으로 지정한 터미널의 주문이 여기에 모입니다.</p>
               )}
