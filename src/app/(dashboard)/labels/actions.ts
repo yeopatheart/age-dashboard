@@ -253,11 +253,10 @@ async function createPrintJob(supabase: Supabase, userId: string | null, items: 
 }
 
 export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: number[] }): Promise<LabelPrintPayload> {
-  await requirePermission('packing:print');
+  const access = await requirePermission('packing:print');
   const fail = (error: string): LabelPrintPayload => ({ error, template: null, labels: [], infos: [], rotated: false, jobId: null, pendingSeqs: [] });
   const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims.sub ?? null;
+  const userId = access.userId;
   const [template, rotated, mode] = await Promise.all([loadLabelTemplate(supabase), loadLabelRotate(supabase), loadLabelConfirmMode(supabase)]);
   const result = await prepareCardLabels(supabase, userId, input.dailyBusinessId, input.seqs, template, mode);
   if (result.error !== null) return fail(result.error);
@@ -288,12 +287,11 @@ const BATCH_CONCURRENCY = 4;
 // 확정 방식이 '버튼'이면 업체마다 바코드를 발급하고 출력 이력을 바로 남기므로, 인쇄 대화상자를 닫거나 취소해도 "출력함"으로 기록된다(업체별 출력과 같다).
 // '스풀러'면 인쇄 완료가 확인된 라벨만 기록되고, 확인을 기다리는 라벨은 이 일괄 출력에서 빠진다.
 export async function prepareBatchLabelPrint(orderDate: string): Promise<BatchLabelPayload> {
-  await requirePermission('packing:print');
+  const access = await requirePermission('packing:print');
   const fail = (error: string): BatchLabelPayload => ({ error, template: null, labels: [], rotated: false, jobId: null, businesses: 0, skipped: [] });
   if (!isIsoDate(orderDate)) return fail('날짜 형식이 올바르지 않습니다.');
   const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims.sub ?? null;
+  const userId = access.userId;
 
   const { data: dailies, error: dailyError } = await supabase
     .from('daily_businesses')

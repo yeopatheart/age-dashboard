@@ -26,6 +26,7 @@ import {
   togglePacked,
   reorderDailyBusinesses,
   createManualOrder,
+  loadBusinessDirectory,
   updateOrder,
   renameDailyBusiness,
   deleteDailyBusiness,
@@ -426,14 +427,17 @@ const SUGGESTION_VISIBLE_ROWS = 5;
 function OrderFormModal({
   initial,
   terminals,
-  businesses,
+  businesses: businessList,
+  businessesError = null,
   registered = [],
   onSave,
   onClose,
 }: {
   initial?: { businessName: string; terminalId: string | null };
   terminals: Terminal[];
-  businesses: BusinessDirectoryEntry[];
+  // 고객사 검색 목록(새 주문 추가에서만 쓴다). 창을 열 때 서버에서 받으므로 처음에는 비어 있을 수 있다: null = 불러오는 중.
+  businesses: BusinessDirectoryEntry[] | null;
+  businessesError?: string | null;
   // 이 날짜 대시보드에 이미 올라와 있는 (업체, 차수, 터미널) — 새 주문 추가에서 같은 차수·터미널의 중복 등록을 막는다.
   registered?: { businessId: string; round: OrderRound; terminal: string }[];
   // 저장에 실패하면 화면에 보여줄 오류 문구를 돌려준다(성공하면 null).
@@ -441,6 +445,7 @@ function OrderFormModal({
   onClose: () => void;
 }) {
   const isEdit = Boolean(initial);
+  const businesses = businessList ?? [];
   const modalColors: TerminalColorMap = Object.fromEntries(terminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
   const [businessName, setBusinessName] = useState(initial?.businessName ?? '');
   const [terminalId, setTerminalId] = useState(initial?.terminalId ?? terminals[0]?.id ?? '');
@@ -529,7 +534,11 @@ function OrderFormModal({
                   })}
                 </ul>
               )}
-              {keyword && !matchedBusiness && suggestions.length === 0 && (
+              {/* 고객사 목록을 아직 받는 중이거나 받지 못했으면 "일치하는 고객이 없습니다" 대신 그 상태를 알린다(없는 고객으로 오해하지 않게). */}
+              {keyword && !matchedBusiness && (businessList === null || businessesError) && (
+                <p className="absolute left-0 right-0 top-1 z-20 bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-2 text-xs text-slate-600">{businessesError ? `고객사 목록을 불러오지 못했습니다: ${businessesError}` : '고객사 목록을 불러오는 중…'}</p>
+              )}
+              {keyword && !matchedBusiness && suggestions.length === 0 && businessList !== null && !businessesError && (
                 <p className="absolute left-0 right-0 top-1 z-20 bg-white border border-amber-200 rounded-lg shadow-lg px-3 py-2 text-xs text-amber-600">일치하는 고객이 없습니다. 고객사 관리에서 먼저 등록하거나 주문 입력으로 추가해주세요.</p>
               )}
             </div>
@@ -769,7 +778,6 @@ export function DashboardClient({
   rows: rawRows,
   items: serverItems,
   allTerminals,
-  businessDirectory,
   orderDate,
   today,
   productColors,
@@ -781,7 +789,6 @@ export function DashboardClient({
   rows: OrderRow[];
   items: OrderItem[];
   allTerminals: Terminal[];
-  businessDirectory: BusinessDirectoryEntry[];
   orderDate: string;
   today: string;
   productColors: Record<string, { fill: string | null; border: string | null }>;
@@ -837,6 +844,19 @@ export function DashboardClient({
   };
 
   const [addOrderModal, setAddOrderModal] = useState(false);
+  // "새 주문 추가"의 고객사 검색 목록은 창을 열 때마다 서버에서 받는다(그사이 등록된 고객사도 보인다). 받는 동안에는 이전에 받은 목록을 그대로 쓴다.
+  const [directory, setDirectory] = useState<{ businesses: BusinessDirectoryEntry[] | null; error: string | null }>({ businesses: null, error: null });
+  useEffect(() => {
+    if (!addOrderModal) return;
+    let cancelled = false;
+    void loadBusinessDirectory().then((result) => {
+      if (cancelled) return;
+      setDirectory((prev) => (result.error ? { businesses: prev.businesses, error: result.error } : { businesses: result.businesses, error: null }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [addOrderModal]);
   const [editOrderModal, setEditOrderModal] = useState<OrderRow | null>(null);
   const [addItemModal, setAddItemModal] = useState<{ row: OrderRow; prefillProductName?: string; prefillUnit?: string } | null>(null);
   const [editItemModal, setEditItemModal] = useState<OrderItem | null>(null);
@@ -1416,7 +1436,7 @@ export function DashboardClient({
       )}
       {picked && pickedProduct && <ProductCustomersPopover product={pickedProduct} customers={pickedCustomers} anchor={picked.anchor} chipStyle={chipStyle(pickedProduct.productName)} canEdit={!readOnly} onSetPacked={handleSetPackedMany} onChangeQuantity={handleChangeQuantity} onClose={closePicked} />}
       {addOrderModal && (
-        <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={allRows.map((r) => ({ businessId: r.businessId, round: r.round, terminal: r.terminal }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
+        <OrderFormModal terminals={allTerminals} businesses={directory.businesses} businessesError={directory.error} registered={allRows.map((r) => ({ businessId: r.businessId, round: r.round, terminal: r.terminal }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
       )}
       {editOrderModal && (
         <OrderFormModal
@@ -1425,7 +1445,7 @@ export function DashboardClient({
             terminalId: allTerminals.find((t) => t.name === editOrderModal.terminal)?.id ?? null,
           }}
           terminals={allTerminals}
-          businesses={businessDirectory}
+          businesses={[]}
           onSave={handleSaveOrder}
           onClose={() => setEditOrderModal(null)}
         />

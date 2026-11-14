@@ -38,7 +38,7 @@ const daysBetween = (from: string, to: string) => (Date.parse(`${to}T00:00:00Z`)
 // 선택한 판매내역 줄로 영수증을 발행한다(고객사 × 사업자 × 출고일마다 한 장). 줄은 화면에서 보낸 값이 아니라 서버가 DB에서 다시 읽은 값으로 만든다.
 // 발행한 내용(품목·금액·공급자 정보)은 settlement_receipts에 스냅샷으로 저장되고, 화면은 이 결과로 이미지를 만든다.
 export async function issueReceipts(input: { itemIds: string[]; from: string; to: string }): Promise<IssueResult> {
-  await requirePermission('settlement:edit');
+  const access = await requirePermission('settlement:edit');
   const ids = [...new Set(input.itemIds)];
   if (ids.length === 0) return fail('영수증을 만들 줄을 선택해주세요.');
   if (ids.length > MAX_ITEMS) return fail(`한 번에 ${MAX_ITEMS.toLocaleString('ko-KR')}줄까지만 만들 수 있습니다.`);
@@ -88,8 +88,7 @@ export async function issueReceipts(input: { itemIds: string[]; from: string; to
     const lastNo = new Map<string, number>();
     for (const r of existing ?? []) lastNo.set(r.order_date, Math.max(lastNo.get(r.order_date) ?? 0, r.receipt_no));
 
-    const { data: claims } = await supabase.auth.getClaims();
-    const userId = claims?.claims.sub ?? null;
+    const userId = access.userId;
     const prepared = issuable.map((g) => {
       const receiptNo = (lastNo.get(g.orderDate) ?? 0) + 1;
       lastNo.set(g.orderDate, receiptNo);

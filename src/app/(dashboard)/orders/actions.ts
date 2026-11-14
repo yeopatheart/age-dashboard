@@ -385,7 +385,7 @@ async function registerNewProducts(supabase: Awaited<ReturnType<typeof createCli
 // DB 왕복 횟수가 곧 지연 시간이므로(서버↔DB 왕복 1회 = 수십~수백 ms) 줄마다 조회/삽입하지 않고
 // 터미널 → 업체 → 오늘 카드 → 상품 순으로 단계별로 모아서 한 번에 처리한다.
 export async function commitOrderLines(orderDate: string, round: OrderRound, decisions: LineDecision[], rawText?: string) {
-  await requirePermission('orders:edit');
+  const access = await requirePermission('orders:edit');
   // 확인 화면을 거치지 않고 직접 호출해도 이상한 값이 DB에 들어가지 않도록 서버에서 한 번 더 검사한다.
   if (!isIsoDate(orderDate)) throw new Error('날짜 형식이 올바르지 않습니다.');
   if (decisions.length > MAX_DECISIONS) throw new Error(`한 번에 반영할 수 있는 줄 수(${MAX_DECISIONS}줄)를 넘었습니다.`);
@@ -400,14 +400,13 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
     if (invalid) throw new Error(invalid);
   }
   const supabase = await createClient();
-  const [{ data: claims }, logCount, settings] = await Promise.all([
-    supabase.auth.getClaims(),
+  const [logCount, settings] = await Promise.all([
     rawText
       ? supabase.from('kakao_message_log').select('id', { count: 'exact', head: true }).eq('order_date', orderDate)
       : Promise.resolve(null),
     loadAppSettings(supabase),
   ]);
-  const userId = claims?.claims.sub ?? null;
+  const userId = access.userId;
   const dateError = editableDateError(orderDate, settings.allowPastOrderEdit);
   if (dateError) throw new Error(dateError);
 

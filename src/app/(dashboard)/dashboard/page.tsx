@@ -40,13 +40,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const orderDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today ? date : today;
 
   // 1단계: 서로 의존하지 않는 조회는 한 번에 보낸다 — 순서대로 await하면 DB 왕복 시간이 그대로 더해진다.
-  // businessDirectory는 "새 주문 추가" 검색용이자(전체 업체), 오늘 카드의 업체명/터미널 조회용이기도 해서
-  // 오늘 업체만 따로 다시 조회하지 않는다. 업체·상품은 1000개를 넘을 수 있어 페이지로 나눠 모두 읽는다.
-  const [, { data: allTerminals, error: terminalError }, businessRows, { data: dailyBusinesses, error: dailyError }, productRows, settings, { data: highlightRows, error: highlightError }] =
+  // 업체(고객사) 전체 목록은 여기서 읽지 않는다: 화면은 이 날짜 카드의 업체 이름만 필요하므로 2단계에서 그 업체만 읽고,
+  // "새 주문 추가"의 검색 목록은 그 창을 열 때 따로 받는다(loadBusinessDirectory). 이 페이지는 실시간 변경·안전 새로고침마다
+  // 켜진 기기 수만큼 다시 읽히는데, 날짜와 무관한 전체 목록을 매번 싣는 것이 부하였다(2026-11-14). 상품은 1000개를 넘을 수 있어 페이지로 나눠 모두 읽는다.
+  const [, { data: allTerminals, error: terminalError }, { data: dailyBusinesses, error: dailyError }, productRows, settings, { data: highlightRows, error: highlightError }] =
     await Promise.all([
       accessCheck,
       supabase.from('terminals').select('id, name, fill_color, border_color, is_separate, is_parcel').order('name'),
-      fetchAll((from, to) => supabase.from('businesses').select('id, name, terminal_id').order('name').order('id').range(from, to), '업체 조회 실패: '),
       supabase
         .from('daily_businesses')
         .select('id, business_id, business_number, round, memo, terminal_id, display_name, merge_groups')
@@ -63,16 +63,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   if (terminalError) throw new Error(`터미널 조회 실패: ${terminalError.message}`);
   const dailyBusinessRows = dailyBusinesses ?? [];
   const dailyBusinessIds = dailyBusinessRows.map((d) => d.id);
+  const businessIds = [...new Set(dailyBusinessRows.map((d) => d.business_id))];
 
   // 2단계: 오늘 카드 id가 정해지면 주문 줄·박스 제출 기록·추천 기록을 한 번에 읽는다.
-  const [{ data: orderItemRows }, { data: packingRecordRows }, { data: recommendationRows }, { data: labelRows }] = dailyBusinessIds.length
+  const [{ data: orderItemRows }, { data: packingRecordRows }, { data: recommendationRows }, { data: labelRows }, { data: businessData, error: businessError }] = dailyBusinessIds.length
     ? await Promise.all([
         loadOrderItemRows(supabase, dailyBusinessIds),
         supabase.from('packing_records').select('id, daily_business_id, order_signature').in('daily_business_id', dailyBusinessIds),
         supabase.from('packing_recommendations').select('daily_business_id, order_signature, created_at').in('daily_business_id', dailyBusinessIds).order('created_at'),
         selectAll((from, to) => supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyBusinessIds).order('id').range(from, to), '라벨 조회 실패: '),
+        supabase.from('businesses').select('id, name').in('id', businessIds),
       ])
-    : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
+    : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [], error: null }];
+  if (businessError) throw new Error(`업체 조회 실패: ${businessError.message}`);
+  const businessRows = businessData ?? [];
 
   // 3단계: "박스" 열은 박스 할당에서 제출한 박스 수다 — 대시보드에서 따로 입력하지 않으므로 제출 기록에서 바로 센다.
   const recordIds = (packingRecordRows ?? []).map((r) => r.id);
@@ -123,13 +127,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   });
 
   // 박스 구성을 정한 뒤 주문이 바뀐 업체에는 이름 옆에 작은 "박스" 배지를 단다(박스 상세는 박스 기록 화면에서 본다).
+  // 주문 줄을 카드별로 한 번만 묶는다(카드마다 전체 줄을 다시 훑지 않는다).
+  const liveItemsByDaily = new Map<string, { id: string; name: string; unit: string; quantity: number; mulbongFlag: boolean }[]>();
+  for (const r of orderItemRows ?? []) {
+    const quantity = Number(r.quantity) - Number(r.unshipped_quantity ?? 0);
+    if (r.change_status === 'cancelled' || !(quantity > 0)) continue;
+    const list = liveItemsByDaily.get(r.daily_business_id) ?? [];
+    list.push({ id: r.id, name: r.product_name_raw, unit: r.unit, quantity, mulbongFlag: r.is_mulbong });
+    liveItemsByDaily.set(r.daily_business_id, list);
+  }
   const changedAfterPacking = findChangedAfterPacking(
-    dailyBusinessIds.map((id) => ({
-      dailyBusinessId: id,
-      items: (orderItemRows ?? [])
-        .filter((r) => r.daily_business_id === id && r.change_status !== 'cancelled' && Number(r.quantity) - Number(r.unshipped_quantity ?? 0) > 0)
-        .map((r) => ({ id: r.id, name: r.product_name_raw, unit: r.unit, quantity: Number(r.quantity) - Number(r.unshipped_quantity ?? 0), mulbongFlag: r.is_mulbong })),
-    })),
+    dailyBusinessIds.map((id) => ({ dailyBusinessId: id, items: liveItemsByDaily.get(id) ?? [] })),
     packingRecordRows ?? [],
     recommendationRows ?? [],
   );
@@ -174,7 +182,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       rows={rows}
       items={items}
       allTerminals={allTerminals ?? []}
-      businessDirectory={businessRows}
       orderDate={orderDate}
       unshippedReasons={settings.unshippedReasons}
       allowPast={settings.allowPastOrderEdit}

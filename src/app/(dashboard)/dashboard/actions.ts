@@ -11,6 +11,7 @@ import { loadAppSettings } from '@/lib/settings-server';
 import { inkCutoffDate, parseInkStrokes } from '@/lib/ink/store';
 import { missingTable, migrationsFor } from '@/lib/supabase/missing-table';
 import { isIsoDate, nonNegativeNumberError, positiveNumberError, textError } from '@/lib/validate';
+import { fetchAll } from '@/lib/supabase/fetch-all';
 import type { Database } from '@/lib/types/database';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -69,6 +70,18 @@ export async function saveBoardInk(orderDate: string, monitor: string, strokes: 
   // 오래된 그림 정리는 저장을 막지 않는다(실패해도 다음 저장 때 다시 시도한다).
   await supabase.from('board_ink').delete().lt('order_date', inkCutoffDate(todayKST()));
   return { error: null };
+}
+
+// "새 주문 추가" 창의 고객사 검색 목록. 주문 목록 페이지는 실시간 변경마다 다시 읽히므로 전체 목록을 거기에 싣지 않고, 창을 열 때만 받는다.
+export async function loadBusinessDirectory(): Promise<{ error: string | null; businesses: { id: string; name: string; terminal_id: string | null }[] }> {
+  await requirePermission('dashboard:view');
+  const supabase = await createClient();
+  try {
+    const businesses = await fetchAll((from, to) => supabase.from('businesses').select('id, name, terminal_id').order('name').order('id').range(from, to), '업체 조회 실패: ');
+    return { error: null, businesses };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : '업체 목록을 불러오지 못했습니다.', businesses: [] };
+  }
 }
 
 // ── 매트릭스 대시보드의 수동 편집 액션 ──────────────────────────────────────────
@@ -189,14 +202,13 @@ function manualItemError(fields: ManualItemFields): string | null {
 }
 
 export async function addOrderItemManual(dailyBusinessId: string, fields: ManualItemFields): Promise<{ error: string | null }> {
-  await requirePermission('dashboard:edit');
+  const access = await requirePermission('dashboard:edit');
   const invalid = manualItemError(fields);
   if (invalid) return { error: invalid };
   const supabase = await createClient();
   const guard = await dailyDateError(supabase, dailyBusinessId);
   if (guard) return { error: guard };
-  const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims.sub ?? null;
+  const userId = access.userId;
 
   const { data: sequence, error: sequenceError } = await supabase.rpc('assign_product_sequence', {
     p_daily_business_id: dailyBusinessId,

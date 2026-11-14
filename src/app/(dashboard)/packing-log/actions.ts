@@ -30,10 +30,9 @@ const EPSILON = 0.0001;
 // 저장한다(이미 제출한 업체를 다시 제출하면 이전 기록을 대체한다). 박스·상품 정보는 이 시점 값을 복사해서
 // 남긴다 — 박스 추천 모델의 학습 데이터라서 나중에 주문이나 박스 정보가 바뀌어도 변하면 안 된다.
 export async function submitPacking(input: PackingSubmission): Promise<{ error: string | null }> {
-  await requirePermission('packing:submit');
+  const access = await requirePermission('packing:submit');
   const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims.sub ?? null;
+  const userId = access.userId;
 
   if (input.boxes.length === 0) return { error: '박스를 하나 이상 추가해주세요.' };
   const emptyAt = firstEmptyBoxIndex(input.boxes);
