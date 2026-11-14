@@ -7,8 +7,21 @@ import { boxStatesOf, type LabelRow } from '@/lib/overview';
 import { DashboardClient } from './dashboard-client';
 import { requireMenu } from '@/lib/permissions/access';
 import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
+import { missingTable } from '@/lib/supabase/missing-table';
 import { headers } from 'next/headers';
 import { todayKST } from '@/lib/order-date';
+
+const ORDER_ITEM_COLUMNS = 'id, daily_business_id, product_sequence, product_id, product_name_raw, quantity, unit, secondary_weight_kg, measured_weight_kg, size_request, is_mulbong, has_aerator, is_packed, unshipped_quantity, unshipped_reason, change_status';
+
+// 주문 줄을 읽는다. 처음 입력 수량 열(0060)이 아직 없으면 그 열 없이 다시 읽는다 — 마이그레이션 적용 전에 배포해도 주문 목록이 열리고, 변경분만 보이지 않는다.
+async function loadOrderItemRows(supabase: Awaited<ReturnType<typeof createClient>>, dailyBusinessIds: string[]) {
+  try {
+    return await selectAll((from, to) => supabase.from('order_items').select(`${ORDER_ITEM_COLUMNS}, base_quantity, base_unit`).in('daily_business_id', dailyBusinessIds).order('id').range(from, to), '주문 줄 조회 실패: ');
+  } catch (e) {
+    if (missingTable(e) !== 'order_item_base') throw e;
+    return selectAll((from, to) => supabase.from('order_items').select(ORDER_ITEM_COLUMNS).in('daily_business_id', dailyBusinessIds).order('id').range(from, to), '주문 줄 조회 실패: ');
+  }
+}
 
 // 조인을 얕은 여러 쿼리로 나눠서 처리한다 — database.ts가 아직 손으로 쓴 임시 타입이라
 // Supabase의 중첩 select(embedding) 타입 추론에 기대지 않고, 각 테이블을 그대로 select해서
@@ -54,10 +67,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // 2단계: 오늘 카드 id가 정해지면 주문 줄·박스 제출 기록·추천 기록을 한 번에 읽는다.
   const [{ data: orderItemRows }, { data: packingRecordRows }, { data: recommendationRows }, { data: labelRows }] = dailyBusinessIds.length
     ? await Promise.all([
-        selectAll((from, to) => supabase
-          .from('order_items')
-          .select('id, daily_business_id, product_sequence, product_id, product_name_raw, quantity, unit, secondary_weight_kg, measured_weight_kg, size_request, is_mulbong, has_aerator, is_packed, unshipped_quantity, unshipped_reason, change_status')
-          .in('daily_business_id', dailyBusinessIds).order('id').range(from, to), '주문 줄 조회 실패: '),
+        loadOrderItemRows(supabase, dailyBusinessIds),
         supabase.from('packing_records').select('id, daily_business_id, order_signature').in('daily_business_id', dailyBusinessIds),
         supabase.from('packing_recommendations').select('daily_business_id, order_signature, created_at').in('daily_business_id', dailyBusinessIds).order('created_at'),
         selectAll((from, to) => supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyBusinessIds).order('id').range(from, to), '라벨 조회 실패: '),
@@ -153,6 +163,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         unshippedQuantity: Number(row.unshipped_quantity ?? 0),
         unshippedReason: row.unshipped_reason ?? undefined,
         changeStatus: row.change_status,
+        baseQuantity: 'base_quantity' in row && (typeof row.base_quantity === 'number' || typeof row.base_quantity === 'string') ? Number(row.base_quantity) : undefined,
+        baseUnit: 'base_unit' in row && typeof row.base_unit === 'string' ? row.base_unit : undefined,
       },
     ];
   });
