@@ -272,7 +272,14 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       setLayoutTick((t) => t + 1);
     });
     observer.observe(canvas);
-    return () => observer.disconnect();
+    // 안쪽 목록이 스크롤되면(별도 주문 팝업) 상품 칸이 움직이므로 상품 칸에 붙은 획을 다시 그린다.
+    const parent = canvas.parentElement;
+    const onScroll = () => setLayoutTick((t) => t + 1);
+    parent?.addEventListener('scroll', onScroll, true);
+    return () => {
+      observer.disconnect();
+      parent?.removeEventListener('scroll', onScroll, true);
+    };
   }, []);
 
   // 그림, 상품 데이터, 레이아웃이 바뀌면 다시 그린다(상품 칸이 움직이면 붙은 획이 따라간다).
