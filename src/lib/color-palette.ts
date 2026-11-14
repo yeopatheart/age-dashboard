@@ -32,7 +32,7 @@ export const COLOR_HUES: ColorHue[] = [
 const HUE_BY_KEY = new Map(COLOR_HUES.map((h) => [h.key, h]));
 
 // 색이 지정되지 않은 상품의 기본 모양(기존 "최초주문" 팁과 동일).
-export const DEFAULT_PILL = { fill: '#f8fafc', border: '#1e293b', text: '#0f172a' };
+const DEFAULT_PILL = { fill: '#f8fafc', border: '#1e293b', text: '#0f172a' };
 
 export function resolveColors(fillKey: string | null | undefined, borderKey: string | null | undefined) {
   const fill = fillKey ? HUE_BY_KEY.get(fillKey) : undefined;

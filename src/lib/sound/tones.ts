@@ -48,7 +48,7 @@ export function getAudioContext(): AudioContext | null {
 // 크롬은 사용자가 아직 한 번도 누르지 않은 페이지의 resume()을 reject하지 않고 클릭할 때까지 pending으로 둔다. 그냥 await하면
 // 호출한 쪽(playCues의 재생 줄)이 영원히 멈춰서 그 뒤의 모든 알림이 소리 없이 쌓인다.
 const RESUME_WAIT_MS = 400;
-export async function ensureAudioRunning(waitMs = RESUME_WAIT_MS): Promise<boolean> {
+async function ensureAudioRunning(waitMs = RESUME_WAIT_MS): Promise<boolean> {
   const c = getAudioContext();
   if (!c) return false;
   const running = () => c.state === 'running'; // 상태는 await 사이에 바뀐다(앞의 검사로 타입이 좁혀지지 않게 함수로 읽는다)

@@ -4,7 +4,7 @@
 //  - 구분·매입처·매입가·공란·판매가는 시스템에 없는 값이라 비워서 내려보내고 엑셀에서 채운다.
 import { isUndecidedQuantity, type OrderItem, type OrderRow } from '@/lib/orders';
 
-export const SETTLEMENT_HEADERS = ['날짜', '구분', '고객명', '품목', '세부내역', '매입처', '매입가', '공란', '판매가'] as const;
+const SETTLEMENT_HEADERS = ['날짜', '구분', '고객명', '품목', '세부내역', '매입처', '매입가', '공란', '판매가'] as const;
 
 export interface SettlementLine {
   date: string; // YYYY-MM-DD
@@ -22,7 +22,7 @@ const formatNumber = (n: number) => String(Math.round(n * 100) / 100);
 
 // "10미5.9키로"처럼 수량 + 단위, 무게가 있으면 뒤에 붙인다. 실측 중량(박스 할당)이 있으면 그것을, 없으면 주문에 적힌 중량을 쓴다.
 // 단위가 kg인 상품은 수량이 이미 무게이므로 "5키로"로만 쓴다.
-export function settlementDetail(item: Pick<OrderItem, 'quantity' | 'unit' | 'unshippedQuantity' | 'secondaryWeightKg' | 'measuredWeightKg'>): string {
+function settlementDetail(item: Pick<OrderItem, 'quantity' | 'unit' | 'unshippedQuantity' | 'secondaryWeightKg' | 'measuredWeightKg'>): string {
   if (isUndecidedQuantity(item)) return '수량 미정';
   const shippable = Math.max(0, item.quantity - item.unshippedQuantity);
   const isKg = item.unit.toLowerCase() === 'kg';

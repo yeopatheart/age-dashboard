@@ -23,13 +23,13 @@ function hashName(name: string): number {
   return hash;
 }
 
-export function terminalColorSet(name: string) {
+function terminalColorSet(name: string) {
   if (!name) return { bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-500', dot: 'bg-slate-300' };
   return TERMINAL_PALETTE[hashName(name) % TERMINAL_PALETTE.length];
 }
 
 // 기존 dashboard-client.tsx에서 쓰던 "클래스 문자열 하나" 형태 — 배지 className에 그대로 이어붙인다.
-export function terminalColor(name: string): string {
+function terminalColor(name: string): string {
   const c = terminalColorSet(name);
   return `${c.bg} ${c.border} ${c.text}`;
 }
