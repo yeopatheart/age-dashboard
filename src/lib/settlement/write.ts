@@ -4,7 +4,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
 import { parseShippingMethod, type ShippingInput } from './shipping';
-import type { PurchaseChange, SalesChange } from './excel-import';
+import type { SalesChange } from './excel-import';
 
 type Client = SupabaseClient<Database>;
 const CHUNK = 500;
@@ -32,6 +32,9 @@ export async function upsertSalesChanges(supabase: Client, changes: SalesChange[
     if (f.product !== undefined) cols.product_override = f.product;
     if (f.quantity !== undefined) cols.quantity_override = f.quantity;
     if (f.unit !== undefined) cols.unit_override = f.unit;
+    if (f.supplierId !== undefined) cols.supplier_id = f.supplierId;
+    if (f.purchaseUnitPrice !== undefined) cols.purchase_unit_price = f.purchaseUnitPrice;
+    if (f.purchasePrice !== undefined) cols.purchase_price = f.purchasePrice;
     if (f.memo !== undefined) cols.memo = f.memo === '' ? null : f.memo;
     return { id: c.itemId, cols };
   });
@@ -39,27 +42,6 @@ export async function upsertSalesChanges(supabase: Client, changes: SalesChange[
     for (let i = 0; i < group.length; i += CHUNK) {
       const rows = group.slice(i, i + CHUNK).map((g) => ({ order_item_id: g.id, ...g.cols }));
       const { error } = await supabase.from('settlement_sales').upsert(rows, { onConflict: 'order_item_id' });
-      if (error) return { error: error.code === '23503' ? FK_MESSAGE : error.message };
-    }
-  }
-  return { error: null };
-}
-
-export async function upsertPurchaseChanges(supabase: Client, changes: PurchaseChange[]): Promise<Result> {
-  const items = changes.map((c) => {
-    const cols: Record<string, unknown> = {};
-    const f = c.fields;
-    if (f.supplierId !== undefined) cols.supplier_id = f.supplierId;
-    if (f.price !== undefined) cols.price = f.price;
-    if (f.sellerId !== undefined) cols.seller_id = f.sellerId;
-    if (f.paid !== undefined) cols.paid = f.paid;
-    if (f.memo !== undefined) cols.memo = f.memo === '' ? null : f.memo;
-    return { id: `${c.orderDate}|${c.productName}`, orderDate: c.orderDate, productName: c.productName, cols };
-  });
-  for (const group of groupByColumns(items)) {
-    for (let i = 0; i < group.length; i += CHUNK) {
-      const rows = group.slice(i, i + CHUNK).map((g) => ({ order_date: g.orderDate, product_name: g.productName, ...g.cols }));
-      const { error } = await supabase.from('settlement_purchases').upsert(rows, { onConflict: 'order_date,product_name' });
       if (error) return { error: error.code === '23503' ? FK_MESSAGE : error.message };
     }
   }

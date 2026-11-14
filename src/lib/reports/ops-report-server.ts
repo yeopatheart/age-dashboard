@@ -65,10 +65,10 @@ export async function loadSalesInputTimes(supabase: Client, itemIds: string[]): 
   return new Map(rows.map((r) => [r.order_item_id, Date.parse(r.updated_at)]));
 }
 
-// 매입가 입력 시각(updated_at). 키는 `출고일|품목`.
+// 매입 단가 입력 시각(품목 단가표의 updated_at, 0065). 키는 `출고일|품목`. 매입 단가를 넣은 행만 센다. 테이블이 없으면 missingTable 오류를 던진다.
 export async function loadPurchaseInputTimes(supabase: Client, from: string, to: string): Promise<Map<string, number>> {
   const rows = await fetchAll(
-    (a, b) => supabase.from('settlement_purchases').select('order_date, product_name, updated_at').gte('order_date', from).lte('order_date', to).order('order_date').order('product_name').range(a, b),
+    (a, b) => supabase.from('settlement_prices').select('order_date, product_name, updated_at').not('purchase_unit_price', 'is', null).gte('order_date', from).lte('order_date', to).order('order_date').order('product_name').range(a, b),
     '매입 입력 시각 조회 실패: ',
   );
   return new Map(rows.map((r) => [`${r.order_date}|${r.product_name}`, Date.parse(r.updated_at)]));

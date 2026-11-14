@@ -27,6 +27,9 @@ export function resolveSalesEdit(original: SalesOriginal, o: SalesOverride | und
 export interface SalesLineFields {
   price?: number | null;
   unitPrice?: number | null;
+  supplierId?: string | null; // 줄 단위 매입(0065). null = 날짜별 품목 단가표를 따른다
+  purchaseUnitPrice?: number | null;
+  purchasePrice?: number | null;
   product?: string | null;
   quantity?: number | null;
   unit?: string | null;
@@ -44,6 +47,8 @@ const badPrice = (v: number | null | undefined) => v !== undefined && v !== null
 export function salesFieldsError(f: SalesLineFields): string | null {
   if (badPrice(f.price)) return '판매가가 올바르지 않습니다.';
   if (badPrice(f.unitPrice)) return '단가가 올바르지 않습니다.';
+  if (badPrice(f.purchaseUnitPrice)) return '매입 단가가 올바르지 않습니다.';
+  if (badPrice(f.purchasePrice)) return '매입가가 올바르지 않습니다.';
   if (f.product !== undefined && f.product !== null && (f.product.trim().length === 0 || f.product.trim().length > MAX_PRODUCT_LEN)) return `품목명은 1~${MAX_PRODUCT_LEN}자로 입력해주세요.`;
   const q = f.quantity;
   if (q !== undefined && q !== null && (!Number.isFinite(q) || q <= 0 || q > MAX_QUANTITY || Math.round(q * 100) / 100 !== q)) return `수량은 0보다 크고 ${MAX_QUANTITY.toLocaleString('ko-KR')} 이하(소수 둘째 자리까지)로 입력해주세요.`;

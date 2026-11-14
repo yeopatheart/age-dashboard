@@ -21,6 +21,9 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
   label_print_jobs: '0061_label_print_spooler.sql', // 라벨 출력 확정(스풀러 방식)
   settlement_shipping: '0062_settlement_shipping.sql',
   settlement_cards: '0064_settlement_cards.sql',
+  settlement_prices: '0065_settlement_purchase_lines.sql',
+  settlement_supplier_payments: '0065_settlement_purchase_lines.sql',
+  settlement_purchase_lines: '0065_settlement_purchase_lines.sql', // 테이블이 아니라 settlement_sales에 더한 열(줄 단위 매입처·매입단가·매입가)
   shipping_settings: '0062_settlement_shipping.sql', // 테이블이 아니라 terminals(quick_allowed)에 더한 열
   shipping_rates: '0063_customer_seller_terminal_rates.sql', // terminals에 더한 배송비 기본 금액 열(bus_rate·quick_rate·parcel_rate)
   business_fields: '0063_customer_seller_terminal_rates.sql', // businesses에 더한 열(legal_name·seller_id·uses_quick)
@@ -38,6 +41,8 @@ export function missingTable(error: unknown): string | null {
   // 마이그레이션 0062가 terminals에 더한 열(퀵 가능), 0063이 더한 열(터미널 배송비 금액, 고객사 사업자명·사업자구분·퀵 이용)이 없을 때도 같은 안내를 한다.
   if (/bus_rate|quick_rate|parcel_rate/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'shipping_rates';
   if (/legal_name|uses_quick|businesses\.seller_id/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'business_fields';
+  // 마이그레이션 0065가 settlement_sales에 더한 줄 단위 매입 열이 없을 때도 같은 안내를 한다.
+  if (/purchase_unit_price|purchase_price|settlement_sales\.supplier_id/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'settlement_purchase_lines';
   if (/quick_allowed/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'shipping_settings';
   // 마이그레이션 0060이 order_items에 더한 열(base_quantity, base_unit)이 없을 때도 같은 안내를 한다.
   if (/base_quantity|base_unit/.test(message) && /does not exist|schema cache|Could not find/i.test(message)) return 'order_item_base';

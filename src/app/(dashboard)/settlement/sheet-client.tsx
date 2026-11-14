@@ -1,14 +1,20 @@
 'use client';
 import { memo, useMemo, useRef, useState } from 'react';
-import { deleteShippingRow, saveCardSettings, saveSalesLines, saveShippingRows, type SalesLineChange } from './actions';
+import { copyPreviousPrices, deleteShippingRow, saveCardSettings, savePrices, saveSalesLines, saveShippingRows, saveSupplierPaid, type SalesLineChange } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { SearchInput } from '@/components/admin/admin-kit';
 import { formatWon } from '@/lib/money';
 import type { IssuedReceiptKey } from '@/lib/settlement/receipt';
 import type { SalesRow } from '@/lib/settlement/sales';
 import { SHIPPING_METHODS, shippingKey, shippingLabel, shippingTotals, type ShippingInput, type ShippingMethod, type ShippingRow } from '@/lib/settlement/shipping';
-import { SHEET_COLS, SHIPPING_COLS, buildGroups, editLineCells, editShippingCells, groupTotals, isMultiCell, parseClipboard, type SheetCol, type SheetGroup } from '@/lib/settlement/sheet';
+import { SHEET_COLS, SHIPPING_COLS, buildGroups, editLineCells, editShippingCells, groupTotals, isMultiCell, parseClipboard, withEffective, type SheetCol, type SheetGroup } from '@/lib/settlement/sheet';
+import { priceKey, type PriceEntry } from '@/lib/settlement/pricing';
+import { buildPurchaseRows, buildSupplierGroups, paymentKey, totalsOf } from '@/lib/settlement/purchases';
+import { parseWon, wonInputError } from '@/lib/money';
 import { ReceiptIssuePanel } from './receipt-issue-panel';
+import { Cell } from './sheet-cell';
+import { PriceTable, type PriceRowInfo } from './price-table';
+import { SupplierSummary } from './supplier-summary';
 
 // 정산표: 그날 판매·배송비를 고객별로 묶어 한 장으로 입력한다. 칸은 처음부터 입력칸이라 한글·휴대폰 입력이 그대로 되고,
 // Enter·방향키로 칸을 옮기고, 엑셀에서 복사한 여러 칸을 붙여넣고, Ctrl+D로 위 칸 값을 채운다. 칸을 벗어나면 바로 저장된다.
@@ -21,35 +27,11 @@ export interface SheetCard {
 type FlatRow = { kind: 'line'; row: SalesRow } | { kind: 'ship'; row: ShippingRow };
 type Op = { kind: 'line'; row: SalesRow; fields: SalesLineChange['fields']; view: Partial<SalesRow> } | { kind: 'ship'; next: ShippingRow };
 
-const COL_LABEL: Record<SheetCol, string> = { product: '품목', quantity: '수량', unit: '단위', unitPrice: '단가', price: '판매가', memo: '메모' };
-const NUMERIC: ReadonlySet<SheetCol> = new Set(['quantity', 'unitPrice', 'price']);
+const COL_LABEL: Record<SheetCol, string> = { product: '품목', quantity: '수량', unit: '단위', unitPrice: '단가', price: '판매가', supplier: '매입처', purchaseUnit: '매입단가', purchase: '매입가', memo: '메모' };
+const NUMERIC: ReadonlySet<SheetCol> = new Set(['quantity', 'unitPrice', 'price', 'purchaseUnit', 'purchase']);
 const SAVE_FAILED = '저장하지 못했습니다. 권한이나 연결을 확인한 뒤 다시 시도해주세요.';
 const toInput = (r: ShippingRow): ShippingInput => ({ cardId: r.cardId, method: r.method, boxes: r.boxes, amount: r.amount ?? 0, sellerId: null, paid: false, memo: r.memo || null });
 const quantityText = (q: number) => String(Number(q.toFixed(2)));
-
-// 입력칸 하나. 타자를 치는 동안의 글자는 이 칸만 다시 그리게 칸 안에 둔다(표 전체를 다시 그리지 않는다). 칸을 벗어나면 저장한다.
-function Cell({ r, c, value, label, disabled, edited, muted, onCommit }: { r: number; c: SheetCol; value: string; label: string; disabled: boolean; edited?: boolean; muted?: boolean; onCommit: (text: string) => void }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  return (
-    <input
-      className={`st-cell${NUMERIC.has(c) ? ' is-num' : ''}${edited ? ' is-edited' : ''}${muted ? ' is-auto' : ''}`}
-      data-r={r}
-      data-c={c}
-      value={draft ?? value}
-      disabled={disabled}
-      aria-label={label}
-      inputMode={NUMERIC.has(c) ? 'decimal' : undefined}
-      autoComplete="off"
-      onFocus={(e) => e.currentTarget.select()}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (draft === null) return;
-        setDraft(null);
-        if (draft !== value) onCommit(draft);
-      }}
-    />
-  );
-}
 
 interface GroupActions {
   toggle: (cardId: string) => void;
@@ -63,14 +45,14 @@ interface GroupActions {
 // 고객 묶음 하나(머리줄 + 상품 줄 + 배송비 줄). 칸 하나를 저장할 때 표 전체(수백 줄)를 다시 그리지 않도록, 내용(sig)이 바뀐 묶음만 다시 그린다.
 // actions의 함수들은 화면 상태를 읽지 않고 setState만 부르므로(위 apply·saveCard 참고) 예전 렌더의 함수를 그대로 써도 결과가 같다 — 그래서 비교에서 뺀다.
 const GroupRows = memo(
-  function GroupRows({ g, base, selected, canEdit, sellers, canAddShipping, boxes, nos, actions }: { g: SheetGroup; sig: string; base: number; selected: boolean; canEdit: boolean; sellers: Option[]; canAddShipping: boolean; boxes: number; nos: string; actions: GroupActions }) {
+  function GroupRows({ g, base, selected, canEdit, canEditPurchase, sellers, supplierNameById, canAddShipping, boxes, nos, actions }: { g: SheetGroup; sig: string; base: number; selected: boolean; canEdit: boolean; canEditPurchase: boolean; sellers: Option[]; supplierNameById: ReadonlyMap<string, string>; canAddShipping: boolean; boxes: number; nos: string; actions: GroupActions }) {
     const totals = groupTotals(g);
     const missing = SHIPPING_METHODS.filter((m) => !g.shipping.some((s) => s.method === m.key));
     return (
       <>
         <tr className="st-group">
           <td className="ak-check">{canEdit && <input type="checkbox" checked={selected} onChange={() => actions.toggle(g.cardId)} aria-label={`${g.customer} 선택`} />}</td>
-          <td colSpan={SHEET_COLS.length + 1}>
+          <td colSpan={SHEET_COLS.length + 2}>
             <div className="st-group-inner">
               <strong className="st-group-name">{g.customer}</strong>
               <span className="ak-sub">{g.terminal}</span>
@@ -91,6 +73,7 @@ const GroupRows = memo(
               {nos !== '' && <span className="ak-sub" title="이미 발행한 영수증 번호">영수증 NO.{nos}</span>}
               <span className="ak-spacer" />
               {totals.unpriced > 0 && <span className="ak-sub" style={{ color: '#b45309' }}>미입력 {totals.unpriced}줄</span>}
+              {totals.purchase > 0 && <span className="ak-sub" title="이 고객 줄의 매입가 합. 수익 = 상품 판매가 − 매입가(배송비 제외)">매입 {formatWon(totals.purchase)}{totals.unpurchased === 0 ? ` · 수익 ${formatWon(totals.goods - totals.purchase)}` : ''}</span>}
               <span className="st-group-total">
                 {totals.shipping > 0 && <span className="ak-sub">상품 {formatWon(totals.goods)} + 배송비 {formatWon(totals.shipping)} = </span>}
                 <strong>{formatWon(totals.total)}원</strong>
@@ -107,10 +90,14 @@ const GroupRows = memo(
             <tr key={l.itemId} title={origin}>
               <td />
               <td><Cell r={r} c="product" value={l.product} label={`${name} 품목`} disabled={!canEdit} edited={l.product !== l.original.product} onCommit={(text) => actions.commitCell(target, 'product', text)} /></td>
-              <td><Cell r={r} c="quantity" value={quantityText(l.quantity)} label={`${name} 수량`} disabled={!canEdit} edited={l.quantity !== l.original.quantity} onCommit={(text) => actions.commitCell(target, 'quantity', text)} /></td>
+              <td><Cell r={r} c="quantity" numeric value={quantityText(l.quantity)} label={`${name} 수량`} disabled={!canEdit} edited={l.quantity !== l.original.quantity} onCommit={(text) => actions.commitCell(target, 'quantity', text)} /></td>
               <td><Cell r={r} c="unit" value={l.unit} label={`${name} 단위`} disabled={!canEdit} edited={l.unit !== l.original.unit} onCommit={(text) => actions.commitCell(target, 'unit', text)} /></td>
-              <td><Cell r={r} c="unitPrice" value={formatWon(l.unitPrice)} label={`${name} 단가`} disabled={!canEdit} onCommit={(text) => actions.commitCell(target, 'unitPrice', text)} /></td>
-              <td><Cell r={r} c="price" value={formatWon(l.price)} label={`${name} 판매가`} disabled={!canEdit} onCommit={(text) => actions.commitCell(target, 'price', text)} /></td>
+              <td><Cell r={r} c="unitPrice" numeric value={formatWon(l.unitPrice)} label={`${name} 단가`} disabled={!canEdit} muted={l.unitPriceOwn === null && l.unitPrice !== null} onCommit={(text) => actions.commitCell(target, 'unitPrice', text)} /></td>
+              <td><Cell r={r} c="price" numeric value={formatWon(l.price)} label={`${name} 판매가`} disabled={!canEdit} muted={l.priceOwn === null && l.price !== null} onCommit={(text) => actions.commitCell(target, 'price', text)} /></td>
+              <td><Cell r={r} c="supplier" value={l.supplierId === null ? '' : (supplierNameById.get(l.supplierId) ?? '')} label={`${name} 매입처`} disabled={!canEditPurchase} muted={l.supplierOwn === null && l.supplierId !== null} list="st-suppliers" onCommit={(text) => actions.commitCell(target, 'supplier', text)} /></td>
+              <td><Cell r={r} c="purchaseUnit" numeric value={formatWon(l.purchaseUnitPrice)} label={`${name} 매입 단가`} disabled={!canEditPurchase} muted={l.purchaseUnitOwn === null && l.purchaseUnitPrice !== null} onCommit={(text) => actions.commitCell(target, 'purchaseUnit', text)} /></td>
+              <td><Cell r={r} c="purchase" numeric value={formatWon(l.purchasePrice)} label={`${name} 매입가`} disabled={!canEditPurchase} muted={l.purchaseOwn === null && l.purchasePrice !== null} onCommit={(text) => actions.commitCell(target, 'purchase', text)} /></td>
+              <td className="ak-right">{l.price !== null && l.purchasePrice !== null ? <span style={{ color: l.price - l.purchasePrice < 0 ? '#b91c1c' : undefined }}>{formatWon(l.price - l.purchasePrice)}</span> : <span className="ak-sub">-</span>}</td>
               <td><Cell r={r} c="memo" value={l.memo} label={`${name} 메모`} disabled={!canEdit} onCommit={(text) => actions.commitCell(target, 'memo', text)} /></td>
               <td />
             </tr>
@@ -132,10 +119,11 @@ const GroupRows = memo(
                   {excluded && <span className="ak-sub" title="이 날은 쓰지 않아 뺀 줄입니다(0원). 영수증과 합계에 들어가지 않습니다."> 뺌</span>}
                 </span>
               </td>
-              <td><Cell r={r} c="quantity" value={String(s.boxes)} label={`${name} 박스 수`} disabled={!canEdit} onCommit={(text) => actions.commitCell(target, 'quantity', text)} /></td>
+              <td><Cell r={r} c="quantity" numeric value={String(s.boxes)} label={`${name} 박스 수`} disabled={!canEdit} onCommit={(text) => actions.commitCell(target, 'quantity', text)} /></td>
               <td><span className="ak-sub">박스</span></td>
               <td className="ak-right"><span className="ak-sub">{s.rate !== null ? formatWon(s.rate) : ''}</span></td>
-              <td><Cell r={r} c="price" value={formatWon(s.amount)} label={`${name} 배송비`} disabled={!canEdit} muted={!s.saved || excluded} onCommit={(text) => actions.commitCell(target, 'price', text)} /></td>
+              <td><Cell r={r} c="price" numeric value={formatWon(s.amount)} label={`${name} 배송비`} disabled={!canEdit} muted={!s.saved || excluded} onCommit={(text) => actions.commitCell(target, 'price', text)} /></td>
+              <td colSpan={4} />
               <td><Cell r={r} c="memo" value={s.memo} label={`${name} 메모`} disabled={!canEdit} onCommit={(text) => actions.commitCell(target, 'memo', text)} /></td>
               <td className="ak-fit">
                 {canEdit && (s.saved ? (
@@ -150,7 +138,7 @@ const GroupRows = memo(
       </>
     );
   },
-  (a, b) => a.sig === b.sig && a.base === b.base && a.selected === b.selected && a.canEdit === b.canEdit && a.sellers === b.sellers && a.canAddShipping === b.canAddShipping && a.boxes === b.boxes && a.nos === b.nos,
+  (a, b) => a.sig === b.sig && a.base === b.base && a.selected === b.selected && a.canEdit === b.canEdit && a.canEditPurchase === b.canEditPurchase && a.supplierNameById === b.supplierNameById && a.sellers === b.sellers && a.canAddShipping === b.canAddShipping && a.boxes === b.boxes && a.nos === b.nos,
 );
 
 export function SheetClient({
@@ -158,6 +146,10 @@ export function SheetClient({
   shipping,
   cards,
   sellers,
+  suppliers,
+  prices,
+  paidSupplierIds,
+  purchaseAvailable,
   date,
   issued,
 }: {
@@ -165,6 +157,10 @@ export function SheetClient({
   shipping: ShippingRow[] | null; // null = 배송비 테이블·설정이 아직 없음(마이그레이션 전)
   cards: SheetCard[];
   sellers: Option[];
+  suppliers: Option[]; // 상품 관리의 매입처(이름으로 고른다)
+  prices: (PriceEntry & { product: string })[]; // 오늘의 품목 단가표(저장된 값)
+  paidSupplierIds: string[]; // 오늘 지급 체크한 매입처
+  purchaseAvailable: boolean; // 줄 단위 매입·단가표 마이그레이션(0065)이 적용됐는지
   date: string;
   issued: IssuedReceiptKey[]; // 이 날짜에 이미 발행한 영수증
 }) {
@@ -174,6 +170,8 @@ export function SheetClient({
   const [lineEdits, setLineEdits] = useState<Record<string, Partial<SalesRow>>>({});
   const [shipEdits, setShipEdits] = useState<Record<string, ShippingRow>>({}); // 고치거나 새로 추가한 배송비 줄(전체 값)
   const [cardEdits, setCardEdits] = useState<Record<string, { sellerId?: string | null; paid?: boolean }>>({});
+  const [priceEdits, setPriceEdits] = useState<Record<string, PriceEntry>>({}); // 고친 단가표 행(품목 → 전체 값)
+  const [paidEdits, setPaidEdits] = useState<Record<string, boolean>>({}); // 고친 매입처 지급 체크
   const [selected, setSelected] = useState<Set<string>>(new Set()); // 선택한 고객 카드
   const [search, setSearch] = useState('');
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -183,8 +181,17 @@ export function SheetClient({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const supplierNameById = useMemo(() => new Map(suppliers.map((x) => [x.id, x.name])), [suppliers]);
+  const supplierName = (id: string | null) => (id === null ? '' : (supplierNameById.get(id) ?? ''));
+  // 오늘의 단가표(저장한 값 + 방금 고친 값). 줄의 판매가·매입가는 이 표와 줄에서 고친 값으로 계산된다.
+  const priceMap = useMemo(() => {
+    const map = new Map<string, PriceEntry>(prices.map((p) => [priceKey(date, p.product), { saleUnitPrice: p.saleUnitPrice, supplierId: p.supplierId, purchaseUnitPrice: p.purchaseUnitPrice }]));
+    for (const [product, entry] of Object.entries(priceEdits)) map.set(priceKey(date, product), entry);
+    return map;
+  }, [prices, priceEdits, date]);
+
   const groups = useMemo(() => {
-    const viewLines = rows.map((r) => ({ ...r, ...lineEdits[r.itemId] }));
+    const viewLines = rows.map((r) => withEffective({ ...r, ...lineEdits[r.itemId] }, priceMap));
     const known = new Set((shipping ?? []).map((s) => s.key));
     const viewShipping = [...(shipping ?? []).map((s) => shipEdits[s.key] ?? s), ...Object.values(shipEdits).filter((s) => !known.has(s.key))];
     return buildGroups(viewLines, viewShipping).map((g): SheetGroup => {
@@ -194,7 +201,7 @@ export function SheetClient({
       const paid = edit.paid ?? g.paid;
       return { ...g, sellerId, paid, lines: g.lines.map((l) => ({ ...l, sellerId, paid })), shipping: g.shipping.map((s) => ({ ...s, sellerId, paid })) };
     });
-  }, [rows, shipping, lineEdits, shipEdits, cardEdits]);
+  }, [rows, shipping, lineEdits, shipEdits, cardEdits, priceMap]);
 
   const shownGroups = useMemo(() => {
     const k = search.trim().toLowerCase();
@@ -205,11 +212,35 @@ export function SheetClient({
   const rowNo = new Map(flat.map((f, i) => [f.kind === 'line' ? f.row.itemId : f.row.key, i]));
   const boxesOf = new Map(cards.map((c) => [c.cardId, c.boxes]));
 
-  const allLines = groups.flatMap((g) => g.lines);
+  const allLines = useMemo(() => groups.flatMap((g) => g.lines), [groups]);
   const goodsTotal = allLines.reduce((sum, l) => sum + (l.price ?? 0), 0);
   const ship = shippingTotals(groups.flatMap((g) => g.shipping));
   const unpriced = allLines.filter((l) => l.price === null).length;
   const paidGroups = groups.filter((g) => g.paid).length;
+  const paidKeys = useMemo(() => {
+    const ids = new Set(paidSupplierIds);
+    for (const [id, paid] of Object.entries(paidEdits)) {
+      if (paid) ids.add(id);
+      else ids.delete(id);
+    }
+    return new Set([...ids].map((id) => paymentKey(date, id)));
+  }, [paidSupplierIds, paidEdits, date]);
+  const purchaseTotals = useMemo(() => totalsOf(buildPurchaseRows(allLines, paidKeys)), [allLines, paidKeys]);
+  const supplierGroups = useMemo(
+    () => buildSupplierGroups(allLines, paidKeys).sort((a, b) => (a.supplierId === null ? 1 : b.supplierId === null ? -1 : (supplierNameById.get(a.supplierId) ?? '').localeCompare(supplierNameById.get(b.supplierId) ?? '', 'ko'))),
+    [allLines, paidKeys, supplierNameById],
+  );
+  // 오늘 나온 품목(줄에 보이는 이름)별 단가표 행
+  const priceRows = useMemo<PriceRowInfo[]>(() => {
+    const byProduct = new Map<string, PriceRowInfo>();
+    for (const l of allLines) {
+      const row = byProduct.get(l.product) ?? { product: l.product, lines: 0, quantity: 0, entry: priceMap.get(priceKey(date, l.product)) ?? { saleUnitPrice: null, supplierId: null, purchaseUnitPrice: null } };
+      row.lines += 1;
+      row.quantity += l.quantity;
+      byProduct.set(l.product, row);
+    }
+    return [...byProduct.values()].sort((a, b) => a.product.localeCompare(b.product, 'ko'));
+  }, [allLines, priceMap, date]);
 
   const markSaved = () => {
     setJustSaved(true);
@@ -253,7 +284,7 @@ export function SheetClient({
   // 한 줄의 칸(들)에 적은 글자를 저장할 변경으로 바꾼다. 잘못된 값이면 { error }, 바뀐 것이 없으면 null.
   const toOp = (target: FlatRow, cells: [SheetCol, string][]): Op | { error: string } | null => {
     if (target.kind === 'line') {
-      const edit = editLineCells(target.row, cells);
+      const edit = editLineCells(target.row, cells, suppliers);
       return edit === null || 'error' in edit ? edit : { kind: 'line', row: target.row, fields: edit.fields, view: edit.view };
     }
     const edit = editShippingCells(target.row, cells);
@@ -284,6 +315,66 @@ export function SheetClient({
     }
     markSaved();
     return true;
+  };
+
+  // 단가표 한 칸을 고친다(판매 단가·기본 매입처·매입 단가). 그 품목의 단가표를 따르는 줄은 바로 새 값으로 계산된다.
+  const commitPrice = async (product: string, col: 'sale' | 'supplier' | 'purchase', text: string) => {
+    const current = priceMap.get(priceKey(date, product)) ?? { saleUnitPrice: null, supplierId: null, purchaseUnitPrice: null };
+    const t = text.replace(/₩/g, '').trim();
+    let next: PriceEntry;
+    if (col === 'supplier') {
+      const supplier = t === '' ? null : (suppliers.find((x) => x.name === t) ?? suppliers.find((x) => x.name.toLowerCase() === t.toLowerCase()));
+      if (t !== '' && !supplier) return setError(`상품 관리에 없는 매입처입니다: ${t}`);
+      next = { ...current, supplierId: supplier?.id ?? null };
+    } else {
+      const problem = wonInputError(t);
+      if (problem) return setError(`${col === 'sale' ? '판매 단가' : '매입 단가'}: ${problem}`);
+      next = col === 'sale' ? { ...current, saleUnitPrice: parseWon(t) } : { ...current, purchaseUnitPrice: parseWon(t) };
+    }
+    if (next.saleUnitPrice === current.saleUnitPrice && next.supplierId === current.supplierId && next.purchaseUnitPrice === current.purchaseUnitPrice) return;
+    setError(null);
+    setNotice(null);
+    setPriceEdits((prev) => ({ ...prev, [product]: next }));
+    setSaving((n) => n + 1);
+    const result = await savePrices(date, [{ product, saleUnitPrice: next.saleUnitPrice, supplierId: next.supplierId, purchaseUnitPrice: next.purchaseUnitPrice }]).catch(() => ({ error: SAVE_FAILED }));
+    setSaving((n) => n - 1);
+    if (result.error) {
+      setPriceEdits((prev) => {
+        const copy = { ...prev };
+        delete copy[product];
+        return copy;
+      });
+      return setError(result.error);
+    }
+    markSaved();
+  };
+
+  const copyPrevious = async () => {
+    setError(null);
+    setNotice(null);
+    setSaving((n) => n + 1);
+    const result = await copyPreviousPrices(date, priceRows.map((p) => p.product)).catch(() => ({ error: SAVE_FAILED, copied: 0 }));
+    setSaving((n) => n - 1);
+    if (result.error) return setError(result.error);
+    setNotice(result.copied > 0 ? `${result.copied}개 품목의 이전 단가를 불러왔습니다.` : '불러올 품목이 없습니다(이미 단가가 있거나 이전 단가표에 없는 품목입니다).');
+  };
+
+  // 매입처 지급 체크(그날 그 매입처에 지급했는지)
+  const togglePaid = async (supplierId: string, paid: boolean) => {
+    setError(null);
+    setPaidEdits((prev) => ({ ...prev, [supplierId]: paid }));
+    setSaving((n) => n + 1);
+    const result = await saveSupplierPaid(date, [supplierId], paid).catch(() => ({ error: SAVE_FAILED }));
+    setSaving((n) => n - 1);
+    if (result.error) {
+      setPaidEdits((prev) => {
+        const copy = { ...prev };
+        delete copy[supplierId];
+        return copy;
+      });
+      return setError(result.error);
+    }
+    markSaved();
   };
 
   const removeShipping = async (r: ShippingRow) => {
@@ -406,7 +497,9 @@ export function SheetClient({
         <span>상품 <strong>{formatWon(goodsTotal)}원</strong></span>
         {shipping && <span>배송비 <strong>{formatWon(ship.total)}원</strong></span>}
         <span>합계 <strong>{formatWon(goodsTotal + ship.total)}원</strong></span>
-        <span className="ak-sub">판매가 미입력 {unpriced}줄 · 입금 {paidGroups}/{groups.length}곳</span>
+        {purchaseAvailable && <span>매입 <strong>{formatWon(purchaseTotals.purchaseTotal)}원</strong></span>}
+        {purchaseAvailable && <span>수익 <strong style={{ color: purchaseTotals.profitTotal < 0 ? '#b91c1c' : undefined }}>{formatWon(purchaseTotals.profitTotal)}원</strong></span>}
+        <span className="ak-sub">판매가 미입력 {unpriced}줄{purchaseAvailable ? ` · 매입가 없는 품목 ${purchaseTotals.missingPrice}` : ''} · 입금 {paidGroups}/{groups.length}곳</span>
         <span className="ak-spacer" />
         <span className="ak-sub" role="status" aria-live="polite">{saving > 0 ? '저장 중…' : justSaved ? '저장됨 ✓' : canEdit ? '자동 저장' : ''}</span>
       </div>
@@ -425,25 +518,30 @@ export function SheetClient({
 
       {canEdit && groups.length > 0 && (
         <p className="ak-meta">
-          칸을 벗어나면 바로 저장됩니다. Enter·방향키로 칸을 옮기고, Ctrl+D로 위 칸 값을 채우고, 엑셀에서 복사한 여러 칸을 붙여넣을 수 있습니다. 수량 칸에 실중량을 적으면 단가 × 수량으로 판매가가 계산됩니다(직접 적은 판매가는 바꾸지 않습니다). 칸을 비우면 주문 목록 값으로 돌아갑니다.
+          칸을 벗어나면 바로 저장됩니다. Enter·방향키로 칸을 옮기고, Ctrl+D로 위 칸 값을 채우고, 엑셀에서 복사한 여러 칸을 붙여넣을 수 있습니다. 수량 칸에 실중량을 적으면 단가 × 수량으로 판매가가 계산됩니다(직접 적은 판매가는 바꾸지 않습니다). 칸을 비우면 주문 목록 값으로 돌아갑니다. 매입처·매입단가·매입가도 같은 방식이고, 흐린 글자는 위 품목 단가표를 따르는 값입니다(직접 고치면 그 줄만 따로 정해집니다).
         </p>
       )}
       {error && <p className="ak-error ak-flash" role="alert">{error}</p>}
       {notice && <p className="ak-notice ak-flash" role="status">{notice}</p>}
       {sellers.length === 0 && groups.length > 0 && <p className="ak-muted">등록된 사업자가 없습니다. “사업자 관리”에서 먼저 등록하면 사업자 구분을 고를 수 있습니다.</p>}
 
+      {/* 매입처 이름 목록(단가표·정산표의 매입처 칸이 고르는 데 쓴다) */}
+      <datalist id="st-suppliers">{suppliers.map((x) => <option key={x.id} value={x.name} />)}</datalist>
+
+      {purchaseAvailable && <PriceTable rows={priceRows} supplierName={supplierName} canEdit={canEdit} canCopy onCommit={(product, col, text) => void commitPrice(product, col, text)} onCopyPrevious={() => void copyPrevious()} />}
+
       <div className="ak-table-wrap">
         <table className="ak-table st-sheet" ref={tableRef} onKeyDown={onKeyDown} onPaste={onPaste}>
           <thead>
             <tr>
               <th className="ak-check">{canEdit && <input type="checkbox" checked={allShownSelected} onChange={toggleAll} aria-label="보이는 고객 모두 선택" />}</th>
-              {SHEET_COLS.map((c) => <th key={c} scope="col" className={NUMERIC.has(c) ? 'ak-right' : undefined}>{COL_LABEL[c]}</th>)}
+              {SHEET_COLS.flatMap((c) => [<th key={c} scope="col" className={NUMERIC.has(c) ? 'ak-right' : undefined}>{COL_LABEL[c]}</th>, ...(c === 'purchase' ? [<th key="profit" scope="col" className="ak-right">수익</th>] : [])])}
               <th aria-label="줄 동작" />
             </tr>
           </thead>
           <tbody>
             {shownGroups.length === 0 && (
-              <tr><td colSpan={SHEET_COLS.length + 2} className="ak-muted" style={{ textAlign: 'center' }}>{groups.length === 0 ? '이 날짜에 출고가 끝난 주문이 없습니다.' : '조건에 맞는 고객이 없습니다.'}</td></tr>
+              <tr><td colSpan={SHEET_COLS.length + 3} className="ak-muted" style={{ textAlign: 'center' }}>{groups.length === 0 ? '이 날짜에 출고가 끝난 주문이 없습니다.' : '조건에 맞는 고객이 없습니다.'}</td></tr>
             )}
             {shownGroups.map((g) => (
               <GroupRows
@@ -453,7 +551,9 @@ export function SheetClient({
                 base={rowNo.get(g.lines[0]?.itemId ?? g.shipping[0]?.key ?? '') ?? 0}
                 selected={selected.has(g.cardId)}
                 canEdit={canEdit}
+                canEditPurchase={canEdit && purchaseAvailable}
                 sellers={sellers}
+                supplierNameById={supplierNameById}
                 canAddShipping={shipping !== null}
                 boxes={boxesOf.get(g.cardId) ?? 1}
                 nos={issuedNos(g).join(', ')}
@@ -463,6 +563,8 @@ export function SheetClient({
           </tbody>
         </table>
       </div>
+
+      {purchaseAvailable && <SupplierSummary groups={supplierGroups} supplierName={supplierName} canEdit={canEdit} saving={saving > 0} onPaid={(id, paid) => void togglePaid(id, paid)} />}
 
       {receiptOpen && (
         <ReceiptIssuePanel rows={selectedGroups.flatMap((g) => g.lines)} shipping={selectedGroups.flatMap((g) => g.shipping)} sellers={sellers} from={date} to={date} issued={issued} saving={saving > 0} onClose={() => setReceiptOpen(false)} />

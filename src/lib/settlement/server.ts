@@ -7,7 +7,8 @@ import { fetchAll, mapChunks } from '@/lib/supabase/fetch-all';
 import { stageOfCard, type LabelRow } from '@/lib/overview';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { buildSalesRows, type SalesRow, type SalesSourceCard, type SalesSourceItem, type StoredSale } from './sales';
-import type { StoredPurchase } from './purchases';
+import { paymentKey } from './purchases';
+import { priceKey, type PriceEntry } from './pricing';
 import { missingTable } from '@/lib/supabase/missing-table';
 import { buildShippingRows, ratesFor, type ShippingCard, type ShippingRow, type StoredShipping, type ShippingMethod } from './shipping';
 
@@ -55,7 +56,7 @@ async function loadCardSettings(supabase: Client, cardIds: string[]): Promise<Ma
   }
 }
 
-export async function loadSalesAndCards(supabase: Client, from: string, to: string): Promise<{ rows: SalesRow[]; doneCards: DoneCard[]; cardSettingsAvailable: boolean }> {
+export async function loadSalesAndCards(supabase: Client, from: string, to: string): Promise<{ rows: SalesRow[]; doneCards: DoneCard[]; cardSettingsAvailable: boolean; purchaseAvailable: boolean; prices: StoredPrice[] }> {
   const [dailies, businesses, terminalsResult, sellerDefaults] = await Promise.all([
     fetchAll(
       (a, b) =>
@@ -74,7 +75,7 @@ export async function loadSalesAndCards(supabase: Client, from: string, to: stri
     loadBusinessSellerDefaults(supabase),
   ]);
   if (terminalsResult.error) throw new Error(`터미널 조회 실패: ${terminalsResult.error.message}`);
-  if (dailies.length === 0) return { rows: [], doneCards: [], cardSettingsAvailable: true };
+  if (dailies.length === 0) return { rows: [], doneCards: [], cardSettingsAvailable: true, purchaseAvailable: true, prices: [] };
   const ids = dailies.map((d) => d.id);
 
   const [itemRows, labelRows, recordRows, cardSettings] = await Promise.all([
@@ -148,18 +149,48 @@ export async function loadSalesAndCards(supabase: Client, from: string, to: stri
   // 입력값은 출고 완료된 카드의 줄만 읽는다.
   const doneCardIds = new Set(cards.filter((c) => c.stage === 'done').map((c) => c.id));
   const doneItemIds = items.filter((i) => doneCardIds.has(i.dailyBusinessId)).map((i) => i.id);
-  const stored: StoredSale[] = (
-    await mapChunks(doneItemIds, CHUNK, (chunk) =>
+  // 줄 단위 매입 열(0065)이 아직 없으면 그 열 없이 다시 읽는다(정산표는 계속 쓸 수 있고, 매입은 단가표·줄 값 없이 비어 있다).
+  type StoredRow = { order_item_id: string; seller_id: string | null; price: number | null; unit_price: number | null; product_override: string | null; quantity_override: number | null; unit_override: string | null; paid: boolean; memo: string | null; supplier_id?: string | null; purchase_unit_price?: number | null; purchase_price?: number | null };
+  const readStoredFull = (): Promise<StoredRow[]> =>
+    mapChunks(doneItemIds, CHUNK, (chunk) =>
+      fetchAll((a, b) => supabase.from('settlement_sales').select('order_item_id, seller_id, price, unit_price, product_override, quantity_override, unit_override, paid, memo, supplier_id, purchase_unit_price, purchase_price').in('order_item_id', chunk).order('order_item_id').range(a, b), '정산 입력값 조회 실패(마이그레이션 0043 적용 필요): '),
+    );
+  const readStoredBasic = (): Promise<StoredRow[]> =>
+    mapChunks(doneItemIds, CHUNK, (chunk) =>
       fetchAll((a, b) => supabase.from('settlement_sales').select('order_item_id, seller_id, price, unit_price, product_override, quantity_override, unit_override, paid, memo').in('order_item_id', chunk).order('order_item_id').range(a, b), '정산 입력값 조회 실패(마이그레이션 0043 적용 필요): '),
-    )
-  ).map((s) => ({ orderItemId: s.order_item_id, sellerId: s.seller_id, price: s.price === null ? null : Number(s.price), unitPrice: s.unit_price === null ? null : Number(s.unit_price), productOverride: s.product_override, quantityOverride: s.quantity_override === null ? null : Number(s.quantity_override), unitOverride: s.unit_override, paid: s.paid, memo: s.memo }));
+    );
+  let storedRows: StoredRow[];
+  let purchaseAvailable = true;
+  try {
+    storedRows = await readStoredFull();
+  } catch (e) {
+    if (missingTable(e) !== 'settlement_purchase_lines') throw e;
+    purchaseAvailable = false;
+    storedRows = await readStoredBasic();
+  }
+  const stored: StoredSale[] = storedRows.map((s) => ({
+    orderItemId: s.order_item_id,
+    sellerId: s.seller_id,
+    price: s.price === null ? null : Number(s.price),
+    unitPrice: s.unit_price === null ? null : Number(s.unit_price),
+    supplierId: s.supplier_id ?? null,
+    purchaseUnitPrice: s.purchase_unit_price == null ? null : Number(s.purchase_unit_price),
+    purchasePrice: s.purchase_price == null ? null : Number(s.purchase_price),
+    productOverride: s.product_override,
+    quantityOverride: s.quantity_override === null ? null : Number(s.quantity_override),
+    unitOverride: s.unit_override,
+    paid: s.paid,
+    memo: s.memo,
+  }));
+  const priceRows = await loadPrices(supabase, from, to);
+  const priceMap = new Map<string, PriceEntry>((priceRows ?? []).map((p) => [priceKey(p.orderDate, p.product), p]));
 
   const doneCards: DoneCard[] = dailies.flatMap((d, i) =>
     cards[i].stage === 'done'
       ? [{ id: d.id, orderDate: d.order_date, name: cards[i].name, businessId: d.business_id, terminalId: d.terminal_id, terminal: cards[i].terminal, boxes: submittedBoxes.get(d.id) ?? (parcelOf(d.terminal_id) ? 1 : 0), sellerId: cards[i].settings?.sellerId ?? cards[i].defaultSellerId, paid: cards[i].settings ? cards[i].settings.paid : null }]
       : [],
   );
-  return { rows: buildSalesRows(cards, items, stored), doneCards, cardSettingsAvailable: cardSettings !== null };
+  return { rows: buildSalesRows(cards, items, stored, priceMap), doneCards, cardSettingsAvailable: cardSettings !== null, purchaseAvailable: purchaseAvailable && priceRows !== null, prices: priceRows ?? [] };
 }
 
 // 정산 배송비 줄: 출고 완료 카드마다 저장한 값 + 설정(터미널 박스당 금액·퀵 가능, 고객사 퀵 이용)으로 자동 산정한 줄.
@@ -206,21 +237,37 @@ export async function loadShippingRows(supabase: Client, doneCards: DoneCard[], 
   return { rows: buildShippingRows(cards, stored), cards };
 }
 
-// 매입내역에 사용자가 입력해서 저장한 값(기간 안의 출고일). 행 목록은 판매내역에서 계산하고 여기서는 입력값만 읽는다.
-export async function loadStoredPurchases(supabase: Client, from: string, to: string): Promise<StoredPurchase[]> {
-  const rows = await fetchAll(
-    (a, b) =>
-      supabase
-        .from('settlement_purchases')
-        .select('order_date, product_name, seller_id, supplier_id, price, paid, memo')
-        .gte('order_date', from)
-        .lte('order_date', to)
-        .order('order_date')
-        .order('product_name')
-        .range(a, b),
-    '정산 매입 입력값 조회 실패: ',
-  );
-  return rows.map((r) => ({ orderDate: r.order_date, productName: r.product_name, sellerId: r.seller_id, supplierId: r.supplier_id, price: r.price === null ? null : Number(r.price), paid: r.paid, memo: r.memo }));
+// 날짜별 품목 단가표(0065). 테이블이 아직 없으면 null(마이그레이션 전: 단가표 없이 줄 값만 쓴다).
+export interface StoredPrice extends PriceEntry {
+  orderDate: string;
+  product: string;
+}
+
+export async function loadPrices(supabase: Client, from: string, to: string): Promise<StoredPrice[] | null> {
+  try {
+    const rows = await fetchAll(
+      (a, b) => supabase.from('settlement_prices').select('order_date, product_name, sale_unit_price, supplier_id, purchase_unit_price').gte('order_date', from).lte('order_date', to).order('order_date').order('product_name').range(a, b),
+      '정산 품목 단가표 조회 실패: ',
+    );
+    return rows.map((r) => ({ orderDate: r.order_date, product: r.product_name, saleUnitPrice: r.sale_unit_price === null ? null : Number(r.sale_unit_price), supplierId: r.supplier_id, purchaseUnitPrice: r.purchase_unit_price === null ? null : Number(r.purchase_unit_price) }));
+  } catch (e) {
+    if (missingTable(e) !== null) return null;
+    throw e;
+  }
+}
+
+// 매입처별 지급 체크(0065) → `출고일|매입처` 키 집합(지급한 것만). 테이블이 없으면 null.
+export async function loadSupplierPayments(supabase: Client, from: string, to: string): Promise<Set<string> | null> {
+  try {
+    const rows = await fetchAll(
+      (a, b) => supabase.from('settlement_supplier_payments').select('order_date, supplier_id, paid').gte('order_date', from).lte('order_date', to).order('order_date').order('supplier_id').range(a, b),
+      '매입처 지급 조회 실패: ',
+    );
+    return new Set(rows.filter((r) => r.paid).map((r) => paymentKey(r.order_date, r.supplier_id)));
+  } catch (e) {
+    if (missingTable(e) !== null) return null;
+    throw e;
+  }
 }
 
 // 품목별 매입처 드롭다운에 쓰는 목록: 전체 매입처, 그리고 상품명 → 그 상품에 연결된 매입처 id들.

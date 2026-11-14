@@ -3,6 +3,7 @@
 import { isUndecidedQuantity, type ChangeStatus } from '@/lib/orders';
 import type { Stage } from '@/lib/overview';
 import { resolveSalesEdit } from './sales-edit';
+import { priceKey, resolveLine, type LineOwn, type PriceEntry } from './pricing';
 
 export interface SalesSourceCard {
   id: string;
@@ -34,6 +35,9 @@ export interface StoredSale {
   sellerId: string | null;
   price: number | null;
   unitPrice: number | null;
+  supplierId: string | null; // 줄에서 고친 매입처·매입단가·매입가(0065). null이면 날짜별 품목 단가표를 따른다
+  purchaseUnitPrice: number | null;
+  purchasePrice: number | null;
   productOverride: string | null; // 정산에서 고친 품목명·수량·단위(없으면 주문 목록 값)
   quantityOverride: number | null;
   unitOverride: string | null;
@@ -41,7 +45,7 @@ export interface StoredSale {
   memo: string | null;
 }
 
-export interface SalesRow {
+export interface SalesRow extends LineOwn {
   itemId: string;
   cardId: string; // 그날 고객 카드(daily_businesses.id). 정산표는 이 카드로 줄을 묶는다
   orderDate: string;
@@ -54,15 +58,19 @@ export interface SalesRow {
   terminal: string; // 그날 카드의 터미널
   secondaryWeightKg: number | null; // 부가중량(kg). 정산에서 수량을 고쳐도 원래 주문의 값 그대로다
   sellerId: string | null; // 고객 카드의 사업자구분(없으면 고객사 기본값). 같은 카드의 줄은 모두 같다
-  price: number | null;
-  unitPrice: number | null; // 영수증의 단가 칸(0047). 비어 있으면 영수증 단가 칸이 빈칸
+  // 실제로 쓰는 값(줄에서 고친 값이 있으면 그것, 없으면 날짜별 품목 단가표). 영수증·리포트는 이 값을 쓴다. 고친 값은 LineOwn 필드(unitPriceOwn 등).
+  price: number | null; // 판매가: 줄 판매가 ?? 단가 × 수량
+  unitPrice: number | null; // 판매 단가(영수증의 단가 칸)
+  supplierId: string | null; // 매입처
+  purchaseUnitPrice: number | null; // 매입 단가
+  purchasePrice: number | null; // 매입가: 줄 매입가 ?? 매입 단가 × 수량
   paid: boolean; // 고객 카드의 입금 여부. 같은 카드의 줄은 모두 같다
   memo: string;
 }
 
 // 판매내역에 올라가는 줄: 출고 완료된 카드의 줄 중 취소·수량 미정·출고 수량 0인 줄을 뺀 것.
 // 정렬은 출고일 → 카드 순서 → 상품 순서(주문 목록에서 보이는 순서와 같다).
-export function buildSalesRows(cards: SalesSourceCard[], items: SalesSourceItem[], stored: StoredSale[]): SalesRow[] {
+export function buildSalesRows(cards: SalesSourceCard[], items: SalesSourceItem[], stored: StoredSale[], prices: ReadonlyMap<string, PriceEntry> = new Map()): SalesRow[] {
   const cardById = new Map(cards.filter((c) => c.stage === 'done').map((c) => [c.id, c]));
   const storedByItem = new Map(stored.map((s) => [s.orderItemId, s]));
   const rows: { row: SalesRow; sortOrder: number; sequence: number }[] = [];
@@ -74,6 +82,8 @@ export function buildSalesRows(cards: SalesSourceCard[], items: SalesSourceItem[
     if (quantity <= 0) continue;
     const s = storedByItem.get(item.id);
     const original = { product: item.productName, quantity, unit: item.unit };
+    const resolved = resolveSalesEdit(original, s);
+    const own: LineOwn = { unitPriceOwn: s?.unitPrice ?? null, priceOwn: s?.price ?? null, supplierOwn: s?.supplierId ?? null, purchaseUnitOwn: s?.purchaseUnitPrice ?? null, purchaseOwn: s?.purchasePrice ?? null };
     rows.push({
       sortOrder: card.sortOrder,
       sequence: item.productSequence,
@@ -84,11 +94,11 @@ export function buildSalesRows(cards: SalesSourceCard[], items: SalesSourceItem[
         customer: card.name,
         terminal: card.terminal,
         secondaryWeightKg: item.secondaryWeightKg,
-        ...resolveSalesEdit(original, s),
+        ...resolved,
+        ...own,
+        ...resolveLine(own, resolved.quantity, prices.get(priceKey(card.orderDate, resolved.product))),
         original,
         sellerId: (card.settings ? card.settings.sellerId : (s?.sellerId ?? null)) ?? card.defaultSellerId,
-        price: s?.price ?? null,
-        unitPrice: s?.unitPrice ?? null,
         paid: card.settings ? card.settings.paid : (s?.paid ?? false),
         memo: s?.memo ?? '',
       },
