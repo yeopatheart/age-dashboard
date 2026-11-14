@@ -48,7 +48,8 @@ export interface ShippingCard {
   quickAllowed: boolean; // 그 터미널에서 퀵이 되는지(false면 퀵을 제안하지 않는다)
   boxes: number; // 그날 박스 수(제출한 박스 수, 택배는 제출 전이어도 1)
   rates: ShippingRates; // ratesFor로 정한 이 카드의 수단별 박스당 금액
-  sellerId: string | null; // 그 고객의 판매 줄 사업자(저장한 배송비 줄에 사업자가 없을 때 따른다)
+  sellerId: string | null; // 고객 카드의 사업자구분(없으면 고객사 기본값)
+  paid: boolean | null; // 고객 카드의 입금 여부(0064). null이면 그 테이블이 아직 없어 예전처럼 배송비 줄에 저장한 값을 쓴다
 }
 
 // 사용자가 저장한 배송비 줄
@@ -73,8 +74,8 @@ export interface ShippingRow {
   boxes: number;
   rate: number | null; // 그 터미널의 박스당 기본 금액(제안 줄의 박스 수를 고치면 금액을 다시 계산한다). 설정이 없으면 null
   amount: number | null; // 제안 줄은 박스 수 × 기본 금액. 저장한 줄은 저장한 금액
-  saved: boolean; // false면 설정으로 제안한 줄(저장하기 전에는 영수증에 들어가지 않는다)
-  sellerId: string | null; // 저장한 사업자, 없으면 판매 줄의 사업자
+  saved: boolean; // false면 터미널 설정으로 자동 산정한 줄(고치거나 영수증을 만들면 저장된다). 합계와 영수증에는 저장 전에도 들어간다
+  sellerId: string | null; // 고객 카드의 사업자구분
   paid: boolean;
   memo: string;
   quickBlocked: boolean; // 저장돼 있지만 지금 설정으로는 퀵 불가 터미널(안내용)
@@ -105,8 +106,8 @@ export function buildShippingRows(cards: ShippingCard[], stored: StoredShipping[
           rate: card.rates[method],
           amount: s.amount,
           saved: true,
-          sellerId: s.sellerId ?? card.sellerId,
-          paid: s.paid,
+          sellerId: card.paid === null ? (s.sellerId ?? card.sellerId) : card.sellerId,
+          paid: card.paid ?? s.paid,
           memo: s.memo ?? '',
           quickBlocked: method === 'quick' && !card.quickAllowed,
         });
@@ -127,7 +128,7 @@ export function buildShippingRows(cards: ShippingCard[], stored: StoredShipping[
         amount: suggestAmount(rate, card.boxes),
         saved: false,
         sellerId: card.sellerId,
-        paid: false,
+        paid: card.paid ?? false,
         memo: '',
         quickBlocked: false,
       });
@@ -144,9 +145,9 @@ export function buildShippingRows(cards: ShippingCard[], stored: StoredShipping[
 
 export interface ShippingTotals {
   rows: number;
-  total: number; // 저장한 줄의 금액 합(제안 줄은 제외)
-  suggested: number; // 아직 저장하지 않은 제안 줄 수
-  unpaid: number; // 저장한 줄 중 입금 N
+  total: number; // 금액 합(자동 산정 줄 포함, 뺀 줄은 0원)
+  suggested: number; // 아직 저장하지 않은 자동 산정 줄 수
+  unpaid: number; // 금액이 있는 줄 중 입금 N
 }
 
 export function shippingTotals(rows: ShippingRow[]): ShippingTotals {
@@ -154,12 +155,10 @@ export function shippingTotals(rows: ShippingRow[]): ShippingTotals {
   let suggested = 0;
   let unpaid = 0;
   for (const r of rows) {
-    if (!r.saved) {
-      suggested++;
-      continue;
-    }
-    total += r.amount ?? 0;
-    if (!r.paid) unpaid++;
+    if (!r.saved) suggested++;
+    const amount = r.amount ?? 0;
+    total += amount;
+    if (amount > 0 && !r.paid) unpaid++;
   }
   return { rows: rows.length, total, suggested, unpaid };
 }

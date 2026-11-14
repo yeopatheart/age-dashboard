@@ -15,6 +15,7 @@ const SUPPLIER = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
 const sale = (over: Partial<SalesRow> = {}): SalesRow => ({
   itemId: 'item-1',
+  cardId: CARD,
   orderDate: DATE,
   customer: '가고객',
   product: '광어',
@@ -48,7 +49,7 @@ const ship = (over: Partial<ShippingRow> = {}): ShippingRow => ({
   quickBlocked: false,
   ...over,
 });
-const card = (over: Partial<ShippingCard> = {}): ShippingCard => ({ cardId: CARD, orderDate: DATE, customer: '가고객', terminal: '동서울', quickAllowed: true, boxes: 3, rates: { bus: 10000, quick: null, parcel: null }, sellerId: SELLER_A, ...over });
+const card = (over: Partial<ShippingCard> = {}): ShippingCard => ({ cardId: CARD, orderDate: DATE, customer: '가고객', terminal: '동서울', quickAllowed: true, boxes: 3, rates: { bus: 10000, quick: null, parcel: null }, sellerId: SELLER_A, paid: false, ...over });
 const purchase = (over: Partial<PurchaseRow> = {}): PurchaseRow => ({ key: `${DATE}|광어`, orderDate: DATE, product: '광어', sellerId: null, supplierId: null, price: null, paid: false, memo: '', salesTotal: 0, salesCount: 1, salesPriced: 0, ...over });
 
 const ctx = (over: Partial<ImportContext> = {}): ImportContext => ({
@@ -74,7 +75,7 @@ test('판매: 바뀐 칸만 변경으로 잡고, 빈 칸과 같은 값은 건너
   const plan = planImport(ctx(), book({ sales: [row(2, { [COL.key]: 'item-1', [COL.product]: '광어', [COL.quantity]: 3, [COL.unitPrice]: '1,500', [COL.price]: 4500, [COL.paid]: 'y', [COL.memo]: null })] }));
   assert.deepEqual(plan.errors, []);
   assert.equal(plan.sales.length, 1);
-  assert.deepEqual(plan.sales[0].fields, { unitPrice: 1500, price: 4500, paid: true });
+  assert.deepEqual(plan.sales[0].fields, { unitPrice: 1500, price: 4500 }); // 입금·사업자구분은 고객 단위 값이라 판매 시트에서는 읽지 않는다
 });
 
 test('판매: 품목·수량·단위는 원본과 다르면 수정값, 원본과 같아지면 null(되돌림)', () => {
@@ -85,12 +86,13 @@ test('판매: 품목·수량·단위는 원본과 다르면 수정값, 원본과
   assert.deepEqual(change.sales[0].fields, { product: '농어', quantity: 2.5, unit: '미' });
 });
 
-test('판매: 사업자구분은 이름으로 찾고 모르는 이름은 오류, 미지정은 null', () => {
-  const ok = planImport(ctx(), book({ sales: [row(2, { [COL.key]: 'item-1', [COL.seller]: '바른수산' })] }));
-  assert.equal(ok.sales[0].fields.sellerId, SELLER_B);
-  const unset = planImport(ctx(), book({ sales: [row(2, { [COL.key]: 'item-1', [COL.seller]: '미지정' })] }));
-  assert.equal(unset.sales[0].fields.sellerId, null);
-  const bad = planImport(ctx(), book({ sales: [row(2, { [COL.key]: 'item-1', [COL.seller]: '없는수산' })] }));
+test('매입: 사업자구분은 이름으로 찾고 모르는 이름은 오류, 미지정은 null', () => {
+  const key = `${DATE}|광어`;
+  const ok = planImport(ctx(), book({ purchases: [row(2, { [COL.key]: key, [COL.seller]: '바른수산' })] }));
+  assert.equal(ok.purchases[0].fields.sellerId, SELLER_B);
+  const unset = planImport(ctx({ purchases: [purchase({ sellerId: SELLER_A })] }), book({ purchases: [row(2, { [COL.key]: key, [COL.seller]: '미지정' })] }));
+  assert.equal(unset.purchases[0].fields.sellerId, null);
+  const bad = planImport(ctx(), book({ purchases: [row(2, { [COL.key]: key, [COL.seller]: '없는수산' })] }));
   assert.equal(bad.errors.length, 1);
   assert.equal(bad.errors[0].row, 2);
 });
@@ -200,7 +202,7 @@ test('왕복: 엑셀에서 고친 칸만 변경으로 읽힌다(판매가·입�
   const parsed = await roundTrip((wb) => {
     const sales = wb.getWorksheet('판매')!;
     sales.getCell(2, colOf(sales, '판매가')).value = 6000;
-    sales.getCell(3, colOf(sales, '입금')).value = 'Y';
+    sales.getCell(3, colOf(sales, '메모')).value = '외상';
     const shipping = wb.getWorksheet('배송비')!;
     const blank = 4; // 데이터 2행 뒤 첫 빈 줄
     shipping.getCell(blank, colOf(shipping, '고객명')).value = '가고객';
@@ -212,7 +214,7 @@ test('왕복: 엑셀에서 고친 칸만 변경으로 읽힌다(판매가·입�
   const c = ctx({ sales: input().sales, shipping: { rows: input().shipping, cards: [card()] }, purchases: input().purchases });
   const plan = planImport(c, parsed);
   assert.deepEqual(plan.errors, []);
-  assert.deepEqual(plan.sales.map((s) => s.fields), [{ price: 6000 }, { paid: true }]);
+  assert.deepEqual(plan.sales.map((s) => s.fields), [{ price: 6000 }, { memo: '외상' }]);
   assert.equal(plan.shipping.length, 1);
   assert.equal(plan.shipping[0].input.method, 'parcel');
   assert.equal(plan.shipping[0].input.amount, 3000);

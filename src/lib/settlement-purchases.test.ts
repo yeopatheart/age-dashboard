@@ -5,6 +5,7 @@ import { buildPurchaseRows, profitOf, totalsOf } from './settlement/purchases.ts
 const sale = (orderDate: string, product: string, price: number | null) => ({
   itemId: `${orderDate}-${product}-${price}`,
   orderDate,
+  cardId: 'c',
   customer: '엔야',
   terminal: '남부',
   secondaryWeightKg: null,

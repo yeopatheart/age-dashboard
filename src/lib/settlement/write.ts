@@ -27,13 +27,11 @@ export async function upsertSalesChanges(supabase: Client, changes: SalesChange[
   const items = changes.map((c) => {
     const cols: Record<string, unknown> = {};
     const f = c.fields;
-    if (f.sellerId !== undefined) cols.seller_id = f.sellerId;
     if (f.price !== undefined) cols.price = f.price;
     if (f.unitPrice !== undefined) cols.unit_price = f.unitPrice;
     if (f.product !== undefined) cols.product_override = f.product;
     if (f.quantity !== undefined) cols.quantity_override = f.quantity;
     if (f.unit !== undefined) cols.unit_override = f.unit;
-    if (f.paid !== undefined) cols.paid = f.paid;
     if (f.memo !== undefined) cols.memo = f.memo === '' ? null : f.memo;
     return { id: c.itemId, cols };
   });

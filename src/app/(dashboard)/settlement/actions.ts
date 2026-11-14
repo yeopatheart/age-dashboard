@@ -4,77 +4,66 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { requirePermission } from '@/lib/permissions/access';
 import { parseShippingMethod, shippingInputError, UUID_PATTERN, type ShippingInput } from '@/lib/settlement/shipping';
-import { upsertShippingRows } from '@/lib/settlement/write';
+import { upsertSalesChanges, upsertShippingRows } from '@/lib/settlement/write';
+import { salesFieldsError, type SalesLineFields } from '@/lib/settlement/sales-edit';
 
-export interface SalesPatch {
-  itemIds: string[]; // 값을 바꿀 판매내역 줄(주문 줄 id). 여러 줄이면 같은 값을 일괄 적용한다
-  sellerId?: string | null; // 사업자 구분(null = 미지정)
-  price?: number | null; // 판매가(원, null = 비움)
-  unitPrice?: number | null; // 단가(원, null = 비움). 영수증의 단가 칸에 쓴다
-  product?: string | null; // 정산에서 고친 품목명(null = 주문 목록 값으로 되돌림)
-  quantity?: number | null; // 고친 수량(null = 되돌림)
-  unit?: string | null; // 고친 단위(null = 되돌림)
-  paid?: boolean; // 입금 여부(Y = true)
-  memo?: string | null;
+export interface SalesLineChange {
+  itemId: string; // 판매내역 줄(주문 줄 id)
+  fields: SalesLineFields; // 보낸 항목만 바꾼다
 }
 
 const MAX_ROWS = 5000;
-const MAX_PRODUCT_LEN = 60; // 0048의 check와 같다
-const MAX_UNIT_LEN = 10;
-const MAX_QUANTITY = 100_000;
 const MAX_PRICE = 99_999_999_999; // src/lib/money.ts의 MAX_WON_DIGITS(11자리)와 같다
 const CHUNK = 500;
 
-// 판매내역 입력값 저장. 줄이 처음 입력되면 행을 만들고, 이미 있으면 보낸 항목만 바꾼다(보내지 않은 항목은 그대로).
-export async function saveSales(patch: SalesPatch): Promise<{ error: string | null }> {
+// 정산표의 판매 줄 저장. 줄마다 값이 달라도 한 번에 보낸다(칸 하나 수정, 여러 칸 붙여넣기, 아래로 채우기가 모두 이 액션을 쓴다).
+// 줄이 처음 입력되면 행을 만들고, 이미 있으면 보낸 항목만 바꾼다(보내지 않은 항목은 그대로).
+export async function saveSalesLines(changes: SalesLineChange[]): Promise<{ error: string | null }> {
   await requirePermission('settlement:edit');
-  const ids = [...new Set(patch.itemIds)];
-  if (ids.length === 0) return { error: null };
-  if (ids.length > MAX_ROWS) return { error: `한 번에 ${MAX_ROWS.toLocaleString('ko-KR')}건까지만 바꿀 수 있습니다.` };
+  if (changes.length === 0) return { error: null };
+  if (changes.length > MAX_ROWS) return { error: `한 번에 ${MAX_ROWS.toLocaleString('ko-KR')}건까지만 바꿀 수 있습니다.` };
+  const merged = new Map<string, SalesLineFields>(); // 같은 줄이 겹치면 뒤의 값이 이긴다
+  for (const c of changes) {
+    if (!UUID_PATTERN.test(c.itemId)) return { error: '판매 줄이 올바르지 않습니다.' };
+    const problem = salesFieldsError(c.fields);
+    if (problem) return { error: problem };
+    const f: SalesLineFields = { ...c.fields };
+    if (typeof f.product === 'string') f.product = f.product.trim();
+    if (typeof f.unit === 'string') f.unit = f.unit.trim();
+    if (f.memo !== undefined) f.memo = f.memo.trim();
+    merged.set(c.itemId, { ...merged.get(c.itemId), ...f });
+  }
+  const supabase = await createClient();
+  const result = await upsertSalesChanges(supabase, [...merged].map(([itemId, fields]) => ({ itemId, label: '', fields, diffs: [] })));
+  if (result.error) return result;
+  revalidatePath('/settlement');
+  return { error: null };
+}
 
-  const fields: { seller_id?: string | null; price?: number | null; unit_price?: number | null; product_override?: string | null; quantity_override?: number | null; unit_override?: string | null; paid?: boolean; memo?: string | null } = {};
-  if (patch.sellerId !== undefined) fields.seller_id = patch.sellerId;
-  if (patch.price !== undefined) {
-    if (patch.price !== null && (!Number.isInteger(patch.price) || patch.price < 0 || patch.price > MAX_PRICE)) return { error: '판매가가 올바르지 않습니다.' };
-    fields.price = patch.price;
-  }
-  if (patch.unitPrice !== undefined) {
-    if (patch.unitPrice !== null && (!Number.isInteger(patch.unitPrice) || patch.unitPrice < 0 || patch.unitPrice > MAX_PRICE)) return { error: '단가가 올바르지 않습니다.' };
-    fields.unit_price = patch.unitPrice;
-  }
-  if (patch.product !== undefined) {
-    const product = patch.product === null ? null : patch.product.trim();
-    if (product !== null && (product.length === 0 || product.length > MAX_PRODUCT_LEN)) return { error: `품목명은 1~${MAX_PRODUCT_LEN}자로 입력해주세요.` };
-    fields.product_override = product;
-  }
-  if (patch.quantity !== undefined) {
-    const q = patch.quantity;
-    if (q !== null && (!Number.isFinite(q) || q <= 0 || q > MAX_QUANTITY || Math.round(q * 100) / 100 !== q)) return { error: `수량은 0보다 크고 ${MAX_QUANTITY.toLocaleString('ko-KR')} 이하(소수 둘째 자리까지)로 입력해주세요.` };
-    fields.quantity_override = q;
-  }
-  if (patch.unit !== undefined) {
-    const unit = patch.unit === null ? null : patch.unit.trim();
-    if (unit !== null && (unit.length === 0 || unit.length > MAX_UNIT_LEN)) return { error: `단위는 1~${MAX_UNIT_LEN}자로 입력해주세요.` };
-    fields.unit_override = unit;
+// 고객 카드 단위 값(사업자구분·입금) 저장(0064). 여러 카드에 같은 값을 한꺼번에 적용할 수 있다. 보낸 항목만 바꾼다.
+export async function saveCardSettings(cardIds: string[], patch: { sellerId?: string | null; paid?: boolean }): Promise<{ error: string | null }> {
+  await requirePermission('settlement:edit');
+  const ids = [...new Set(cardIds)];
+  if (ids.length === 0) return { error: null };
+  if (ids.length > MAX_ROWS || ids.some((id) => !UUID_PATTERN.test(id))) return { error: '고객 카드가 올바르지 않습니다.' };
+  const fields: { seller_id?: string | null; paid?: boolean } = {};
+  if (patch.sellerId !== undefined) {
+    if (patch.sellerId !== null && !UUID_PATTERN.test(patch.sellerId)) return { error: '사업자 구분이 올바르지 않습니다.' };
+    fields.seller_id = patch.sellerId;
   }
   if (patch.paid !== undefined) fields.paid = patch.paid === true;
-  if (patch.memo !== undefined) {
-    const memo = patch.memo === null ? '' : patch.memo.trim();
-    if (memo.length > 500) return { error: '메모는 500자 이하로 입력해주세요.' };
-    fields.memo = memo === '' ? null : memo;
-  }
   if (Object.keys(fields).length === 0) return { error: null };
-
   const supabase = await createClient();
   for (let i = 0; i < ids.length; i += CHUNK) {
-    const rows = ids.slice(i, i + CHUNK).map((order_item_id) => ({ order_item_id, ...fields }));
-    const { error } = await supabase.from('settlement_sales').upsert(rows, { onConflict: 'order_item_id' });
+    const rows = ids.slice(i, i + CHUNK).map((daily_business_id) => ({ daily_business_id, ...fields }));
+    const { error } = await supabase.from('settlement_cards').upsert(rows, { onConflict: 'daily_business_id' });
     if (error) {
-      if (error.code === '23503') return { error: '주문이 바뀌었거나 사업자가 삭제되어 저장하지 못했습니다. 화면을 새로고침한 뒤 다시 시도해주세요.' };
+      if (error.code === '23503') return { error: '주문 카드나 사업자가 바뀌어 저장하지 못했습니다. 화면을 새로고침한 뒤 다시 시도해주세요.' };
       return { error: error.message };
     }
   }
   revalidatePath('/settlement');
+  revalidatePath('/dispatch'); // 보내기 화면도 사업자구분으로 영수증 대상을 묶는다
   return { error: null };
 }
 

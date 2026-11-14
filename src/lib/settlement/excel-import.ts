@@ -3,6 +3,7 @@
 // 규칙(결정: docs/decisions/2026-11-14-settlement-shipping.md): 빈 칸 = 변경 없음 / 삭제 없음 / 행은 숨김 키 열로 찾는다 / 오류가 하나라도 있으면 아무것도 적용하지 않는다.
 import type { SalesRow } from './sales.ts'; // 상대 경로+.ts: 단위 테스트(node --test)가 @ 별칭을 못 푼다
 import type { PurchaseRow } from './purchases.ts';
+import type { SalesLineFields } from './sales-edit.ts';
 import { MAX_BOXES, MAX_SHIPPING_AMOUNT, SHIPPING_METHODS, parseShippingMethod, shippingKey, shippingLabel, type ShippingCard, type ShippingInput, type ShippingRow } from './shipping.ts';
 
 // 시트 이름과 머리글(내보내기와 가져오기가 같이 쓴다). 가져올 때는 머리글 이름으로 열을 찾으므로 열 순서를 바꿔도 된다.
@@ -32,8 +33,9 @@ export const COL = {
   salesTotal: '총 판매가',
   profit: '수익',
 } as const;
-export const SALES_HEADERS = [COL.key, COL.customer, COL.product, COL.quantity, COL.unit, COL.unitPrice, COL.price, COL.seller, COL.paid, COL.memo];
-export const SHIPPING_HEADERS = [COL.key, COL.customer, COL.terminal, COL.method, COL.boxes, COL.amount, COL.seller, COL.paid, COL.memo, COL.status];
+// 사업자구분·입금은 고객 단위 값(0064)이라 판매·배송비 시트에는 없다 — 정산 화면의 고객 줄에서 정한다.
+export const SALES_HEADERS = [COL.key, COL.customer, COL.product, COL.quantity, COL.unit, COL.unitPrice, COL.price, COL.memo];
+export const SHIPPING_HEADERS = [COL.key, COL.customer, COL.terminal, COL.method, COL.boxes, COL.amount, COL.memo, COL.status];
 export const PURCHASE_HEADERS = [COL.key, COL.product, COL.supplier, COL.purchase, COL.seller, COL.paid, COL.memo, COL.salesTotal, COL.profit];
 
 // 파일에서 읽은 값(화면이 exceljs로 읽어 단순한 값으로 바꿔서 서버에 보낸다)
@@ -70,17 +72,8 @@ export interface ImportIssue {
   message: string;
 }
 
-// DB에 쓸 필드(보낸 것만 바꾼다). product·quantity·unit의 null은 "주문 목록 값으로 되돌림"이다.
-export interface SalesFields {
-  sellerId?: string | null;
-  price?: number;
-  unitPrice?: number;
-  product?: string | null;
-  quantity?: number | null;
-  unit?: string | null;
-  paid?: boolean;
-  memo?: string;
-}
+// DB에 쓸 필드(보낸 것만 바꾼다)는 정산표의 저장과 같은 모양이다(sales-edit.ts의 SalesLineFields).
+export type SalesFields = SalesLineFields;
 export interface SalesChange {
   itemId: string;
   label: string;
@@ -270,16 +263,6 @@ function planSales(ctx: ImportContext, rows: RawRow[], issues: Issues): SalesCha
       fields.price = price;
       diffs.push({ field: '판매가', before: won(row.price), after: won(price) });
     }
-    const seller = sellerField(issues, SHEET_SALES, r, ctx.sellers);
-    if (seller !== undefined && seller !== row.sellerId) {
-      fields.sellerId = seller;
-      diffs.push({ field: '사업자구분', before: sellerName(row.sellerId, ctx.sellers), after: sellerName(seller, ctx.sellers) });
-    }
-    const paid = paidField(issues, SHEET_SALES, r);
-    if (typeof paid === 'boolean' && paid !== row.paid) {
-      fields.paid = paid;
-      diffs.push({ field: '입금', before: yn(row.paid), after: yn(paid) });
-    }
     const memo = memoField(issues, SHEET_SALES, r);
     if (memo !== undefined && memo !== row.memo) {
       fields.memo = memo;
@@ -350,16 +333,6 @@ function planShipping(ctx: ImportContext, rows: RawRow[], issues: Issues): Shipp
     if (typeof amount === 'number' && amount !== base.amount) {
       next.amount = amount;
       diffs.push({ field: '배송비', before: won(base.amount), after: won(amount) });
-    }
-    const seller = sellerField(issues, SHEET_SHIPPING, r, ctx.sellers);
-    if (seller !== undefined && seller !== base.sellerId) {
-      next.sellerId = seller;
-      diffs.push({ field: '사업자구분', before: sellerName(base.sellerId, ctx.sellers), after: sellerName(seller, ctx.sellers) });
-    }
-    const paid = paidField(issues, SHEET_SHIPPING, r);
-    if (typeof paid === 'boolean' && paid !== base.paid) {
-      next.paid = paid;
-      diffs.push({ field: '입금', before: yn(base.paid), after: yn(paid) });
     }
     const memo = memoField(issues, SHEET_SHIPPING, r);
     if (memo !== undefined && memo !== base.memo) {

@@ -11,7 +11,9 @@ export interface SalesSourceCard {
   sortOrder: number;
   stage: Stage;
   terminal: string; // 그날 카드의 터미널 이름(없으면 '미지정')
-  defaultSellerId: string | null; // 고객사의 사업자구분(0063). 줄에 저장한 사업자가 없을 때 이 값을 쓴다
+  defaultSellerId: string | null; // 고객사의 사업자구분(0063). 카드에 정한 사업자가 없을 때 이 값을 쓴다
+  // 고객 카드 단위로 정한 사업자·입금(0064). null이면 그 테이블이 아직 없어(마이그레이션 전) 예전처럼 줄에 저장한 값을 쓴다.
+  settings: { sellerId: string | null; paid: boolean } | null;
 }
 
 export interface SalesSourceItem {
@@ -41,6 +43,7 @@ export interface StoredSale {
 
 export interface SalesRow {
   itemId: string;
+  cardId: string; // 그날 고객 카드(daily_businesses.id). 정산표는 이 카드로 줄을 묶는다
   orderDate: string;
   customer: string;
   product: string; // 정산에서 고쳤으면 고친 값, 아니면 주문 목록 값
@@ -50,10 +53,10 @@ export interface SalesRow {
   edited: boolean; // 품목·수량·단위 중 하나라도 정산에서 고쳤는지
   terminal: string; // 그날 카드의 터미널
   secondaryWeightKg: number | null; // 부가중량(kg). 정산에서 수량을 고쳐도 원래 주문의 값 그대로다
-  sellerId: string | null;
+  sellerId: string | null; // 고객 카드의 사업자구분(없으면 고객사 기본값). 같은 카드의 줄은 모두 같다
   price: number | null;
   unitPrice: number | null; // 영수증의 단가 칸(0047). 비어 있으면 영수증 단가 칸이 빈칸
-  paid: boolean;
+  paid: boolean; // 고객 카드의 입금 여부. 같은 카드의 줄은 모두 같다
   memo: string;
 }
 
@@ -76,16 +79,17 @@ export function buildSalesRows(cards: SalesSourceCard[], items: SalesSourceItem[
       sequence: item.productSequence,
       row: {
         itemId: item.id,
+        cardId: card.id,
         orderDate: card.orderDate,
         customer: card.name,
         terminal: card.terminal,
         secondaryWeightKg: item.secondaryWeightKg,
         ...resolveSalesEdit(original, s),
         original,
-        sellerId: s?.sellerId ?? card.defaultSellerId,
+        sellerId: (card.settings ? card.settings.sellerId : (s?.sellerId ?? null)) ?? card.defaultSellerId,
         price: s?.price ?? null,
         unitPrice: s?.unitPrice ?? null,
-        paid: s?.paid ?? false,
+        paid: card.settings ? card.settings.paid : (s?.paid ?? false),
         memo: s?.memo ?? '',
       },
     });

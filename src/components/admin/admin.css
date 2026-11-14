@@ -136,12 +136,44 @@ select.ak-input { padding-right: 2.25rem; }
   .ak-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ak-section-sales { order: 1; }
   .ak-section-purchases { order: 2; }
-  .ak-section-shipping { order: 3; grid-column: 1 / -1; } /* 배송비 표는 두 열 폭을 모두 쓴다 */
 }
 
-/* 정산 날짜 줄(DateBar): [‹ 날짜 › 오늘]. 알약 모양은 공용 컨트롤(globals.css .dn-*)이다. 휴대폰에서도 한 줄에 둔다. */
+/* 정산 맨 위 줄(SettlementBar): [‹ 날짜 › 오늘] + 엑셀 내보내기·가져오기. 알약 모양은 공용 컨트롤(globals.css .dn-*)이다. 휴대폰에서도 한 줄에 둔다. */
 .ak-toolbar.ak-period-bar { flex-wrap: nowrap; }
 @media (max-width: 768px) { .ak-toolbar.ak-period-bar { gap: 0.4rem; } }
+
+/* ─── 정산표(엑셀처럼 한 장으로 입력) ─────────────────────────────────────────
+   · 칸은 처음부터 입력칸이다(테두리는 올려 두거나 고를 때만 보인다). 고객 머리줄 아래에 상품 줄, 그 아래에 배송비 줄이 온다.
+   · 주문 목록 값을 고친 칸은 노란 바탕, 자동 계산된 배송비는 흐린 글자다. */
+.st-sheet td { padding: 0 0.2rem; height: 2.5rem; }
+.st-sheet th { padding: 0 0.6rem; }
+.st-sheet th.ak-check, .st-sheet td.ak-check { padding-left: 0.75rem; }
+.st-sheet th:nth-child(2) { width: 26%; } /* 품목 */
+.st-sheet th:nth-child(3) { width: 9%; } /* 수량 */
+.st-sheet th:nth-child(4) { width: 7%; } /* 단위 */
+.st-sheet th:nth-child(5) { width: 13%; } /* 단가 */
+.st-sheet th:nth-child(6) { width: 14%; } /* 판매가 */
+.st-sheet th:last-child { width: 1%; }
+.st-cell { width: 100%; min-width: 4.5rem; height: 2.1rem; border: 1px solid transparent; border-radius: var(--radius-input); background: transparent; padding: 0 0.45rem; font: inherit; font-size: var(--input-fs, var(--fs-md)); color: var(--foreground); outline: none; }
+.st-cell:hover:not(:disabled) { border-color: var(--border); }
+.st-cell:focus { border-color: var(--primary); background: #fff; box-shadow: 0 0 0 2px rgba(0, 48, 87, 0.15); }
+.st-cell.is-num { text-align: right; font-variant-numeric: tabular-nums; }
+.st-cell.is-edited { background: #fffbeb; }
+.st-cell.is-auto { color: var(--muted-foreground); }
+.st-sheet td:nth-child(2) .st-cell { min-width: 9rem; font-weight: 600; }
+.st-sheet td:nth-child(4) .st-cell { min-width: 3.5rem; }
+.st-sheet td:nth-child(7) .st-cell { min-width: 10rem; }
+.st-group td { background: #f1f5f9; height: auto; padding-top: 0.35rem; padding-bottom: 0.35rem; border-top: 1px solid var(--border); }
+.st-group-inner { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: var(--fs-sm); padding: 0 0.4rem; }
+.st-group-name { font-size: var(--fs-md); }
+.st-group-total { white-space: nowrap; font-size: var(--fs-md); }
+.st-ship td { background: #f8fafc; }
+.st-ship-name { display: inline-block; padding: 0 0.45rem; font-weight: 600; color: var(--muted-foreground); white-space: nowrap; }
+.st-row-btn { height: 1.9rem; padding: 0 0.6rem; font-size: var(--fs-xs); }
+@media (max-width: 768px) {
+  /* 휴대폰은 표를 옆으로 밀어 본다. 고객 머리줄(이름·사업자·입금·합계)은 밀어도 화면 왼쪽에 붙어 있게 한다. */
+  .st-group-inner { position: sticky; left: 0.5rem; width: calc(100vw - 5.5rem); }
+}
 
 /* ─── 정산 판매내역 휴대폰 ──────────────────────────────────────────────────────
    · 일괄 바(선택한 줄 처리): 휴대폰에서는 화면 아래(하단 탭 위)에 고정해 어느 줄을 입력하다가도 바로 영수증 만들기·일괄 변경을 누를 수 있다.

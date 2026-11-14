@@ -6,7 +6,7 @@ import type { PurchaseRow } from './settlement/purchases.ts';
 import type { SalesRow } from './settlement/sales.ts';
 
 const sale = (over: Partial<SalesRow>): SalesRow => ({
-  itemId: 'i', orderDate: '2026-11-09', customer: '바다횟집', terminal: '대구', secondaryWeightKg: null, product: '활전갱이', quantity: 3, unit: '미',
+  itemId: 'i', cardId: 'c', orderDate: '2026-11-09', customer: '바다횟집', terminal: '대구', secondaryWeightKg: null, product: '활전갱이', quantity: 3, unit: '미',
   original: { product: '활전갱이', quantity: 3, unit: '미' }, edited: false, sellerId: null, price: 30000, unitPrice: null, paid: false, memo: '', ...over,
 });
 const purchase = (over: Partial<PurchaseRow>): PurchaseRow => ({

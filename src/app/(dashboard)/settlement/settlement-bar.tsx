@@ -7,6 +7,8 @@ import { applySettlementImport, previewSettlementImport } from './import-actions
 import { buildSettlementDayWorkbook, parseSettlementDayWorkbook, type DayWorkbookInput } from '@/lib/export/settlement-day';
 import { planChangeCount, type Diff, type ImportPlan, type ParsedWorkbook } from '@/lib/settlement/excel-import';
 import { settlementUrl } from '@/lib/settlement/url';
+import { DateNav } from '@/components/date-nav';
+import { useIsMobile } from '@/lib/use-is-mobile';
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_LINES = 200; // 미리보기 목록에 보여 주는 변경 줄 수(나머지는 "외 N건")
@@ -19,10 +21,12 @@ const linesOf = (plan: ImportPlan): Line[] => [
   ...plan.purchases.map((c) => ({ sheet: '매입', label: c.label, diffs: c.diffs })),
 ];
 
-// 정산 하루치 엑셀 내보내기·가져오기. 내보낸 파일의 노란 칸을 고쳐 다시 가져오면 변경 목록을 미리 보여 주고, 확인하면 일괄 저장한다.
-export function ExcelBar({ date, data }: { date: string; data: DayWorkbookInput }) {
+// 정산 화면 맨 위 한 줄: [‹ 날짜 › 오늘] + 엑셀 내보내기·가져오기. 스크롤해도 위에 붙어 있다(날짜 알약 모양은 공용 컨트롤 date-nav.tsx).
+// 내보낸 파일의 노란 칸을 고쳐 다시 가져오면 변경 목록을 미리 보여 주고, 확인하면 일괄 저장한다.
+export function SettlementBar({ date, today, data }: { date: string; today: string; data: DayWorkbookInput }) {
   const canEdit = useCan()('settlement:edit');
   const router = useRouter();
+  const isMobile = useIsMobile(); // 휴대폰은 한 줄에 들어가게 버튼을 아이콘만 보여 준다
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<null | 'export' | 'read' | 'apply'>(null);
   const [error, setError] = useState<string | null>(null);
@@ -90,14 +94,15 @@ export function ExcelBar({ date, data }: { date: string; data: DayWorkbookInput 
 
   return (
     <>
-      <div className="ak-toolbar">
-        <button className="ak-btn" onClick={() => void exportFile()} disabled={busy !== null} title="이 날짜의 판매·배송비·매입을 한 파일(엑셀)로 내려받습니다. 노란 칸을 고쳐 다시 가져오면 일괄 수정됩니다.">
-          <Download size={14} /> 엑셀 내보내기
+      <div className="ak-toolbar ak-sticky ak-period-bar">
+        <DateNav value={date} today={today} grow label="정산 날짜" onChange={(d) => router.push(settlementUrl(d))} />
+        <button className="ak-btn" style={{ flex: 'none' }} onClick={() => void exportFile()} disabled={busy !== null} aria-label="엑셀 내보내기" title="이 날짜의 판매·배송비·매입을 한 파일(엑셀)로 내려받습니다. 노란 칸을 고쳐 다시 가져오면 일괄 수정됩니다.">
+          <Download size={14} />{!isMobile && ' 엑셀 내보내기'}
         </button>
         {canEdit && (
           <>
-            <button className="ak-btn" onClick={() => fileRef.current?.click()} disabled={busy !== null} title="내보낸 엑셀을 고쳐서 올리면 변경 목록을 먼저 보여 드립니다.">
-              <Upload size={14} /> 엑셀 가져오기
+            <button className="ak-btn" style={{ flex: 'none' }} onClick={() => fileRef.current?.click()} disabled={busy !== null} aria-label="엑셀 가져오기" title="내보낸 엑셀을 고쳐서 올리면 변경 목록을 먼저 보여 드립니다.">
+              <Upload size={14} />{!isMobile && ' 엑셀 가져오기'}
             </button>
             <input
               ref={fileRef}
@@ -112,9 +117,9 @@ export function ExcelBar({ date, data }: { date: string; data: DayWorkbookInput 
             />
           </>
         )}
-        {busy === 'read' && <span className="ak-sub">파일 확인 중…</span>}
-        {busy === 'export' && <span className="ak-sub">파일 만드는 중…</span>}
       </div>
+      {busy === 'read' && <p className="ak-sub" style={{ margin: 0 }}>파일 확인 중…</p>}
+      {busy === 'export' && <p className="ak-sub" style={{ margin: 0 }}>파일 만드는 중…</p>}
       {error && <p className="ak-error" role="alert">{error}</p>}
       {notice && <p className="ak-notice" role="status">{notice}</p>}
 

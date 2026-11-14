@@ -99,14 +99,10 @@ export async function buildSettlementDayWorkbook(input: DayWorkbookInput): Promi
       { header: COL.unit, width: 8, edit: true },
       { header: COL.unitPrice, width: 12, edit: true, numFmt: WON },
       { header: COL.price, width: 14, edit: true, numFmt: WON },
-      { header: COL.seller, width: 14, edit: true },
-      { header: COL.paid, width: 7, edit: true },
       { header: COL.memo, width: 26, edit: true },
     ],
-    input.sales.map((r) => [r.itemId, r.customer, r.product, r.quantity, r.unit, r.unitPrice, r.price, sellerLabel(r.sellerId), r.paid ? 'Y' : 'N', r.memo || null]),
+    input.sales.map((r) => [r.itemId, r.customer, r.product, r.quantity, r.unit, r.unitPrice, r.price, r.memo || null]),
   );
-  addListValidation(sales, 8, 2, input.sales.length + 1, listFormula('A', sellerNames.length));
-  for (let r = 2; r <= input.sales.length + 1; r++) sales.getCell(r, 9).dataValidation = PAID_VALIDATION;
 
   // 배송비
   if (input.shipping) {
@@ -121,17 +117,13 @@ export async function buildSettlementDayWorkbook(input: DayWorkbookInput): Promi
         { header: COL.method, width: 8 },
         { header: COL.boxes, width: 8, edit: true, numFmt: '#,##0' },
         { header: COL.amount, width: 14, edit: true, numFmt: WON },
-        { header: COL.seller, width: 14, edit: true },
-        { header: COL.paid, width: 7, edit: true },
         { header: COL.memo, width: 26, edit: true },
         { header: COL.status, width: 8 },
       ],
-      rows.map((r) => [r.key, r.customer, r.terminal, shippingLabel(r.method), r.boxes, r.amount, sellerLabel(r.sellerId), r.paid ? 'Y' : 'N', r.memo || null, r.saved ? '저장' : '제안']),
+      rows.map((r) => [r.key, r.customer, r.terminal, shippingLabel(r.method), r.boxes, r.amount, r.memo || null, r.saved ? '저장' : '자동']),
       BLANK_SHIPPING_ROWS,
     );
     const last = rows.length + 1 + BLANK_SHIPPING_ROWS;
-    addListValidation(sheet, 7, 2, last, listFormula('A', sellerNames.length));
-    for (let r = 2; r <= last; r++) sheet.getCell(r, 8).dataValidation = PAID_VALIDATION;
     // 맨 아래 빈 줄: 새 줄은 고객명·수단·배송비를 적는다(그 칸은 노란색으로 열어 둔다)
     for (let r = rows.length + 2; r <= last; r++) {
       for (const c of [2, 4]) sheet.getCell(r, c).fill = EDIT_FILL;
@@ -174,8 +166,9 @@ export async function buildSettlementDayWorkbook(input: DayWorkbookInput): Promi
     '· 빈 칸은 "변경 없음"입니다. 값을 지우려면 정산 화면에서 지우세요.',
     '· 숨겨진 "키" 열을 지우거나 바꾸지 마세요(행을 찾는 데 씁니다). 행을 지워도 삭제되지 않습니다.',
     '· 판매·매입은 행을 추가할 수 없습니다. 배송비는 맨 아래 빈 노란 줄에 고객명·수단·배송비를 적으면 새 줄이 만들어집니다.',
-    '· 사업자구분·매입처·입금(Y/N)은 목록에서 고르세요. 사업자구분 "미지정"은 고객사의 사업자구분 기본값을 따릅니다.',
-    '· 배송비의 "제안" 줄은 값을 고쳤을 때만 저장됩니다(고치지 않으면 그대로 제안으로 남습니다).',
+    '· 판매·배송비의 사업자구분과 입금은 고객 단위 값이라 이 파일에 없습니다. 정산 화면의 고객 줄에서 정하세요.',
+    '· 매입 시트의 사업자구분·매입처·입금(Y/N)은 목록에서 고르세요.',
+    '· 배송비의 "자동" 줄은 터미널 설정으로 계산한 값입니다. 값을 고치면 그 값으로 저장됩니다.',
     '· 가져오기 전에 변경 목록을 미리 보여 드립니다. 오류가 하나라도 있으면 아무것도 저장하지 않습니다.',
     '· 다른 날짜 파일은 가져올 수 없습니다.',
   ].forEach((line, i) => {

@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { SidePanel } from '@/components/admin/admin-kit';
 import { formatWon } from '@/lib/money';
-import { findDuplicateReceipts, groupForReceipts, type IssuedReceiptKey, type ReceiptSkipReason, type ReceiptSourceRow } from '@/lib/settlement/receipt';
+import { attachShippingLines, findDuplicateReceipts, groupForReceipts, shippingReceiptRow, type IssuedReceiptKey, type ReceiptSkipReason, type ReceiptSourceRow } from '@/lib/settlement/receipt';
+import type { ShippingRow } from '@/lib/settlement/shipping';
 import type { SalesRow } from '@/lib/settlement/sales';
 import { issueReceipts, type IssueResult } from './receipt-actions';
 
@@ -24,6 +25,7 @@ const toSource = (r: SalesRow): ReceiptSourceRow => ({
 
 export function ReceiptIssuePanel({
   rows,
+  shipping,
   sellers,
   from,
   to,
@@ -32,6 +34,7 @@ export function ReceiptIssuePanel({
   onClose,
 }: {
   rows: SalesRow[]; // 선택한 줄(화면에서 고친 값이 반영된 것)
+  shipping: ShippingRow[]; // 선택한 고객의 배송비 줄(같은 고객·사업자·출고일 영수증의 맨 뒤 줄로 들어간다)
   sellers: { id: string; name: string }[];
   from: string;
   to: string;
@@ -40,7 +43,11 @@ export function ReceiptIssuePanel({
   onClose: () => void;
 }) {
   const sellerName = useMemo(() => new Map(sellers.map((s) => [s.id, s.name])), [sellers]);
-  const preview = useMemo(() => groupForReceipts(rows.map(toSource)), [rows]);
+  const preview = useMemo(() => {
+    const grouped = groupForReceipts(rows.map(toSource));
+    const goodsLines = grouped.groups.reduce((n, g) => n + g.rows.length, 0); // 배송비 줄을 붙이기 전의 상품 줄 수
+    return { ...grouped, goodsLines, groups: attachShippingLines(grouped.groups, shipping.map(shippingReceiptRow).filter((r): r is ReceiptSourceRow => r !== null)) };
+  }, [rows, shipping]);
   const duplicates = useMemo(() => findDuplicateReceipts(preview.groups, issued), [preview.groups, issued]);
   const [acceptDuplicates, setAcceptDuplicates] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -61,7 +68,7 @@ export function ReceiptIssuePanel({
     }
   };
 
-  const skippedBySeller = rows.length - preview.groups.reduce((n, g) => n + g.rows.length, 0);
+  const skippedBySeller = rows.length - preview.goodsLines;
 
   return (
     <SidePanel

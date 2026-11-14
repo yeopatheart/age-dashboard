@@ -63,10 +63,10 @@ export function groupForReceipts(rows: ReceiptSourceRow[]): { groups: ReceiptGro
   return { groups, skipped };
 }
 
-// 저장한 배송비 줄을 영수증 품목 줄로 바꾼다("버스 · 3박스 · 30,000원"). 스냅샷 모양(ReceiptLine)을 바꾸지 않고 품목 줄로 들어간다.
-// 저장하지 않은 제안 줄, 금액이 0원인 줄, 사업자를 알 수 없는 줄은 넣지 않는다(null).
+// 배송비 줄을 영수증 품목 줄로 바꾼다("버스 · 3박스 · 30,000원"). 스냅샷 모양(ReceiptLine)을 바꾸지 않고 품목 줄로 들어간다.
+// 터미널 설정으로 자동 산정한 줄도 들어간다(발행할 때 서버가 그 줄을 저장해 금액을 고정한다). 0원인 줄(그날 뺀 수단)은 넣지 않는다(null).
 export function shippingReceiptRow(row: ShippingRow): ReceiptSourceRow | null {
-  if (!row.saved || row.amount === null || row.amount <= 0) return null;
+  if (row.amount === null || row.amount <= 0) return null;
   return {
     itemId: `ship:${row.key}`,
     orderDate: row.orderDate,
