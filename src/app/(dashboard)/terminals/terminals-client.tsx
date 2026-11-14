@@ -1,8 +1,10 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
 import { MapPinned, Plus, Trash2 } from 'lucide-react';
-import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate, setTerminalParcel, setTerminalQuickAllowed } from './actions';
+import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate, setTerminalParcel, setTerminalQuickAllowed, setTerminalShippingRates } from './actions';
 import { ColorPicker } from '@/components/color-picker';
+import { formatWon, formatWonDraft, parseWon, wonInputError } from '@/lib/money';
+import type { TerminalShipping } from '@/lib/settlement/shipping';
 import { terminalBadgeProps } from '@/lib/terminal-color';
 import { useCan } from '@/components/permissions-context';
 import {
@@ -30,8 +32,8 @@ interface Terminal {
   is_parcel: boolean;
 }
 
-// quickAllowed: 터미널 id → 퀵 가능 여부(정산 배송비 설정, 0062). null이면 마이그레이션 전이라 그 설정 칸을 숨긴다.
-export function TerminalsClient({ terminals, businessCount, quickAllowed }: { terminals: Terminal[]; businessCount: Record<string, number>; quickAllowed: Record<string, boolean> | null }) {
+// shipping: 터미널 id → 퀵 가능 여부·수단별 박스당 기본 금액(정산 배송비 설정, 0062·0063). null이면 마이그레이션 전이라 그 설정 칸을 숨긴다.
+export function TerminalsClient({ terminals, businessCount, shipping }: { terminals: Terminal[]; businessCount: Record<string, number>; shipping: Record<string, TerminalShipping> | null }) {
   const can = useCan();
   const canEdit = can('terminals:edit');
   const canDelete = can('terminals:delete');
@@ -49,7 +51,11 @@ export function TerminalsClient({ terminals, businessCount, quickAllowed }: { te
   const [local, setLocal] = useState<Record<string, Partial<Terminal>>>({});
 
   const [quickLocal, setQuickLocal] = useState<Record<string, boolean>>({});
-  const quickOf = (t: Terminal) => quickLocal[t.id] ?? quickAllowed?.[t.id] ?? true;
+  const quickOf = (t: Terminal) => quickLocal[t.id] ?? shipping?.[t.id]?.quickAllowed ?? true;
+  // 수단별 박스당 금액(저장한 값). 저장하면 화면에 바로 반영한다.
+  const [ratesLocal, setRatesLocal] = useState<Record<string, Pick<TerminalShipping, 'bus' | 'quick' | 'parcel'>>>({});
+  const ratesOf = (t: Terminal) => ratesLocal[t.id] ?? { bus: shipping?.[t.id]?.bus ?? null, quick: shipping?.[t.id]?.quick ?? null, parcel: shipping?.[t.id]?.parcel ?? null };
+  const [rateDraft, setRateDraft] = useState({ bus: '', quick: '', parcel: '' }); // 상세 패널에서 입력 중인 금액
   const view = (t: Terminal): Terminal => ({ ...t, ...local[t.id] });
   const filtered = useMemo(() => {
     const k = search.trim().toLowerCase();
@@ -101,12 +107,24 @@ export function TerminalsClient({ terminals, businessCount, quickAllowed }: { te
       setError(result.error);
     }
   };
+  // 켜진 수단의 금액만 저장한다(꺼진 수단은 저장된 값을 그대로 둔다).
+  const saveRates = async (t: Terminal) => {
+    const parcel = t.is_parcel;
+    const fields = parcel ? (['parcel'] as const) : quickOf(t) ? (['bus', 'quick'] as const) : (['bus'] as const);
+    const problem = fields.map((k) => wonInputError(rateDraft[k])).find((p) => p !== null);
+    if (problem) return setError(`배송비 금액을 확인해주세요. ${problem}`);
+    const next = { ...ratesOf(t) };
+    for (const k of fields) next[k] = parseWon(rateDraft[k]);
+    if (await run(() => setTerminalShippingRates(t.id, next))) setRatesLocal((p) => ({ ...p, [t.id]: next }));
+  };
   const setColor = async (t: Terminal, fill: string | null, border: string | null) => {
     setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], fill_color: fill, border_color: border } }));
     await setTerminalColor(t.id, fill, border);
   };
   const openPanel = (t: Terminal) => {
     setOpenId(t.id);
+    const rates = ratesOf(t);
+    setRateDraft({ bus: formatWon(rates.bus), quick: formatWon(rates.quick), parcel: formatWon(rates.parcel) });
     setNameDraft(t.name);
     setConfirmDelete(false);
     setError(null);
@@ -133,8 +151,20 @@ export function TerminalsClient({ terminals, businessCount, quickAllowed }: { te
       label: '택배',
       render: (t) => <Toggle checked={t.is_parcel} onChange={(v) => setParcel(t, v)} label={`${t.name} 택배`} disabled={!canEdit} />,
     },
-    ...(quickAllowed
-      ? [{ key: 'quick', label: '퀵 가능', render: (t: Terminal) => <Toggle checked={quickOf(t)} onChange={(v) => setQuick(t, v)} label={`${t.name} 퀵 가능`} disabled={!canEdit} /> } satisfies Column<Terminal>]
+    ...(shipping
+      ? [
+          { key: 'quick', label: '퀵 가능', render: (t: Terminal) => <Toggle checked={quickOf(t)} onChange={(v) => setQuick(t, v)} label={`${t.name} 퀵 가능`} disabled={!canEdit} /> } satisfies Column<Terminal>,
+          {
+            key: 'rates',
+            label: '배송비(박스당)',
+            render: (t: Terminal) => {
+              const r = ratesOf(t);
+              const parts = t.is_parcel ? [['택배', r.parcel]] : [['버스', r.bus], ...(quickOf(t) ? [['퀵', r.quick]] : [])];
+              const text = parts.filter(([, v]) => v !== null).map(([k, v]) => `${k} ${formatWon(v as number)}`).join(' · ');
+              return text ? <span>{text}</span> : <span className="ak-muted">미설정</span>;
+            },
+          } satisfies Column<Terminal>,
+        ]
       : []),
     { key: 'via', label: '등록', render: (t) => <ViaTag via={t.created_via} date={t.created_at} /> },
   ];
@@ -243,14 +273,41 @@ export function TerminalsClient({ terminals, businessCount, quickAllowed }: { te
             </span>
             <Toggle checked={open.is_parcel} onChange={(v) => setParcel(open, v)} label="택배" disabled={!canEdit} />
           </div>
-          {quickAllowed && (
-            <div className="ak-setting">
-              <span>
-                퀵 가능
-                <small>끄면 이 터미널로 가는 고객에게는 정산 배송비로 퀵을 제안하지 않습니다(이미 저장한 값은 그대로 둡니다)</small>
-              </span>
-              <Toggle checked={quickOf(open)} onChange={(v) => setQuick(open, v)} label="퀵 가능" disabled={!canEdit} />
-            </div>
+          {shipping && (
+            <>
+              <div className="ak-setting">
+                <span>
+                  퀵 가능
+                  <small>끄면 이 터미널로 가는 고객에게는 정산 배송비로 퀵을 제안하지 않습니다(이미 저장한 값은 그대로 둡니다)</small>
+                </span>
+                <Toggle checked={quickOf(open)} onChange={(v) => setQuick(open, v)} label="퀵 가능" disabled={!canEdit || open.is_parcel} />
+              </div>
+              <div className="ak-field">
+                <label>정산 배송비 (박스당, 원)</label>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {(open.is_parcel ? (['parcel'] as const) : quickOf(open) ? (['bus', 'quick'] as const) : (['bus'] as const)).map((k) => (
+                    <label key={k} style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 6rem' }}>
+                      <span className="ak-sub">{k === 'bus' ? '버스' : k === 'quick' ? '퀵' : '택배'}</span>
+                      <input
+                        className="ak-input"
+                        inputMode="numeric"
+                        style={{ textAlign: 'right' }}
+                        placeholder="사용 안 함"
+                        disabled={!canEdit}
+                        aria-label={`${k === 'bus' ? '버스' : k === 'quick' ? '퀵' : '택배'} 박스당 금액`}
+                        value={rateDraft[k]}
+                        onChange={(e) => setRateDraft({ ...rateDraft, [k]: formatWonDraft(e.target.value) })}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <p className="ak-sub" style={{ margin: 0 }}>
+                  {open.is_parcel ? '택배 터미널은 택배 금액만 씁니다. ' : '버스는 택배가 아닌 터미널, 퀵은 퀵 가능 터미널에서 고객사 관리의 "퀵 이용"을 체크한 고객에게 제안합니다. '}
+                  비워 두면 제안하지 않습니다. 정산에서 이 금액 × 박스 수로 자동 산정하고, 날짜별로 고칠 수 있습니다.
+                </p>
+                {canEdit && <button className="ak-btn" style={{ alignSelf: 'flex-start' }} disabled={busy} onClick={() => saveRates(open)}>배송비 금액 저장</button>}
+              </div>
+            </>
           )}
           <div className="ak-field">
             <span className="ak-field-label">색상</span>

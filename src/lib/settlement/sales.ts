@@ -11,6 +11,7 @@ export interface SalesSourceCard {
   sortOrder: number;
   stage: Stage;
   terminal: string; // 그날 카드의 터미널 이름(없으면 '미지정')
+  defaultSellerId: string | null; // 고객사의 사업자구분(0063). 줄에 저장한 사업자가 없을 때 이 값을 쓴다
 }
 
 export interface SalesSourceItem {
@@ -81,7 +82,7 @@ export function buildSalesRows(cards: SalesSourceCard[], items: SalesSourceItem[
         secondaryWeightKg: item.secondaryWeightKg,
         ...resolveSalesEdit(original, s),
         original,
-        sellerId: s?.sellerId ?? null,
+        sellerId: s?.sellerId ?? card.defaultSellerId,
         price: s?.price ?? null,
         unitPrice: s?.unitPrice ?? null,
         paid: s?.paid ?? false,

@@ -2,21 +2,21 @@ import { createClient } from '@/lib/supabase/server';
 import { BusinessesClient } from './businesses-client';
 import { requireMenu } from '@/lib/permissions/access';
 import { fetchAll } from '@/lib/supabase/fetch-all';
-import { valueOrMissing } from '@/lib/supabase/missing-table';
-import { loadBusinessShippingRates, loadTerminalQuickAllowed } from '@/lib/settlement/shipping-settings';
+import { rowsOrMissing, valueOrMissing } from '@/lib/supabase/missing-table';
+import { loadBusinessFields } from '@/lib/settlement/shipping-settings';
 
 export default async function BusinessesPage() {
   const accessCheck = requireMenu('businesses'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 await로 확정)
   const supabase = await createClient();
-  const [, businesses, { data: terminals }, rates, quick] = await Promise.all([
+  const [, businesses, { data: terminals }, fields, sellers] = await Promise.all([
     accessCheck,
     // 1000개를 넘을 수 있어 페이지로 나눠 모두 읽는다. 조회 오류(예: 아직 적용 안 된 마이그레이션의 컬럼)를 빈 목록으로 삼키면 "고객사가 사라진 것"처럼 보이므로 던진다.
     fetchAll((from, to) => supabase.from('businesses').select('id, name, terminal_id, notes, created_at, created_via, business_registration_no, representative_name').order('name').order('id').range(from, to), '고객사 조회 실패(마이그레이션 0024 적용 필요): '),
     supabase.from('terminals').select('id, name, fill_color, border_color').order('name'),
-    // 정산 배송비 설정(0062). 아직 적용 전이면 그 설정 칸만 숨기고 고객사 관리는 계속 쓴다.
-    valueOrMissing(loadBusinessShippingRates(supabase)),
-    valueOrMissing(loadTerminalQuickAllowed(supabase)),
+    // 사업자명·사업자구분·퀵 이용(0063). 아직 적용 전이면 그 칸만 숨기고 고객사 관리는 계속 쓴다.
+    valueOrMissing(loadBusinessFields(supabase)),
+    rowsOrMissing(fetchAll((a, b) => supabase.from('seller_businesses').select('id, name').order('name').order('id').range(a, b), '사업자 조회 실패: ')),
   ]);
 
-  return <BusinessesClient businesses={businesses} terminals={terminals ?? []} shippingRates={rates.value} quickAllowed={quick.value} />;
+  return <BusinessesClient businesses={businesses} terminals={terminals ?? []} fields={fields.value} sellers={sellers.rows} />;
 }
