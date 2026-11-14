@@ -45,7 +45,7 @@ export function BoxAssignModal({ dailyBusinessId, title, onClose }: { dailyBusin
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[72] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="fixed inset-0 z-[72] flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
       <div role="dialog" aria-label={`${title} 박스 할당`} className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex flex-shrink-0 items-center justify-between rounded-t-2xl px-6 py-3" style={{ backgroundColor: '#003057' }}>
           <h3 className="text-sm font-bold tracking-wide text-white">박스 할당 — {title}</h3>
