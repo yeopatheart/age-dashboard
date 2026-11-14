@@ -8,7 +8,7 @@ import { requirePermission } from '@/lib/permissions/access';
 import { editableDateError, todayKST } from '@/lib/order-date';
 import { manualItemChanged, resolveManualChangeStatus } from '@/lib/manual-item-status';
 import { loadAppSettings } from '@/lib/settings-server';
-import { inkCutoffDate, parseInkStrokes } from '@/lib/ink/store';
+import { inkCutoffTime, parseInkStrokes } from '@/lib/ink/store';
 import { missingTable, migrationsFor } from '@/lib/supabase/missing-table';
 import { isIsoDate, nonNegativeNumberError, positiveNumberError, textError } from '@/lib/validate';
 import type { Database } from '@/lib/types/database';
@@ -49,7 +49,7 @@ export async function togglePacked(orderItemId: string, nextPacked: boolean): Pr
 }
 
 // 칠판 펜 그림을 날짜·모니터당 한 행에 통째로 저장한다(PC가 같은 그림을 본다). 칠판이 그릴 때마다 최신 전체를 보내므로 마지막 저장이 남는다.
-// 획은 서버에서도 한 번 더 걸러 저장한다. 보관은 3일이라 저장할 때 그보다 오래된 행을 지운다. 이 화면은 새로 그리지 않으므로 revalidatePath는 부르지 않는다.
+// 획은 서버에서도 한 번 더 걸러 저장한다. 보관은 마지막 저장 뒤 3일이라, 저장할 때 그보다 오래 손대지 않은 행을 지운다. 이 화면은 새로 그리지 않으므로 revalidatePath는 부르지 않는다.
 export async function saveBoardInk(orderDate: string, monitor: string, strokes: unknown): Promise<{ error: string | null }> {
   await requirePermission('dashboard:edit');
   if (!isIsoDate(orderDate)) return { error: '날짜 형식이 올바르지 않습니다.' };
@@ -67,7 +67,8 @@ export async function saveBoardInk(orderDate: string, monitor: string, strokes: 
     return { error: error.message };
   }
   // 오래된 그림 정리는 저장을 막지 않는다(실패해도 다음 저장 때 다시 시도한다).
-  await supabase.from('board_ink').delete().lt('order_date', inkCutoffDate(todayKST()));
+  // 기준은 주문 날짜가 아니라 마지막 저장 시각이다(과거 날짜 화면에서 방금 그린 그림을 지우면 안 된다).
+  await supabase.from('board_ink').delete().lt('updated_at', inkCutoffTime(new Date()));
   return { error: null };
 }
 
