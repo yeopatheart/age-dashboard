@@ -18,6 +18,7 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
   ops_event_log: '0055_ops_event_log.sql', // 테이블이 아니라 order_items에 더한 열(AI 보정 여부 ai_repaired)
   settlement_sales_edit: '0048_settlement_sales_edit.sql', // 테이블이 아니라 settlement_sales에 더한 열(품목·수량·단위 수정)
   label_printed_box_type: '0051_label_printed_box_type.sql', // 테이블이 아니라 box_labels에 더한 열(출력한 박스 종류)
+  label_print_jobs: '0061_label_print_spooler.sql', // 라벨 출력 확정(스풀러 방식)
   order_item_base: '0060_order_item_base_quantity.sql', // 테이블이 아니라 order_items에 더한 열(처음 입력한 수량·단위)
 };
 

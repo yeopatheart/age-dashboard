@@ -21,7 +21,8 @@ import {
   type LabelTemplate,
 } from '@/lib/labels/template';
 import type { LabelDesign } from '@/lib/labels/server';
-import { activateLabelDesign, createLabelDesign, deleteLabelDesign, renameLabelDesign, saveLabelDesign, saveLabelMargin, saveLabelRotate } from './actions';
+import type { LabelConfirmMode } from '@/lib/labels/print-job';
+import { activateLabelDesign, createLabelDesign, deleteLabelDesign, renameLabelDesign, saveLabelDesign, saveLabelConfirmMode, saveLabelMargin, saveLabelRotate } from './actions';
 import { qrTestTemplate } from '@/lib/labels/qr-test';
 import { PRINTER_DPI, qrModuleDots, qrModuleMm } from '@/lib/labels/qr';
 import { SilentPrintSetup } from './silent-print-setup';
@@ -61,7 +62,7 @@ const newElement = (type: LabelElementType, t: LabelTemplate): LabelElement => {
   return { id, type: 'text', text: '문구', x: 5, y: 5, w: 40, h: 8, fontSize: 14, bold: false, align: 'left' };
 };
 
-export function LabelsClient({ initialDesigns, initialActiveId, company, contact, initialMarginMm, initialRotate }: { initialDesigns: LabelDesign[]; initialActiveId: string | null; company: string; contact: string; initialMarginMm: number; initialRotate: boolean }) {
+export function LabelsClient({ initialDesigns, initialActiveId, company, contact, initialMarginMm, initialRotate, initialConfirmMode }: { initialDesigns: LabelDesign[]; initialActiveId: string | null; company: string; contact: string; initialMarginMm: number; initialRotate: boolean; initialConfirmMode: LabelConfirmMode }) {
   const canEdit = useCan()('labels:edit');
   // 디자인 보관함: 저장된 디자인 목록, 사용 중(출력에 쓰는) 디자인, 지금 편집 중인 디자인
   const [designs, setDesigns] = useState(initialDesigns);
@@ -85,6 +86,14 @@ export function LabelsClient({ initialDesigns, initialActiveId, company, contact
   // 롤 방향에 맞춰 90도 돌려 출력(프린터 용지는 높이×가로가 된다). 프린터 설정이라 라벨 디자인과 따로 저장한다.
   const [rotate, setRotate] = useState(initialRotate);
   const [rotateDirty, setRotateDirty] = useState(false);
+  // 출력 확정 방식은 디자인과 따로 바로 저장한다(저장 버튼을 기다리지 않는다).
+  const [confirmMode, setConfirmMode] = useState<LabelConfirmMode>(initialConfirmMode);
+  const changeConfirmMode = async (next: LabelConfirmMode) => {
+    setConfirmMode(next);
+    const result = await saveLabelConfirmMode(next);
+    setConfirmMode(result.mode);
+    if (result.error) setError(result.error);
+  };
   const paperText = rotate ? `${template.heightMm}×${template.widthMm}mm` : `${template.widthMm}×${template.heightMm}mm`;
   const drag = useRef<DragState | null>(null);
 
@@ -389,6 +398,17 @@ export function LabelsClient({ initialDesigns, initialActiveId, company, contact
 
           <section className="lb-card">
             <SilentPrintSetup sizeText={paperText} />
+          </section>
+
+          <section className="lb-card">
+            <h3>출력 기록 방식</h3>
+            <label className="lb-check">
+              <input type="radio" name="confirm-mode" checked={confirmMode === 'button'} disabled={!canEdit} onChange={() => void changeConfirmMode('button')} /> 출력 버튼을 누르면 기록 (기본)
+            </label>
+            <label className="lb-check">
+              <input type="radio" name="confirm-mode" checked={confirmMode === 'spooler'} disabled={!canEdit} onChange={() => void changeConfirmMode('spooler')} /> 프린터 PC가 인쇄 완료를 확인하면 기록
+            </label>
+            <p className="ak-muted">두 번째는 프린터가 연결된 Windows PC에 라벨 에이전트(scripts/label-agent)를 설치하고 마이그레이션 0061을 적용한 뒤에 쓰세요. 에이전트가 없거나 멈추면 라벨이 계속 &quot;출력 확인 중&quot;으로 남습니다. 인쇄 창을 열기만 하고 취소한 라벨은 기록되지 않습니다.</p>
           </section>
 
           <section className="lb-card">

@@ -1,0 +1,7 @@
+{
+  "supabaseUrl": "https://<프로젝트 id>.supabase.co",
+  "anonKey": "<Supabase anon(public) 키 — NEXT_PUBLIC_SUPABASE_ANON_KEY와 같은 값>",
+  "secret": "<에이전트 비밀 — README 2단계에서 만든 값>",
+  "printerName": "",
+  "pollSeconds": 3
+}

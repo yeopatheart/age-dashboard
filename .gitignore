@@ -47,3 +47,7 @@ next-env.d.ts
 
 # 운영 데이터 내보내기(박스 추천 백테스트용) — 업체명이 들어 있어 커밋하지 않는다
 .local-data/
+
+# 라벨 에이전트: 비밀이 든 설정과 실행 상태는 커밋하지 않는다
+scripts/label-agent/agent.config.json
+scripts/label-agent/agent.state.json
