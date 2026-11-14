@@ -77,7 +77,11 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
           date,
           sales: sales.rows,
           shipping: shipping.value?.rows ?? null,
+          sellers: sellers.rows,
+          suppliers: directory.value?.suppliers ?? [],
+          prices: salesAndCards.value?.prices ?? [],
           shippingCustomers: (shipping.value?.cards ?? []).map((c) => c.customer),
+          purchaseAvailable: salesAndCards.value?.purchaseAvailable === true && payments !== null,
         }}
       />
       <div className="ak-split">
