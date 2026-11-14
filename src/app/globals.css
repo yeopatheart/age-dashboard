@@ -341,14 +341,42 @@ body {
   }
 }
 
-/* 주문 목록(/dashboard)은 눈부심을 줄인 톤이다(2026-11-14, 부모님 피드백 "너무 밝다").
-   Tailwind v4 팔레트 변수를 이 화면 안에서만 낮춘다: 흰색은 연회색으로, 회색 면은 한 단계씩 어둡게, 큰 면(배경)은 회색 톤으로.
-   모달·팝업도 이 화면 안에서 열리므로 같이 낮아진다. 상품 칩 색은 칩마다 정해진 값이라 chipStyle에서 채도를 따로 낮춘다. */
+/* 주문 목록(/dashboard)은 눈부심을 줄인 "린넨" 톤이다(2026-11-14, 부모님 피드백 "너무 밝다" → 시안 A 채택).
+   따뜻한 오프화이트 면 + 먹색 헤더 + 황동 선. Tailwind v4 팔레트 변수를 이 화면 안에서만 바꾼다(모달·팝업도 이 화면 안에서 열려 같이 바뀐다).
+   흰색은 린넨 면으로, 회색(slate)은 같은 명도 순서의 따뜻한 회색으로, 상태색(초록·호박·빨강)은 채도를 낮춘 값으로 대체한다.
+   글자 대비(린넨 면 #F7F5F1 기준): 본문 #26231F 14.4:1, 보조 #6B6358 5.4:1. 상품 칩 색은 칩마다 정해진 값이라 chipStyle에서 채도를 따로 낮춘다. */
 .main-content-soft {
-  --color-white: #e9ecf1;
-  --color-slate-50: #e0e4ea;
-  --color-slate-100: #d6dbe3;
-  --color-slate-200: #c8cfd9;
-  --color-slate-300: #b6bfcc;
-  background-color: #d3d8e0;
+  --soft-head: #232b36;
+  --soft-brass: #b08d57;
+  --color-white: #f7f5f1;
+  --color-slate-50: #f1eee8;
+  --color-slate-100: #e9e4db;
+  --color-slate-200: #ddd6ca;
+  --color-slate-300: #cbc3b5;
+  --color-slate-400: #8c8376;
+  --color-slate-500: #6b6358;
+  --color-slate-600: #564f46;
+  --color-slate-700: #3f3a33;
+  --color-slate-800: #2e2a25;
+  --color-slate-900: #26231f;
+  --color-emerald-50: #e3ebdd;
+  --color-emerald-300: #b9cbae;
+  --color-emerald-700: #3f5a33;
+  --color-amber-50: #f4ead6;
+  --color-amber-100: #ecdcb8;
+  --color-amber-300: #dcc08a;
+  --color-amber-500: #a9782a;
+  --color-amber-700: #7a5217;
+  --color-amber-900: #5a3a0e;
+  --color-rose-50: #f1ddd9;
+  --color-rose-300: #d9b0a9;
+  --color-rose-600: #8a3b33;
+  --color-rose-700: #7a332c;
+  background-color: #ede9e2;
+  color: #26231f;
 }
+/* 표 머리 줄 아래 황동 선과, 네이비를 직접 쓴 선택 버튼·입력 포커스를 같은 톤으로 맞춘다. */
+.main-content-soft .soft-head-line > div { border-bottom-color: var(--soft-brass); }
+.main-content-soft .bg-\[\#003057\] { background-color: var(--soft-head); }
+.main-content-soft .focus\:border-\[\#003057\]:focus, .main-content-soft .focus-within\:border-\[\#003057\]:focus-within { border-color: var(--soft-brass); }
+.main-content-soft .text-\[\#003057\] { color: var(--soft-head); }
