@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { fetchBoardInk, fetchBoardInkStamp, subscribeBoardInk } from '@/lib/ink/board-ink-client';
 import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, redrawLive, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
 import { eraseStroke } from '@/lib/ink/erase';
-import { classifyStroke, REASON_LABEL } from '@/lib/ink/gesture';
+import { classifyStroke, pathLength, REASON_LABEL } from '@/lib/ink/gesture';
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
 import { cardPosition, clampToViewport, stackPositions } from '@/lib/ink/menu-layout';
 import { resolvePoints, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, type Box, type InkStroke } from '@/lib/ink/store';
@@ -73,7 +73,14 @@ interface ActiveStroke {
   origin: Pt; // 획을 시작할 때 잰 그림 층의 화면 위 왼쪽 위(획 도중 점마다 다시 재지 않는다)
   layer: { width: number; height: number };
   touched: Set<string>; // 지우개가 닿은(잘라 낸) 획에 붙어 있던 상품 id
+  startedAt: number; // 펜이 닿은 시각(이벤트 timeStamp, performance.now와 같은 기준) — 짧게 톡 친 것(탭)인지 가리는 데 쓴다
 }
+
+// 탭·따닥 판정: 펜이 TAP_MAX_MS 안에 TAP_MAX_PATH_PX 이내로만 움직이고 떼면 탭, 앞 탭에서 DOUBLE_TAP_MS 안·DOUBLE_TAP_DIST_PX 이내에 또 탭하면 따닥(되돌리기).
+const TAP_MAX_MS = 300;
+const TAP_MAX_PATH_PX = 10;
+const DOUBLE_TAP_MS = 400;
+const DOUBLE_TAP_DIST_PX = 48;
 
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
 
@@ -417,6 +424,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       origin: { x: layerRect.left, y: layerRect.top },
       layer: { width: layerRect.width, height: layerRect.height },
       touched: new Set<string>(),
+      startedAt: e.timeStamp,
     };
     activeRef.current = active;
     if (current === 'pen') {
@@ -496,6 +504,10 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     commit({ strokes: [...cur.strokes, stroke], history: pushHistory(cur.history, { before: active.before, packed: packedItemId ? [packedItemId] : undefined }) });
   };
 
+  // 직전에 톡 친 시각·자리. 두 번째 탭이 이 안(시간·거리)에 오면 따닥이다.
+  const lastTapRef = useRef<{ at: number; x: number; y: number } | null>(null);
+  const isTap = (active: ActiveStroke, endedAt: number) => endedAt - active.startedAt <= TAP_MAX_MS && pathLength(active.points) <= TAP_MAX_PATH_PX;
+
   const finishStroke = (e: React.PointerEvent<HTMLCanvasElement>, cancelled: boolean) => {
     const active = activeRef.current;
     if (!active || active.pointerId !== e.pointerId) return;
@@ -509,6 +521,23 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
           active.points.push(active.tail);
         }
         endInk(ctx, active.cursor);
+      }
+      // 짧게 톡 친 것(탭)은 획으로 남기지 않는다. 연달아 두 번 톡 치면(따닥) "되돌리기"다(2026-11-14 현장 요청: 스마트 칠판에서 메뉴를 열지 않고 되돌린다).
+      if (!cancelled && isTap(active, e.timeStamp)) {
+        const now = e.timeStamp;
+        const at = active.points[0];
+        const prev = lastTapRef.current;
+        scheduleRedraw(); // 톡 친 자리에 남은 점을 지운다
+        if (prev && now - prev.at <= DOUBLE_TAP_MS && Math.hypot(at.x - prev.x, at.y - prev.y) <= DOUBLE_TAP_DIST_PX) {
+          lastTapRef.current = null;
+          if (stateRef.current.history.length > 0) {
+            undo();
+            showNote('되돌렸습니다', at);
+          }
+        } else {
+          lastTapRef.current = { at: now, x: at.x, y: at.y };
+        }
+        return;
       }
       if (cancelled || active.points.length < 2) {
         scheduleRedraw();
@@ -701,8 +730,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       {menuOpen && penPos && eraserPos && undoPos && (
         <>
           <button type="button" aria-label="펜 설정(색·굵기)" aria-pressed={card === 'pen'} title="펜 설정 — 색과 굵기" onClick={openPenSettings} className={menuButton(card === 'pen')} style={{ left: penPos.x - FAB / 2, top: penPos.y - FAB / 2 }}>
-            <Palette className="h-4 w-4" />
-            <span className="text-[9px] font-bold leading-none">펜 설정</span>
+            <Palette className="h-5 w-5" />
           </button>
           <button
             type="button"
@@ -717,15 +745,13 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
             className={menuButton(tool === 'eraser')}
             style={{ left: eraserPos.x - FAB / 2, top: eraserPos.y - FAB / 2, touchAction: 'none' }}
           >
-            <Eraser className="h-4 w-4" />
-            <span className="text-[9px] font-bold leading-none">지우개</span>
+            <Eraser className="h-5 w-5" />
             <svg className="pointer-events-none absolute inset-0 -rotate-90" viewBox="0 0 56 56" aria-hidden="true">
               <circle cx="28" cy="28" r="25" fill="none" stroke="#dc2626" strokeWidth="4" strokeLinecap="round" strokeDasharray="157" style={{ strokeDashoffset: holding ? 0 : 157, transition: holding ? `stroke-dashoffset ${HOLD_MS}ms linear` : 'none' }} />
             </svg>
           </button>
           <button type="button" aria-label="되돌리기" title="되돌리기" disabled={!canUndo} onClick={undo} className={`${menuButton(false)} disabled:opacity-40`} style={{ left: undoPos.x - FAB / 2, top: undoPos.y - FAB / 2 }}>
-            <Undo2 className="h-4 w-4" />
-            <span className="text-[9px] font-bold leading-none">되돌리기</span>
+            <Undo2 className="h-5 w-5" />
           </button>
         </>
       )}

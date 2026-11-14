@@ -24,7 +24,7 @@ export const GESTURE = {
   circleMaxHeightRatio: 4,
   // 직선(방향 무관: 대각선·가로선·세로선, 사용자 결정 2026-11-14)
   lineMinStraight: 0.85, // 시작-끝 거리 / 획 길이
-  lineMinCover: 0.5, // 칸을 선 방향으로 가로지른 길이 / 그 방향으로 잰 칸의 길이 ≥ 이 비율이면 후보
+  lineMinCover: 0.25, // 칸을 선 방향으로 가로지른 길이 / 그 방향으로 잰 칸의 길이 ≥ 이 비율이면 후보(사용자 결정 2026-11-14: 50% → 25%). 획이 minPathPx(24px)보다 짧으면 비율과 상관없이 점·낙서로 본다
   lineMinInside: 0.5, // 획 길이 중 칸 안에 있는 비율(칸 밖으로 많이 벗어난 긴 선은 제외)
   lineDominanceGap: 0.2, // 두 칸이 비슷하게 걸치면(두 번째 칸이 이만큼 못 미치지 않으면) 애매해서 무시
 } as const;
@@ -145,7 +145,7 @@ function classifyCircle(points: Pt[], targets: Target[]): GestureResult {
   return { kind: 'circle', itemId: best.t.id, coverage: best.c };
 }
 
-// 거의 곧은 획이 칸의 50% 이상을 지나면(방향과 상관없이) 그 칸이다.
+// 거의 곧은 획이 칸의 25% 이상을 지나면(방향과 상관없이) 그 칸이다.
 function classifyLine(points: Pt[], targets: Target[], length: number): GestureResult {
   const first = points[0];
   const last = points[points.length - 1];
