@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { densify, eraseStroke, splitByMask } from './ink/erase.ts';
 import { HISTORY_LIMIT, popHistory, pushHistory, type HistoryEntry } from './ink/history.ts';
-import { inkCutoffDate, MAX_POINTS, MAX_STROKES, parseInkStrokes, resolvePoints, thinForStorage, toAnchoredStroke, toFreeStroke, type InkStroke } from './ink/store.ts';
+import { inkCutoffTime, MAX_POINTS, MAX_STROKES, parseInkStrokes, resolvePoints, thinForStorage, toAnchoredStroke, toFreeStroke, type InkStroke } from './ink/store.ts';
 import type { Pt } from './ink/canvas.ts';
 
 const base = { id: 's1', color: '#dc2626', width: 4 };
@@ -108,8 +108,7 @@ test('the number of saved strokes and points is capped', () => {
   assert.deepEqual([thinned[0], thinned[thinned.length - 1]], [long[0], long[long.length - 1]]);
 });
 
-test('the server keeps today and the two days before it', () => {
-  assert.equal(inkCutoffDate('2026-11-14'), '2026-11-12');
-  assert.equal(inkCutoffDate('2026-03-01'), '2026-02-27');
-  assert.equal(inkCutoffDate('2027-01-01'), '2026-12-30');
+test('the server keeps ink for three days after the last save, whatever the order date', () => {
+  assert.equal(inkCutoffTime(new Date('2026-11-14T03:00:00.000Z')), '2026-11-11T03:00:00.000Z');
+  assert.equal(inkCutoffTime(new Date('2026-03-01T00:00:00.000Z')), '2026-02-26T00:00:00.000Z');
 });

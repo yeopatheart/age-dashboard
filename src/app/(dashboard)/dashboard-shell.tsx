@@ -108,7 +108,9 @@ export function DashboardShell({
 
   const handleLogout = async () => {
     const supabase = createClient();
-    await supabase.auth.signOut();
+    // 이 기기만 로그아웃한다. 기본값(global)은 같은 계정의 모든 기기 세션을 끊어서, 칠판·PC·휴대폰이 한 계정을 같이 쓰면
+    // 한 곳의 로그아웃이 다른 기기를 (토큰이 만료되는 최대 1시간 뒤에) 튕기게 했다(2026-11-14).
+    await supabase.auth.signOut({ scope: 'local' });
     router.push('/login');
     router.refresh();
   };

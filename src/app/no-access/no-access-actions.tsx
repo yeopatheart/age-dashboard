@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 export function NoAccessActions() {
   const router = useRouter();
   const logout = async () => {
-    await createClient().auth.signOut();
+    await createClient().auth.signOut({ scope: 'local' }); // 이 기기만(같은 계정의 다른 기기는 그대로 둔다)
     router.push('/login');
     router.refresh();
   };

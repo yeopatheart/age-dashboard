@@ -87,10 +87,10 @@ export function parseInkStrokes(data: unknown): InkStroke[] {
   return out.slice(-MAX_STROKES);
 }
 
-// 서버 보관 기간: 오늘을 포함해 3일(오늘·어제·그제). 이 날짜보다 이전 그림은 지운다(YYYY-MM-DD 문자열 비교로 충분하다).
+// 서버 보관 기간: 마지막으로 그린(저장한) 뒤 3일. 이보다 오래 손대지 않은 그림은 지운다.
+// 주문 날짜가 아니라 저장 시각(updated_at) 기준이다: 주문 날짜로 자르면 과거 날짜 화면(예: 11/14에 11/1을 열어 시험)에서 그린 그림이
+// 저장되자마자 "오래된 그림"으로 지워져서 다른 PC에 보이지 않고 새로고침하면 사라졌다(2026-11-14).
 export const INK_KEEP_DAYS = 3;
-export function inkCutoffDate(today: string): string {
-  const d = new Date(`${today}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - (INK_KEEP_DAYS - 1));
-  return d.toISOString().slice(0, 10);
+export function inkCutoffTime(now: Date): string {
+  return new Date(now.getTime() - INK_KEEP_DAYS * 24 * 60 * 60 * 1000).toISOString();
 }
