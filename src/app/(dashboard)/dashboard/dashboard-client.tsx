@@ -3,7 +3,7 @@ import { useState, useRef, useLayoutEffect, useCallback, useMemo, useOptimistic,
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, PenLine, TriangleAlert, Truck } from 'lucide-react';
+import { Check, GripVertical, Plus, Pencil, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PenLine, TriangleAlert, Truck } from 'lucide-react';
 import { businessIdsInBothRounds, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
@@ -130,7 +130,7 @@ function RoundBadge({ round }: { round: OrderRound }) {
 
 // 별도 주문 팝업의 고객명. 누르면 그 자리에서 고칠 수 있다 — 바뀐 이름은 이 날짜의 카드에만 적용되고 고객사 관리의 이름은 그대로다.
 // 비우거나 고객사 이름과 같게 쓰면 기본 이름으로 돌아간다.
-function EditableCardName({ row, readOnly }: { row: OrderRow; readOnly: boolean }) {
+function EditableCardName({ row, readOnly, onOpen }: { row: OrderRow; readOnly: boolean; onOpen: (el: HTMLElement) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(row.businessName);
   const [error, setError] = useState<string | null>(null);
@@ -174,7 +174,11 @@ function EditableCardName({ row, readOnly }: { row: OrderRow; readOnly: boolean 
   }
   return (
     <span className="inline-flex items-baseline gap-1">
-      <span>{row.businessName}</span>
+      {readOnly ? (
+        <span>{row.businessName}</span>
+      ) : (
+        <span role="button" tabIndex={0} title="누르면 이 고객의 상품 추가·수정·미출고·취소·삭제" className="cursor-pointer hover:underline" onClick={(e) => onOpen(e.currentTarget)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onOpen(e.currentTarget))}>{row.businessName}</span>
+      )}
       {changed && <span className="text-[10px] font-bold text-sky-600" title={`고객사 관리의 이름: ${row.defaultName}`}>(변경)</span>}
       {!readOnly && (
         <button
@@ -868,6 +872,8 @@ export function DashboardClient({
   const isSplitMode = effectiveMonitorMode !== 'all';
   // 이 기기가 칠판 펜으로 그릴 수 있는지. 아니면(PC 등) 같은 그림을 읽기 전용으로 본다.
   const inkWriter = penAvailable && isSplitMode && can('dashboard:edit') && !(isPast && !allowPast);
+  // 별도 주문 팝업은 모니터 1·2와 달리 분할 모드 조건이 없다(팝업 자체가 하나의 화면).
+  const inkWriterPopup = penAvailable && can('dashboard:edit') && !(isPast && !allowPast);
   // 표 본문에 쓸 수 있는 높이(스크롤 영역 − 헤더)를 측정해서 행 높이 단계와 줄 수를 정한다.
   // 두 모니터가 같은 높이를 쓰므로 모니터 2는 모니터 1이 가져간 줄 수(ownCapacity) 다음부터 시작한다.
   const [availHeight, setAvailHeight] = useState(0);
@@ -1837,7 +1843,7 @@ export function DashboardClient({
         {effectiveMonitorMode === '2' && productPanel}
         {/* 칠판 펜: 터치 기기(스마트 칠판)이고 수정 권한이 있고 오늘(또는 과거 편집 허용)인 모니터 1·2에서만 그릴 수 있다. 전체보기는 스크롤로 그림이 어긋나서 제외한다.
             그릴 수 없는 기기(PC 등)는 같은 그림을 읽기 전용으로 겹쳐 본다(서버에 저장된 그림, 툴바 버튼으로 숨길 수 있다). */}
-        {inkWriter ? (
+        {separateOpen ? null : inkWriter ? (
           <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
         ) : (
           hydrated && isSplitMode && !inkHidden && <InkLayer key={`view|${orderDate}|${effectiveMonitorMode}`} viewOnly date={orderDate} monitor={effectiveMonitorMode} dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
@@ -1851,7 +1857,7 @@ export function DashboardClient({
               <h3 className="text-sm font-bold text-white tracking-wide">별도 주문 ({separateRows.length}) — {[...separateNames].join(', ')}</h3>
               <button onClick={() => setSeparateOpen(false)} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
             </div>
-            <div className="flex-1 min-h-0 flex gap-3 p-4">
+            <div className="relative flex-1 min-h-0 flex gap-3 p-4">
             <div className="flex-1 min-w-0 overflow-y-auto flex flex-col gap-2">
               {separateRows.length === 0 && (
                 <p className="text-sm text-slate-400 text-center py-10">별도 주문이 없습니다. 터미널 관리에서 &apos;별도 주문&apos;으로 지정한 터미널의 주문이 여기에 모입니다.</p>
@@ -1883,7 +1889,7 @@ export function DashboardClient({
                     )}
                     <div className="w-72 flex-shrink-0 flex items-center gap-2">
                       <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
-                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} /></span>
+                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} onOpen={(el) => openCustomerPanel(row.dailyBusinessId, el)} /></span>
                       <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes ?? '-'}</span>
                       {row.mergeGroups.length > 0 && <span className="flex-shrink-0 rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800">합포장</span>}
                     </div>
@@ -1896,7 +1902,7 @@ export function DashboardClient({
                         if (item.sizeRequest) suffixParts.push(item.sizeRequest);
                       if (prepLabelOf(item)) suffixParts.push(prepLabelOf(item) as string);
                         return (
-                          <div key={item.id} className={`relative group/pill flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
+                          <div key={item.id} data-chip={item.id} className={`relative flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
                             <span className="flex items-baseline gap-1 min-w-0">
                               <span className="font-bold">{item.productName}</span>
                               {isUndecidedQuantity(item) ? (
@@ -1912,40 +1918,10 @@ export function DashboardClient({
                                 <span className="text-[10px] font-bold text-white bg-amber-500 rounded px-1 py-[1px]" title={item.unshippedReason ?? undefined}>미출고 {item.unshippedQuantity}</span>
                               )}
                             </span>
-                            {!readOnly && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setEditItemModal(item); }}
-                                className="ml-1 w-4 h-4 rounded bg-slate-600 text-white items-center justify-center hidden group-hover/pill:flex"
-                                title="수정"
-                              ><Pencil className="w-2.5 h-2.5" /></button>
-                            )}
-                            {!readOnly && item.changeStatus !== 'cancelled' && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setUnshippedModal(item); }}
-                                className="w-4 h-4 rounded bg-indigo-500 text-white items-center justify-center hidden group-hover/pill:flex"
-                                title="미출고 처리"
-                              ><PackageX className="w-2.5 h-2.5" /></button>
-                            )}
                           </div>
                         );
                       })}
-                      {!readOnly && (
-                        <button onClick={() => setAddItemModal({ row })} className="px-2.5 py-1 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-sky-400 hover:text-sky-500 text-xs flex items-center">
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      )}
                     </div>
-                    {!readOnly && canDelete && (
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
-                        className="flex-shrink-0 w-7 h-7 rounded-md bg-rose-50 hover:bg-rose-500 flex items-center justify-center self-center"
-                        title="이 날짜의 주문 삭제 (고객사 관리의 고객사는 그대로입니다)"
-                        aria-label={`${row.businessName} 주문 삭제`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-rose-500 hover:text-white" />
-                      </button>
-                    )}
                     </>
                     )}
                   </SortableRow>
@@ -1955,6 +1931,12 @@ export function DashboardClient({
               </DndContext>
             </div>
             {separateColumns.length > 0 && <ProductSummaryPanel columns={separateColumns} chipStyle={chipStyle} onPick={(p, r) => pickProduct('separate', p, r)} />}
+            {/* 별도 주문 팝업의 펜: 주문 목록과 같다(그릴 수 있는 기기는 쓰고, 아니면 같은 그림을 읽기 전용으로 본다). 그림은 모니터 1·2와 따로 's'에 저장한다. */}
+            {inkWriterPopup ? (
+              <InkLayer key={`sep|${orderDate}`} date={orderDate} monitor="s" dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
+            ) : (
+              hydrated && !inkHidden && <InkLayer key={`sepview|${orderDate}`} viewOnly date={orderDate} monitor="s" dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
+            )}
             </div>
           </div>
         </div>

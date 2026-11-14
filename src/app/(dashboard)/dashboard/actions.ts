@@ -53,7 +53,7 @@ export async function togglePacked(orderItemId: string, nextPacked: boolean): Pr
 export async function saveBoardInk(orderDate: string, monitor: string, strokes: unknown): Promise<{ error: string | null }> {
   await requirePermission('dashboard:edit');
   if (!isIsoDate(orderDate)) return { error: '날짜 형식이 올바르지 않습니다.' };
-  if (monitor !== '1' && monitor !== '2') return { error: '모니터는 1 또는 2입니다.' };
+  if (monitor !== '1' && monitor !== '2' && monitor !== 's') return { error: '모니터는 1·2 또는 별도 주문 팝업(s)입니다.' };
   const supabase = await createClient();
   const guard = await dateError(supabase, orderDate);
   if (guard) return { error: guard };
@@ -63,6 +63,7 @@ export async function saveBoardInk(orderDate: string, monitor: string, strokes: 
   if (error) {
     const table = missingTable(error.message);
     if (table) return { error: `펜 그림 저장 테이블이 없습니다. 마이그레이션 ${migrationsFor([table]).join(', ')}을 먼저 적용해 주세요.` };
+    if (/board_ink_monitor_check/.test(error.message)) return { error: '별도 주문 팝업 그림 저장 설정이 없습니다. 마이그레이션 0058_board_ink_separate.sql을 먼저 적용해 주세요.' };
     return { error: error.message };
   }
   // 오래된 그림 정리는 저장을 막지 않는다(실패해도 다음 저장 때 다시 시도한다).
