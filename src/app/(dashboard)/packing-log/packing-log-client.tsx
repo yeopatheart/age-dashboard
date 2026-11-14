@@ -3,7 +3,6 @@ import '@/components/admin/admin.css';
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import type { LabelPrintStatus } from '@/lib/label-status';
 import {
   DndContext,
   DragOverlay,
@@ -18,61 +17,15 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { BarChart3, CircleDashed, ClipboardList, Package, PackageCheck, Printer, PrinterCheck, PrinterX, Trash2, X } from 'lucide-react';
-import type { RecommendationView, StoredPlan } from '@/lib/packing/server';
+import type { StoredPlan } from '@/lib/packing/server';
+import type { PackingBoxType as BoxType, PackingBusiness, PackingItem } from '@/lib/packing/types';
 import { summarizeBoxNeeds } from '@/lib/packing/box-needs';
 import { emptyBoxMessage, firstEmptyBoxIndex, removalShiftsPrintedLabels } from '@/lib/packing/box-rules';
-import { EXCLUDED_REASON_LABEL, type ExcludedItem } from '@/lib/packing/excluded-items';
+import { EXCLUDED_REASON_LABEL } from '@/lib/packing/excluded-items';
 import { submitPacking, assignItemsToBoxes, deletePackingRecord } from './actions';
 import { LabelPanel } from './label-panel';
 import { useCan } from '@/components/permissions-context';
 import { DateNav } from '@/components/date-nav';
-
-export interface PackingItem {
-  id: string;
-  name: string;
-  quantity: number;
-  unit: string;
-  weightKg: number | null;
-  secondaryWeightKg: number | null;
-  sizeRequest: string | null;
-  needsMulbong: boolean;
-  // 주문에 "기포기"가 적힌 상품 — 물봉에 기포기를 부착해서 내보낸다
-  aerator: boolean;
-  // 주문에 "물봉"이 적힌 상품(기포기가 아닌 물봉만)
-  orderMulbong: boolean;
-}
-export interface PackingBusiness {
-  id: string;
-  number: number;
-  businessName: string;
-  // 같은 고객사가 1차·2차 모두 있을 때만 값이 있다
-  roundLabel: string | null;
-  terminal: string;
-  // 택배 터미널: 택배사 송장을 붙이므로 박스 라벨을 출력하지 않는다
-  parcel: boolean;
-  items: PackingItem[];
-  // 박스에 담을 대상이 아니라 items에서 빠진 상품(수량 미정·전량 미출고). 조용히 빠지지 않게 화면이 안내한다.
-  excludedItems: ExcludedItem[];
-  // 박스 추천(shadow test). 미제출 업체는 1순위 추천이 박스에 미리 채워진다.
-  recommendation: RecommendationView | null;
-  // 제출한 업체의 라벨 출력 현황(목록 칩용). 택배·미제출 업체는 null
-  labelStatus: LabelPrintStatus | null;
-  // 미제출: 추천을 만든 뒤 주문이 바뀜 / 제출: 제출한 뒤 주문이 바뀜
-  orderChanged: boolean;
-  submitted: {
-    submittedAt: string;
-    boxes: { boxId: string | null; boxName: string; items: { orderItemId: string; quantity: number }[] }[];
-  } | null;
-}
-interface BoxType {
-  id: string;
-  name: string;
-  is_active: boolean;
-  inner_width_cm: number | null;
-  inner_depth_cm: number | null;
-  inner_height_cm: number | null;
-  is_mulbong_box: boolean;
-}
 
 // 화면에서 작성 중인 박스 하나. uid는 화면 안에서만 쓰는 임시 식별자(같은 종류 박스를 여러 개 놓을 수 있다).
 interface DraftBox {
@@ -143,12 +96,17 @@ export function PackingLogClient({
   allowPast,
   rows,
   boxes,
+  embedded = false,
+  onSubmitted,
 }: {
   orderDate: string;
   today: string;
   allowPast: boolean;
   rows: PackingBusiness[];
   boxes: BoxType[];
+  // 주문 목록의 박스 할당 팝업 안에서 쓸 때: 업체 목록·제목 줄·필요 박스 줄 없이 업체 한 곳(rows[0])의 편집 영역만 보이고, 제출하면 onSubmitted를 부른다.
+  embedded?: boolean;
+  onSubmitted?: () => void;
 }) {
   const router = useRouter();
   // 과거 날짜는 설정에서 "과거 날짜 편집"을 켰을 때만 제출·삭제할 수 있다(서버도 같은 규칙으로 막는다).
@@ -389,6 +347,10 @@ export function PackingLogClient({
       delete next[selected.id]; // 제출한 내용으로 다시 불러오게 한다
       return next;
     });
+    if (embedded) {
+      onSubmitted?.(); // 팝업: 다음 업체 없이 닫는다(주문 목록은 서버 액션이 새 화면을 보내 갱신된다)
+      return;
+    }
     // 다음 미제출 업체로 바로 넘어간다(목록에서 현재 업체 뒤쪽을 먼저, 없으면 처음부터). 없으면 그 업체에 머문다.
     const at = rows.findIndex((r) => r.id === selected.id);
     const next = [...rows.slice(at + 1), ...rows.slice(0, Math.max(at, 0))].find((r) => !r.submitted && r.id !== selected.id);
@@ -463,6 +425,7 @@ export function PackingLogClient({
   return (
     <div className="pk-root">
       {/* PC에서는 제목 줄과 날짜·필터 줄을 한 줄로 합쳐 작업 영역이 위로 올라오게 한다(휴대폰은 제목 줄이 숨겨지고 도구줄만 남는다). */}
+      {!embedded && (
       <div className="pk-top">
         <div className="page-header">
           <div className="page-header-icon"><ClipboardList size={20} /></div>
@@ -480,8 +443,9 @@ export function PackingLogClient({
           <label className="pk-check"><input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} /> 미기록 업체만</label>
         </div>
       </div>
+      )}
 
-      {rows.length > 0 && (
+      {!embedded && rows.length > 0 && (
         <div className="pk-needs" aria-label="오늘 필요한 박스">
           <span className="pk-needs-title"><Package size={15} aria-hidden /> 오늘 필요한 박스</span>
           {needs.lines.length === 0 && <span className="ak-muted">아직 박스가 정해진 업체가 없습니다.</span>}
@@ -499,7 +463,8 @@ export function PackingLogClient({
       {rows.length === 0 ? (
         <p className="ak-empty">이 날짜에 주문이 없습니다.</p>
       ) : (
-        <div className="pk-layout">
+        <div className={`pk-layout ${embedded ? 'pk-layout-single' : ''}`}>
+          {!embedded && (
           <aside className="pk-list">
             {visibleRows.length === 0 && <p className="ak-empty" style={{ padding: '1.5rem 0.5rem' }}>모두 제출했습니다.</p>}
             {visibleRows.map((r) => (
@@ -527,6 +492,7 @@ export function PackingLogClient({
               </button>
             ))}
           </aside>
+          )}
 
           {selected && draft && (
             <DndContext id="packing-dnd" sensors={sensors} collisionDetection={pointerWithin} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveDrag(null)}>
@@ -733,6 +699,7 @@ export function PackingLogClient({
         .pk-needs-sum { color: var(--muted-foreground); font-weight: 600; white-space: nowrap; }
         .pk-needs-sum b { color: var(--foreground); font-weight: 900; }
         .pk-biz-done { opacity: 0.6; }
+        .pk-layout-single { grid-template-columns: minmax(0, 1fr); }
         .pk-board { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.65rem 1rem; }
         .pk-pool { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; background: #f8fafc; border: 2px dashed #e2e8f0; border-radius: 12px; padding: 0.4rem 0.6rem; }
         .pk-pool-over { border-color: var(--primary); background: var(--primary-light); }
