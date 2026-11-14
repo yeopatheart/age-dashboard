@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { businessIdsInBothRounds, getProductSummary, nameWithRound, roundLabel, type OrderItem } from './orders.ts';
+import { businessIdsInBothRounds, getProductCustomers, getProductSummary, nameWithRound, roundLabel, type OrderItem } from './orders.ts';
 
 test('1·2차가 둘 다 있는 업체만 이름에 차수를 붙인다', () => {
   const split = businessIdsInBothRounds([
@@ -81,4 +81,19 @@ test('품목별 수량: 추가분은 첫 입력 이후 추가된 품목(new)만�
 
 test('품목별 수량: 추가된 품목이 없으면 추가분은 0이다', () => {
   assert.equal(getProductSummary([item({ quantity: 2 }), undecided({ id: 'u', dailyBusinessId: 'd2', changeStatus: 'new' })]).every((r) => r.added === 0), true);
+});
+
+test('품목별 고객 목록: 고객마다 이 품목의 줄(id·수량·포장 여부)을 돌려준다', () => {
+  const items = [
+    item({ id: 'a1', dailyBusinessId: 'd1', businessName: '가', quantity: 3, isPacked: true }),
+    item({ id: 'a2', dailyBusinessId: 'd1', businessName: '가', quantity: 2, isPacked: false }), // 같은 품목이 두 줄
+    item({ id: 'b1', dailyBusinessId: 'd2', businessName: '나', quantity: 4, isPacked: true }),
+    item({ id: 'c1', dailyBusinessId: 'd3', businessName: '다', productName: '방어', quantity: 1 }), // 다른 품목
+    item({ id: 'x1', dailyBusinessId: 'd2', businessName: '나', quantity: 9, changeStatus: 'cancelled' }), // 취소는 제외
+  ];
+  const key = getProductSummary(items).find((r) => r.productName === '활전갱이')!.key;
+  const list = getProductCustomers(items, { key }, new Map([['d2', 0], ['d1', 1]]));
+  assert.deepEqual(list.map((c) => [c.name, c.quantity, c.allPacked]), [['나', 4, true], ['가', 5, false]]);
+  assert.deepEqual(list[0].lines, [{ id: 'b1', quantity: 4, isPacked: true }]);
+  assert.deepEqual(list[1].lines.map((l) => l.id), ['a1', 'a2']);
 });

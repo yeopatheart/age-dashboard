@@ -243,8 +243,9 @@ const TERMINAL_COLUMN_MAX = 120;
 const NAME_COLUMN_MIN = 72;
 const NAME_COLUMN_MAX = 220;
 const ROUND_BADGE_WIDTH = 28; // RoundBadge("1차") 폭 + 오른쪽 간격
-// 박스 열 폭. 박스 수 옆에 "합포장" 표시와 "박스 재확인" 경고 아이콘이 함께 한 줄로 들어가는 폭이다.
-const BOX_COLUMN = 88;
+// 박스 열 폭(고정). 박스 수는 최대 두 자리라서 숫자(14px 굵게 약 17px) + 박스 재확인 경고 아이콘(14px) + 합포장 배지 "합"(약 18px) + 사이 간격과 좌우 여백이 한 줄에
+// 모두 들어가는 최소 폭이다. 헤더 "박스"(12px 굵게)는 이보다 좁다. 합포장 전체 이름은 배지 툴팁으로 본다.
+const BOX_COLUMN = 64;
 const noopId = (id: string) => void id;
 const noopActive = (active: boolean) => void active;
 function productGridTemplate(slotCount: number, flexible = false, nameColumn = NAME_COLUMN_DEFAULT, terminalColumn = TERMINAL_COLUMN_DEFAULT) {
@@ -772,8 +773,9 @@ export function DashboardClient({
   const monitorMode = searchParams.get('monitor') || '1';
 
   // 포장 체크를 서버 응답을 기다리지 않고 바로 보여주기 위한 사본(서버가 새 화면을 보내면 그 값으로 바뀐다).
-  const [items, setOptimisticPacked] = useOptimistic(serverItems, (state: OrderItem[], change: { id: string; packed: boolean }) =>
-    state.map((i) => (i.id === change.id ? { ...i, isPacked: change.packed } : i)),
+  // 품목별 수량 팝업에서 고친 수량도 같은 사본에 바로 반영한다(주문 목록의 상품 칸과 품목별 수량이 서버 응답 전에 함께 바뀐다).
+  const [items, setOptimisticItem] = useOptimistic(serverItems, (state: OrderItem[], change: { id: string; packed?: boolean; quantity?: number }) =>
+    state.map((i) => (i.id === change.id ? { ...i, ...(change.packed !== undefined ? { isPacked: change.packed } : {}), ...(change.quantity !== undefined ? { quantity: change.quantity } : {}) } : i)),
   );
 
   // 과거 날짜는 기본적으로 조회 전용 — 실수로 지난 기록을 고치지 않게 편집 수단을 숨긴다.
@@ -1129,7 +1131,7 @@ export function DashboardClient({
   const handleTogglePacked = (item: OrderItem) => {
     if (item.changeStatus === 'cancelled') return;
     startPackedTransition(async () => {
-      setOptimisticPacked({ id: item.id, packed: !item.isPacked });
+      setOptimisticItem({ id: item.id, packed: !item.isPacked });
       const { error } = await togglePacked(item.id, !item.isPacked);
       if (error) showToast(error);
     });
@@ -1139,6 +1141,28 @@ export function DashboardClient({
     const item = items.find((i) => i.id === itemId);
     if (!item || item.changeStatus === 'cancelled' || item.isPacked === packed) return;
     handleTogglePacked(item);
+  };
+  // 품목별 수량 팝업에서 한 고객의 이 품목 줄들을 한 번에 포장 완료로 켜거나 끈다(이미 그 상태이거나 취소된 줄은 건너뛴다).
+  const handleSetPackedMany = (lineIds: string[], packed: boolean) => {
+    for (const id of lineIds) handleSetPacked(id, packed);
+  };
+  // 팝업에서 수량을 바꾼다. 주문 수정과 같은 저장(updateOrderItemManual)이라 수정 표시·미출고 수량 보정도 같다.
+  const handleChangeQuantity = (itemId: string, quantity: number) => {
+    const item = items.find((i) => i.id === itemId);
+    if (!item || readOnly || item.quantity === quantity) return;
+    startPackedTransition(async () => {
+      setOptimisticItem({ id: item.id, quantity });
+      const { error } = await updateOrderItemManual(item.id, {
+        productName: item.productName,
+        quantity,
+        unit: item.unit,
+        secondaryWeightKg: item.secondaryWeightKg ?? null,
+        sizeRequest: item.sizeRequest ?? null,
+        changeStatus: item.changeStatus,
+        prep: prepOf(item),
+      });
+      if (error) showToast(error);
+    });
   };
   // 펜 그림 층이 상품 칸을 판정할 때 쓰는 최소 정보(상품 id·포장 여부·취소 여부·시험 모드에 보일 이름).
   const inkItems = useMemo<InkItem[]>(
@@ -1288,7 +1312,7 @@ export function DashboardClient({
           onDeleteItem={(item) => fromPanel(() => setConfirmDelete({ type: 'item', itemId: item.id }))()}
         />
       )}
-      {picked && pickedProduct && <ProductCustomersPopover product={pickedProduct} customers={pickedCustomers} anchor={picked.anchor} chipStyle={chipStyle(pickedProduct.productName)} onClose={closePicked} />}
+      {picked && pickedProduct && <ProductCustomersPopover product={pickedProduct} customers={pickedCustomers} anchor={picked.anchor} chipStyle={chipStyle(pickedProduct.productName)} canEdit={!readOnly} onSetPacked={handleSetPackedMany} onChangeQuantity={handleChangeQuantity} onClose={closePicked} />}
       {addOrderModal && (
         <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={allRows.map((r) => ({ businessId: r.businessId, round: r.round, terminal: r.terminal }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
       )}
@@ -1719,7 +1743,7 @@ export function DashboardClient({
                     >
                       <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null ? 'text-slate-300' : row.packingChanged ? 'text-rose-700' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{row.totalBoxes ?? '-'}</span>
                       {row.packingChanged && <TriangleAlert className="w-3.5 h-3.5 shrink-0 text-rose-600" strokeWidth={2.5} aria-label="박스 재확인 필요" />}
-                      {row.mergeGroups.length > 0 && <span className="rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`}>합포장</span>}
+                      {row.mergeGroups.length > 0 && <span className="rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`} aria-label="합포장">합</span>}
                     </div>
 
                     {Array.from({ length: productSlotCount }).map((_, slotIndex) => {

@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Eraser, Palette, PenLine, Undo2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { fetchBoardInk, subscribeBoardInk } from '@/lib/ink/board-ink-client';
-import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
+import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, redrawLive, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
 import { eraseStroke } from '@/lib/ink/erase';
 import { classifyStroke, REASON_LABEL } from '@/lib/ink/gesture';
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
@@ -69,7 +69,8 @@ interface ActiveStroke {
   cursor: LiveInk;
   tail: Pt | null; // 받았지만 앞 점과 너무 가까워(STORE_MIN_STEP) 아직 쓰지 않은 마지막 점. 획이 끝날 때 마지막 점으로 붙인다.
   before: InkStroke[];
-  boxes: Map<string, Box>;
+  boxes: Map<string, Box>; // 지우개는 시작할 때 재 둔다. 펜은 획이 끝날 때 잰다(쓰는 동안 레이아웃을 강제로 읽지 않으려고)
+  origin: Pt; // 획을 시작할 때 잰 그림 층의 화면 위 왼쪽 위(획 도중 점마다 다시 재지 않는다)
   layer: { width: number; height: number };
   touched: Set<string>; // 지우개가 닿은(잘라 낸) 획에 붙어 있던 상품 id
 }
@@ -246,6 +247,14 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       ctx.lineWidth = stroke.width;
       drawPath(ctx, points);
     }
+    // 쓰는 도중에 전체를 다시 그리면(데이터 갱신 등) 쓰던 획도 같이 지워지므로 그려 둔 구간까지 복원한다.
+    const live = activeRef.current;
+    if (live?.tool === 'pen') {
+      ctx.strokeStyle = prefsRef.current.color;
+      ctx.fillStyle = prefsRef.current.color;
+      ctx.lineWidth = prefsRef.current.penWidth;
+      redrawLive(ctx, live.cursor);
+    }
   };
 
   const scheduleRedraw = () => {
@@ -267,9 +276,16 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
   }, []);
 
   // 그림, 상품 데이터, 레이아웃이 바뀌면 다시 그린다(상품 칸이 움직이면 붙은 획이 따라간다).
+  // items는 서버 데이터를 받을 때마다 새 배열이 되므로 참조가 아니라 상품 줄의 구성(id·취소 여부)이 바뀔 때만 다시 그린다(내용이 같은 갱신마다 캔버스를 지우지 않는다).
+  const itemsKey = items.map((i) => `${i.id}${i.cancelled ? 'x' : ''}`).join(',');
+  const skipRedraw = useRef(false);
   useLayoutEffect(() => {
+    if (skipRedraw.current) {
+      skipRedraw.current = false;
+      return;
+    }
     redraw();
-  }, [state.strokes, items, layoutTick]);
+  }, [state.strokes, itemsKey, layoutTick]);
 
   useEffect(() => {
     const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
@@ -382,7 +398,8 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       cursor: startInk(p),
       tail: null,
       before: stateRef.current.strokes,
-      boxes: chipBoxes(canvas),
+      boxes: current === 'eraser' ? chipBoxes(canvas) : new Map<string, Box>(),
+      origin: { x: layerRect.left, y: layerRect.top },
       layer: { width: layerRect.width, height: layerRect.height },
       touched: new Set<string>(),
     };
@@ -404,7 +421,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     const active = activeRef.current;
     if (!active || active.pointerId !== e.pointerId) return;
     const events = e.nativeEvent.getCoalescedEvents?.() ?? [];
-    const points = (events.length > 0 ? events : [e.nativeEvent]).map(local);
+    const points = (events.length > 0 ? events : [e.nativeEvent]).map((ev) => ({ x: ev.clientX - active.origin.x, y: ev.clientY - active.origin.y }));
     if (active.tool === 'pen') {
       const ctx = canvasRef.current?.getContext('2d');
       if (!ctx) return;
@@ -428,7 +445,9 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
 
   // 펜 획이 끝나면 동그라미·직선인지 판정한다. 맞으면 그 상품을 포장 완료로 올리고 획을 그 칸에 붙인다.
   const finishPenStroke = (active: ActiveStroke) => {
-    const targets = [...active.boxes].map(([id, box]) => ({ id, ...box }));
+    const canvas = canvasRef.current;
+    const boxes = canvas ? chipBoxes(canvas) : active.boxes; // 상품 칸 위치는 펜을 뗀 지금 한 번만 잰다
+    const targets = [...boxes].map(([id, box]) => ({ id, ...box }));
     const result = classifyStroke(active.points, targets);
     const base = { id: newId(), color: prefsRef.current.color, width: prefsRef.current.penWidth };
     const free = toFreeStroke(base, active.points, active.layer);
@@ -440,7 +459,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     } else {
       const what = result.kind === 'circle' ? '동그라미' : '직선';
       const item = itemsRef.current.find((i) => i.id === result.itemId);
-      const box = active.boxes.get(result.itemId);
+      const box = boxes.get(result.itemId);
       if (!item || !box) {
         if (dry) showNote(`${what}: 상품 정보를 찾지 못함`, end);
       } else if (item.cancelled) {
@@ -458,6 +477,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       }
     }
     const cur = stateRef.current;
+    skipRedraw.current = true; // 방금 쓴 획은 이미 화면에 똑같이 그려져 있다 — 전체를 다시 그리지 않는다(획이 쌓일수록 느려지는 것을 막는다)
     commit({ strokes: [...cur.strokes, stroke], history: pushHistory(cur.history, { before: active.before, packed: packedItemId ? [packedItemId] : undefined }) });
   };
 
@@ -555,7 +575,8 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       setTool('eraser');
       setCard('eraser');
     } else {
-      setCard((c) => (c === 'eraser' ? null : 'eraser')); // 이미 지우개면 크기 카드를 열고 닫는다
+      setTool('pen'); // 이미 지우개면 다시 눌러 취소 = 펜으로 복귀(펜을 다시 켜는 한 번을 아낀다, 2026-11-14)
+      setCard(null);
     }
   };
   const eraserCancel = () => {
@@ -608,11 +629,16 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       return;
     }
     if (d.long) return; // 길게 눌러 메뉴를 열었으면 펜을 켜고 끄지 않는다
+    if (tool === 'eraser') {
+      closeMenu();
+      setTool('pen'); // 지우개를 쓰는 중에 플로팅 버튼을 누르면 펜으로 복귀한다(끄지 않는다). 펜을 끄려면 펜 상태에서 한 번 더 누른다.
+      return;
+    }
     if (menuOpen) {
       closeMenu(); // 메뉴가 열려 있을 때 짧게 누르면 메뉴만 닫는다
       return;
     }
-    setTool((t) => (t ? null : 'pen')); // 짧게 누르면 펜 켜기/끄기(켜면 이전에 정한 색·굵기를 그대로 쓴다)
+    setTool((t) => (t ? null : 'pen')); // 짧게 누르면 펜 켜기/끄기(지우개 중이면 위에서 펜으로 복귀)(켜면 이전에 정한 색·굵기를 그대로 쓴다)
   };
 
   // 메뉴는 플로팅 버튼 위(화면 아래쪽에 있을 때) 또는 아래로 세로로 쌓고, 설정 카드는 눌린 버튼 옆에 둔다.

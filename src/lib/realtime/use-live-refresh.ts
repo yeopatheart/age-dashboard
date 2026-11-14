@@ -1,8 +1,9 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
+import type { ItemChange } from '@/lib/sound/apply-item-change';
 
 export type LiveStatus = 'off' | 'connecting' | 'live' | 'down';
 
@@ -11,6 +12,8 @@ export interface LiveInfo {
   lastRefreshAt: number | null; // 화면을 서버에서 마지막으로 다시 받아오라고 한 시각(ms). 칠판이 오래 멈춘 것을 알아차리는 데 쓴다.
 }
 
+// 변경 신호를 받은 뒤 화면을 새로 받기까지 모으는 시간. 소리는 신호가 오는 즉시 따로 내므로(onItemChange) 화면 갱신만 이만큼 늦는다.
+const REFRESH_DEBOUNCE_MS = 150;
 const SAFETY_REFRESH_MS = 60_000; // 실시간 신호가 조용히 끊겨도(TV 절전 등) 이 간격으로는 화면을 새로 받는다(탭이 보이는 동안만)
 // 연결이 잠깐 흔들려 채널이 닫혔다 곧 다시 붙는 것은 흔하다(네트워크 순간 끊김, 서버의 연결 정리). 그때마다 빨간 경고와 "연결이 끊겼습니다" 소리가 나면
 // 오경보라서(2026-11-14 현장), 이 시간 안에 다시 붙으면 경고하지 않는다. 그 이상 끊겨 있으면 그때 "끊김"으로 알린다.
@@ -25,7 +28,12 @@ const RECONNECT_RETRY_MS = 10_000;
 // 신호가 조용히 멈춘 경우를 위해 1분마다(탭이 보이는 동안) 안전 새로고침도 한다.
 // 탭이 뒤로 가거나 PC가 절전하면 브라우저가 페이지(타이머·실시간 연결)를 멈춘다. 그래서 다시 보이거나 깨어나거나 인터넷이 돌아오면
 // 즉시 새로 받아 멈춰 있던 동안의 변경을 따라잡고(그 변경은 소리로도 알려진다), 죽은 실시간 연결은 새로 연다. 2026-11-07 현장에서 "갱신이 멈췄다"고 한 증상이다.
-export function useLiveRefresh(enabled: boolean): LiveInfo {
+// onItemChange: order_items 변경 신호가 올 때마다 화면 갱신을 기다리지 않고 바로 부른다(변경 소리를 빨리 내기 위해). 신호에 담긴 행을 그대로 넘긴다.
+export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemChange) => void): LiveInfo {
+  const itemChangeRef = useRef(onItemChange);
+  useEffect(() => {
+    itemChangeRef.current = onItemChange;
+  });
   const router = useRouter();
   const [status, setStatus] = useState<Exclude<LiveStatus, 'off'>>('connecting');
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
@@ -39,10 +47,10 @@ export function useLiveRefresh(enabled: boolean): LiveInfo {
       router.refresh();
       setLastRefreshAt(Date.now());
     };
-    // 카카오 주문 한 번 확정으로 여러 줄이 연달아 바뀌므로 400ms 안의 신호는 한 번의 새로고침으로 묶는다.
+    // 카카오 주문 한 번 확정으로 여러 줄이 연달아 바뀌므로 짧은 시간(REFRESH_DEBOUNCE_MS) 안의 신호는 한 번의 새로고침으로 묶는다.
     const refreshSoon = () => {
       clearTimeout(timer);
-      timer = setTimeout(refreshNow, 400);
+      timer = setTimeout(refreshNow, REFRESH_DEBOUNCE_MS);
     };
     // 숨겨진 탭은 다시 보일 때 wake()가 곧바로 따라잡으므로 보이는 동안만 돌린다.
     const safety = setInterval(() => {
@@ -62,7 +70,10 @@ export function useLiveRefresh(enabled: boolean): LiveInfo {
         if (cancelled) return;
         channel = supabase
           .channel(`board-orders-${++seq}`)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refreshSoon)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, (payload) => {
+            itemChangeRef.current?.({ eventType: payload.eventType, new: payload.new, old: payload.old });
+            refreshSoon();
+          })
           .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_businesses' }, refreshSoon)
           .subscribe((s) => {
             if (cancelled) return;

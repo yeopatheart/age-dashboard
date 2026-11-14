@@ -132,6 +132,8 @@ export interface ProductCustomer {
   unshipped: number;
   allPacked: boolean;
   undecided: boolean; // 같은 품목이지만 수량을 아직 못 정한 줄이 있다
+  // 이 고객의 이 품목 줄(수량이 정해진 것만). 포장 체크·수량 수정이 어느 줄을 고칠지 알려 준다. 한 줄이면 수량을 그 자리에서 고칠 수 있다.
+  lines: { id: string; quantity: number; isPacked: boolean }[];
 }
 
 // 한 품목(getProductSummary의 한 줄)을 받는 업체와 업체별 수량. 업체는 rowOrder(화면 순서)대로 나열한다.
@@ -146,12 +148,13 @@ export function getProductCustomers(items: OrderItem[], product: Pick<ProductSum
     if (item.changeStatus === 'cancelled') continue;
     const undecided = isUndecidedQuantity(item);
     if (undecided ? !(productKeyOf(item).startsWith(`${base}|`) && prepOf(item) === prep) : productKeyOf(item) !== product.key) continue;
-    const entry = byRow.get(item.dailyBusinessId) ?? { dailyBusinessId: item.dailyBusinessId, name: item.businessName, quantity: 0, unshipped: 0, allPacked: true, undecided: false };
+    const entry = byRow.get(item.dailyBusinessId) ?? { dailyBusinessId: item.dailyBusinessId, name: item.businessName, quantity: 0, unshipped: 0, allPacked: true, undecided: false, lines: [] };
     if (undecided) entry.undecided = true;
     else {
       entry.quantity += Math.max(0, item.quantity - item.unshippedQuantity);
       entry.unshipped += item.unshippedQuantity;
       if (!item.isPacked) entry.allPacked = false;
+      entry.lines.push({ id: item.id, quantity: item.quantity, isPacked: item.isPacked });
     }
     byRow.set(item.dailyBusinessId, entry);
   }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { backingSize, drawPath, endInk, extendInk, startInk, type Pt } from './ink/canvas.ts';
+import { backingSize, drawPath, endInk, extendInk, redrawLive, startInk, type Pt } from './ink/canvas.ts';
 
 // 그리기 호출을 기록하는 가짜 컨텍스트
 function fakeCtx() {
@@ -92,4 +92,19 @@ test('a tap (a single point) is drawn as a dot', () => {
   const again = fakeCtx();
   drawPath(again.ctx, [{ x: 7, y: 9 }]);
   assert.deepEqual(again.calls, calls);
+});
+
+test('restoring a stroke in progress redraws exactly what was already drawn and drawing can continue seamlessly', () => {
+  const first = fakeCtx();
+  let live = startInk(wave[0]);
+  for (const p of wave.slice(1, 4)) live = extendInk(first.ctx, live, p);
+  const restored = fakeCtx();
+  redrawLive(restored.ctx, live);
+  assert.deepEqual(restored.calls, first.calls); // 지금까지 그린 구간이 같다
+  // 이어서 그리면 처음부터 끊김 없이 그린 것과 같은 결과가 된다
+  for (const p of wave.slice(4)) live = extendInk(restored.ctx, live, p);
+  endInk(restored.ctx, live);
+  const whole = fakeCtx();
+  drawPath(whole.ctx, wave);
+  assert.deepEqual(restored.calls, whole.calls);
 });
