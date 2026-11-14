@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>통영아재수산 현장 사용 가이드</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap">
+<style>
+/* 현장 매뉴얼: 린넨색 바탕 + 먹색 글자 + 남색 머리띠 + 황동 포인트(앱의 주문 목록 톤과 같은 계열).
+   화면에서는 한 줄 읽기, 인쇄할 때는 A4 세로(여백 11mm)로 쪽이 나뉜다. 색만으로 뜻을 전하지 않는다(칩 이름·테두리·아이콘을 같이 쓴다). */
+:root {
+  --ink: #26231f; --muted: #5f574c; --line: #d6cfc2; --paper: #ffffff; --linen: #f4f1ea; --soft: #faf8f4;
+  --navy: #003057; --navy-2: #1d4a73; --brass: #b08d57; --brass-ink: #6e5321;
+  --new-bg: #e3ebdd; --new-ink: #365229; --new-line: #aac49b;
+  --mod-bg: #f6ecd2; --mod-ink: #6e4a12; --mod-line: #d9bb78;
+  --cx-bg: #f4dcd7; --cx-ink: #8a3b33; --cx-line: #d9a9a1;
+  --done-bg: #e6e2d9; --done-ink: #6f675b; --done-line: #c4bcad;
+  --warn-bg: #fff4d6; --warn-line: #e3b94f; --tip-bg: #e8f1f8; --tip-line: #8db3d1; --bad-bg: #fbe9e6; --bad-line: #d98d82; --ok-bg: #e7f1e4; --ok-line: #8fbb85;
+  --font: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕", sans-serif;
+}
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; background: var(--linen); color: var(--ink); font-family: var(--font); font-size: 17px; line-height: 1.6; word-break: keep-all; overflow-wrap: break-word; }
+.ic { width: 1.15em; height: 1.15em; vertical-align: -0.2em; flex: none; }
+h1, h2, h3, h4 { margin: 0; line-height: 1.3; text-wrap: balance; }
+p { margin: 0; }
+ul, ol { margin: 0; padding-left: 1.25em; }
+li + li { margin-top: 0.25em; }
+b, strong { font-weight: 800; }
+
+/* ── 바깥 틀 ── */
+.wrap { max-width: 860px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-left, 0px)) 80px max(16px, env(safe-area-inset-right, 0px)); }
+.nav { position: sticky; top: 0; z-index: 5; background: var(--navy); color: #fff; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: center; padding: 10px 12px; }
+.nav a { color: #fff; text-decoration: none; font-weight: 700; font-size: 15px; padding: 6px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.35); }
+.nav a:hover, .nav a:focus-visible { background: #fff; color: var(--navy); outline: none; }
+.nav .print-hint { font-size: 13px; opacity: .85; margin-left: 8px; }
+.sheet { background: var(--paper); border: 1px solid var(--line); margin: 20px 0; padding: 28px 30px; box-shadow: 0 1px 3px rgba(60, 50, 30, .08); }
+
+/* ── 표지 ── */
+.cover { padding-top: 34px; }
+.cover .eyebrow { display: inline-block; background: var(--navy); color: #fff; font-weight: 700; font-size: 13px; letter-spacing: .06em; padding: 3px 10px; border-radius: 3px; }
+.cover h1 { font-size: 36px; font-weight: 800; margin: 12px 0 6px; }
+.cover .lead { color: var(--muted); font-size: 18px; }
+.brassbar { height: 4px; width: 84px; background: var(--brass); margin: 16px 0 6px; }
+
+/* ── 제목들 ── */
+.guide-head { display: flex; align-items: center; gap: 14px; background: var(--navy); color: #fff; padding: 14px 18px; border-bottom: 4px solid var(--brass); margin: -28px -30px 20px; }
+.guide-head .no { font-size: 34px; font-weight: 800; color: var(--brass); line-height: 1; }
+.guide-head h2 { font-size: 26px; font-weight: 800; }
+.guide-head p { font-size: 15px; opacity: .9; }
+h3.sec { font-size: 21px; font-weight: 800; margin: 26px 0 10px; padding-bottom: 5px; border-bottom: 2px solid var(--ink); display: flex; align-items: center; gap: 8px; }
+h3.sec .ic { color: var(--brass); }
+h4 { font-size: 17px; font-weight: 800; margin: 14px 0 4px; }
+.sub { color: var(--muted); font-size: 15px; }
+
+/* ── 상자들 ── */
+.box { border: 1.5px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 12px 0; display: flex; gap: 10px; align-items: flex-start; break-inside: avoid; }
+.box .ic { margin-top: 3px; font-size: 20px; }
+.box .t { font-weight: 800; }
+.box.tip { background: var(--tip-bg); border-color: var(--tip-line); }
+.box.warn { background: var(--warn-bg); border-color: var(--warn-line); }
+.box.bad { background: var(--bad-bg); border-color: var(--bad-line); }
+.box.ok { background: var(--ok-bg); border-color: var(--ok-line); }
+.box > div { min-width: 0; }
+
+/* ── 단계(따라하기) ── */
+.steps { display: grid; gap: 12px; margin: 10px 0; }
+.step { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; border: 1.5px solid var(--ink); border-radius: 10px; padding: 12px 14px; background: var(--paper); break-inside: avoid; }
+.step .n { width: 40px; height: 40px; border-radius: 50%; background: var(--navy); color: #fff; font-weight: 800; font-size: 21px; display: grid; place-items: center; }
+.step h4 { margin: 2px 0 4px; font-size: 18px; }
+.step .body > * + * { margin-top: 8px; }
+.step.tight { padding: 10px 12px; }
+.how { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.arrow { color: var(--brass-ink); font-weight: 800; }
+
+/* ── 화면 그림(목업) ── */
+.mock { border: 1.5px solid #8d8576; border-radius: 8px; background: #ece8df; padding: 10px; font-size: 12.5px; line-height: 1.4; position: relative; break-inside: avoid; margin: 10px 0; }
+.mock .cap { position: absolute; top: -10px; left: 10px; background: var(--paper); border: 1px solid #8d8576; border-radius: 4px; font-size: 11.5px; font-weight: 700; padding: 0 6px; color: var(--muted); }
+.mock-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; margin-bottom: 8px; }
+.mock-card { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.pin { display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 50%; background: #c8321f; color: #fff; font-weight: 800; font-size: 12.5px; line-height: 1; box-shadow: 0 0 0 2px #fff; flex: none; vertical-align: middle; }
+.pin.abs { position: absolute; z-index: 2; }
+.legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 18px; margin: 8px 0; }
+.legend > div { display: flex; gap: 8px; align-items: flex-start; }
+.legend .pin { margin-top: 1px; }
+
+/* ── 앱 부품 흉내(실제 색·모양) ── */
+.btn { display: inline-flex; align-items: center; gap: 5px; border: 1.5px solid var(--navy); color: var(--navy); background: #fff; border-radius: 999px; font-weight: 700; font-size: 13px; padding: 3px 11px; white-space: nowrap; }
+.btn.solid { background: var(--navy); color: #fff; }
+.btn.warn { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.btn.gray { border-color: #94a3b8; color: #475569; }
+.ibtn { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid var(--navy); background: #fff; color: var(--navy); font-size: 15px; flex: none; }
+.ibtn.solid { background: var(--navy); color: #fff; }
+.ibtn.amber { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.ibtn.round { border-radius: 50%; width: 38px; height: 38px; font-size: 18px; }
+.ibtn.bell { border-color: #86c79a; background: #e7f5ec; color: #1d7a45; }
+.ibtn.bell.y { border-color: #e3b94f; background: #fff4d6; color: #8a5a00; }
+.ibtn.bell.r { border-color: #e08a82; background: #fde8e6; color: #b3261e; }
+.tag { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; font-weight: 700; font-size: 12px; padding: 1px 9px; border: 1px solid var(--line); background: #f1efe8; color: #4a443a; white-space: nowrap; }
+.tag.done { background: #dcefd9; color: #2c6a2c; border-color: var(--ok-line); }
+.tag.part { background: #fdecc8; color: #8a5a00; border-color: var(--warn-line); }
+.tag.edit { background: #dbeafe; color: #1e4fa0; border-color: #93b4ea; }
+.tag.chg { background: #fff0b8; color: #7a5600; border-color: #e3b94f; }
+.tag.cx { background: #fde2de; color: #a3281d; border-color: var(--bad-line); }
+.tag.loaded { background: #d7ecf3; color: #14566b; border-color: #8cc1d2; }
+.tag.wait { background: #e0e7ff; color: #3730a3; border-color: #a5b4fc; }
+.chip { display: inline-flex; align-items: center; gap: 4px; border: 1.5px solid #1f2937; background: #fff; color: var(--ink); border-radius: 8px; font-weight: 700; font-size: 12.5px; padding: 3px 9px; white-space: nowrap; position: relative; }
+.chip.first { background: #f1eee8; border-color: #26231f; }
+.chip.new { background: var(--new-bg); border-color: var(--new-line); color: var(--new-ink); }
+.chip.mod { background: var(--mod-bg); border-color: var(--mod-line); color: var(--mod-ink); }
+.chip.cx { background: var(--cx-bg); border-color: var(--cx-line); color: var(--cx-ink); text-decoration: line-through; }
+.chip.done { background: var(--done-bg); border-color: var(--done-line); color: var(--done-ink); }
+.chip.unship { background: #f6ecd2; border: 1.5px dashed #b07a1c; color: #6e4a12; }
+.chip.unship-all { background: #ecdcb8; border: 1.5px dashed #b07a1c; color: #5a3a0e; }
+.chip.pick { box-shadow: 0 0 0 3px #c8321f; }
+.chip small { font-weight: 600; color: #2f6f9f; font-size: 11.5px; }
+.chip .badge { background: #dff0ff; border: 1px solid #9ec5e2; border-radius: 4px; font-size: 11px; padding: 0 4px; color: #1f5f8f; }
+.chip .delta { background: #fff; border: 1px solid #9ec5e2; border-radius: 4px; font-size: 11px; padding: 0 4px; color: #1f5f8f; }
+.kbd { display: inline-block; border: 1.5px solid #8d8576; border-bottom-width: 3px; border-radius: 6px; background: #fff; padding: 0 8px; font-weight: 700; font-size: .92em; }
+.num { display: inline-grid; place-items: center; min-width: 28px; height: 28px; border-radius: 8px; border: 1.5px solid var(--navy); background: #fff; color: var(--navy); font-weight: 800; font-size: 14px; }
+.num.dis { opacity: .35; }
+.num.sel { background: var(--navy); color: #fff; }
+
+/* 박스 할당 목업 */
+.pk { display: grid; grid-template-columns: 31% minmax(0, 1fr); gap: 8px; }
+.pk-list > * + * { margin-top: 5px; }
+.pk-co { background: var(--soft); border: 1.5px solid var(--line); border-radius: 8px; padding: 5px 7px; font-size: 12px; }
+.pk-co.on { border-color: var(--navy); background: #e6eef6; }
+.pk-co b { display: block; font-size: 13px; }
+.pk-pool { border: 2px dashed #b8b0a0; border-radius: 8px; padding: 5px 7px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; background: #f7f5ef; }
+.pk-move { border: 1.5px solid var(--navy); background: #e6eef6; border-radius: 8px; padding: 5px 7px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 6px; }
+.pk-row { position: relative; display: grid; grid-template-columns: 34px 92px minmax(0, 1fr) auto; gap: 6px; align-items: center; border: 2px solid #c8c1b2; border-radius: 8px; background: #fff; padding: 4px 6px; margin-top: 6px; }
+.pk-row .no { font-weight: 800; font-size: 15px; color: var(--navy); }
+.sel-box { border: 1px solid #94a3b8; border-radius: 6px; padding: 1px 6px; font-size: 11.5px; background: #fff; }
+
+/* 주문 목록 목업 */
+.ol { background: #fff; border: 1px solid #b9b2a3; border-radius: 6px; overflow: hidden; }
+.ol .th, .ol .tr { display: grid; grid-template-columns: 24px 56px 1.25fr 30px 1fr 1fr 1fr; align-items: stretch; }
+.ol .th { background: #232b36; color: #f4efe6; font-weight: 700; font-size: 11.5px; border-bottom: 3px solid var(--brass); }
+.ol .th > div { padding: 4px 3px; text-align: center; border-right: 1px solid rgba(255,255,255,.2); }
+.ol .tr { border-bottom: 1px solid #e0dacd; background: #f8f6f1; }
+.ol .tr > div { padding: 3px; border-right: 1px solid #e6e0d4; display: flex; align-items: center; justify-content: flex-start; min-height: 36px; min-width: 0; }
+.ol .tr > div.c { justify-content: center; }
+.ol .tr .chip { width: 100%; white-space: normal; padding: 2px 6px; font-size: 12px; }
+.term { border-radius: 5px; border: 1px solid #9ec5e2; background: #e3f1fb; color: #1f5f8f; font-weight: 700; font-size: 11px; padding: 0 6px; }
+.term.t2 { border-color: #cdb0e0; background: #f1e6fa; color: #6a3a8f; }
+
+/* 표(해설용) */
+.tbl { width: 100%; border-collapse: collapse; font-size: 15px; margin: 8px 0; }
+.tbl th { background: #232b36; color: #f4efe6; text-align: left; padding: 6px 9px; font-weight: 700; }
+.tbl td { border: 1px solid var(--line); padding: 6px 9px; vertical-align: top; }
+.tbl tr { break-inside: avoid; }
+.tbl td:first-child { white-space: nowrap; }
+.scroll { overflow-x: auto; }
+
+/* 문제 해결 */
+.faq { display: grid; gap: 8px; margin: 8px 0; }
+.faq > div { border: 1.5px solid var(--line); border-radius: 8px; padding: 8px 12px; break-inside: avoid; background: var(--soft); }
+.faq .q { font-weight: 800; display: flex; gap: 8px; align-items: baseline; }
+.faq .q::before { content: "Q"; background: var(--brass); color: #fff; border-radius: 4px; font-size: 12px; font-weight: 800; padding: 0 6px; }
+.faq .a { margin-top: 3px; padding-left: 0; }
+
+/* 하루 흐름 */
+.flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin: 14px 0; counter-reset: f; }
+.flow > div { border: 1.5px solid var(--ink); border-radius: 10px; padding: 8px 6px; text-align: center; font-weight: 700; font-size: 14px; background: var(--paper); position: relative; }
+.flow > div .ic { display: block; margin: 0 auto 4px; font-size: 26px; color: var(--navy); width: 1em; height: 1em; }
+.flow > div small { display: block; font-weight: 500; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.flow > div.here { background: #e6eef6; border-color: var(--navy); }
+.flow > div + div::before { content: "→"; position: absolute; left: -12px; top: 50%; transform: translateY(-50%); color: var(--brass-ink); font-weight: 800; font-size: 15px; background: var(--paper); line-height: 1; }
+
+.cols2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.icon-table { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px 12px; }
+.icon-table > div { break-inside: avoid; }
+.legend > div { break-inside: avoid; }
+.icon-table > div { display: flex; align-items: center; gap: 10px; }
+.icon-table .lab { font-size: 13.5px; line-height: 1.3; }
+.foot { color: var(--muted); font-size: 13px; text-align: center; margin-top: 14px; }
+
+.pagebreak { break-before: page; }
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .sheet { padding: 20px 16px; }
+  .guide-head { margin: -20px -16px 16px; }
+  .cover h1 { font-size: 28px; }
+  .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .flow > div + div::before { display: none; }
+  .legend, .cols2 { grid-template-columns: 1fr; }
+  .icon-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pk { grid-template-columns: 1fr; }
+  .scroll .ol, .scroll .mock-inner { min-width: 560px; }
+}
+
+/* ── A4 인쇄 ── */
+@page { size: A4 portrait; margin: 11mm 11mm 12mm; }
+@media print {
+  body { background: #fff; font-size: 10.5pt; line-height: 1.5; }
+  .nav { display: none; }
+  .wrap { max-width: none; padding: 0; }
+  .sheet { margin: 0; border: 0; box-shadow: none; padding: 0; background: #fff; }
+  .guide-head { margin: 0 0 4mm; }
+  .sheet.guide { break-before: page; }
+  .sheet.cover { break-after: auto; }
+  .cover h1 { font-size: 25pt; margin: 2mm 0 1mm; }
+  .cover h3.sec { margin: 3.5mm 0 2mm; }
+  .cover .box { margin: 1.8mm 0; padding: 1.6mm 3mm; }
+  .cover .flow { margin: 2.5mm 0; }
+  .cover .flow > div { padding: 1.6mm 1mm; font-size: 9.5pt; }
+  .cover .flow > div .ic { font-size: 18pt; margin-bottom: 1mm; }
+  .cover .legend { margin: 1.5mm 0; gap: 1mm 6mm; }
+  .cover .icon-table .lab { font-size: 8.8pt; }
+  .cover .icon-table { gap: 1.2mm 4mm; }
+  .cover .ibtn { width: 6.2mm; height: 6.2mm; font-size: 9pt; }
+  .cover .ibtn.round { width: 6.8mm; height: 6.8mm; }
+  .cover .box { font-size: 9.6pt; }
+  .cover .legend { font-size: 9.4pt; }
+  .cover .sub { font-size: 9pt; }
+  .cover .chip { font-size: 8.2pt; padding: 1px 6px; }
+  .cover .lead { font-size: 11pt; }
+  .cover .brassbar { margin: 3mm 0 1mm; }
+  .cover h3.sec { font-size: 13pt; }
+  h3.sec { font-size: 14.5pt; margin: 5mm 0 2.5mm; break-after: avoid; }
+  h4 { break-after: avoid; }
+  .mock { font-size: 8.8pt; padding: 2.4mm; }
+  .mock .cap { font-size: 8pt; }
+  .step { padding: 2.4mm 3mm; border-width: 1.2pt; }
+  .step h4 { font-size: 12pt; }
+  .step .n { width: 9mm; height: 9mm; font-size: 14pt; }
+  .step { grid-template-columns: 10mm minmax(0, 1fr); gap: 3mm; }
+  .box { padding: 2mm 3mm; margin: 2.5mm 0; }
+  .faq > div { padding: 1.6mm 3mm; }
+  .tbl { font-size: 9.6pt; }
+  .tbl th, .tbl td { padding: 1.4mm 2mm; }
+  .btn, .tag, .chip { font-size: 8.6pt; }
+  .ibtn { width: 7mm; height: 7mm; font-size: 10pt; }
+  .ibtn.round { width: 8.5mm; height: 8.5mm; }
+  .num { min-width: 6.5mm; height: 6.5mm; font-size: 9.5pt; }
+  .pin { min-width: 5mm; height: 5mm; font-size: 8.4pt; box-shadow: none; }
+  .scroll { overflow: visible; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>
+</head>
+<body>
+
+<nav class="nav" aria-label="가이드 바로가기">
+  <a href="#start">처음 보는 분</a>
+  <a href="#g1">1 박스 할당·라벨 출력</a>
+  <a href="#g2">2 주문 목록</a>
+  <a href="#g3">3 상차 스캔</a>
+  <span class="print-hint">인쇄: <span class="kbd" style="color:#222">Ctrl</span>+<span class="kbd" style="color:#222">P</span> (맥은 <span class="kbd" style="color:#222">Cmd</span>+<span class="kbd" style="color:#222">P</span>) · 용지 A4 · 배경 그래픽 켜기</span>
+</nav>
+
+<div class="wrap">
+
+<!-- ═══════════ 표지 · 처음 보는 분 ═══════════ -->
+<section class="sheet cover" id="start">
+  <span class="eyebrow">현장 사용 가이드 · 2026.11</span>
+  <h1>통영아재수산<br>현장 사용 가이드</h1>
+  <p class="lead">주문이 들어온 뒤 상차까지, 화면 세 곳만 알면 됩니다. 버튼 그림을 보고 그대로 따라 하세요.</p>
+  <div class="brassbar"></div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg> 하루의 흐름</h3>
+  <div class="flow">
+    <div><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>주문 들어옴<small>주문 입력</small></div>
+    <div class="here"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>주문 목록<small>가이드 2</small></div>
+    <div class="here"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><polyline points="3.29 7 12 12 20.71 7"/><path d="m7.5 4.27 9 5.15"/></svg>박스 할당<small>가이드 1</small></div>
+    <div class="here"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>라벨 출력<small>가이드 1</small></div>
+    <div><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>포장 완료<small>주문 목록에서 체크</small></div>
+    <div class="here"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M21 21v.01"/><path d="M12 7v3a2 2 0 0 1-2 2H7"/><path d="M3 12h.01"/><path d="M12 3h.01"/><path d="M12 16v.01"/><path d="M16 12h1"/><path d="M21 12v.01"/><path d="M12 21v-1"/></svg>상차 스캔<small>가이드 3</small></div>
+  </div>
+  <p class="sub">파란 칸이 이 가이드에서 설명하는 화면입니다. 카카오톡 상차 완료 글 보내기는 가이드 3 끝에 있습니다.</p>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg> 시작하기 전에 꼭 알아둘 3가지</h3>
+  <div class="box warn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><div><span class="t">① 펜이 켜져 있으면 칩을 눌러도 포장 완료가 안 됩니다.</span><br>칠판 펜을 켠 동안은 터치가 모두 "그리기"로 쓰입니다. 칩을 눌러 체크하려면 펜을 먼저 끄세요.</div></div>
+  <div class="box warn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><div><span class="t">② 주문 취소는 묻지 않고 바로 됩니다.</span><br>취소한 직후 화면 아래에 <span class="btn gray">되돌리기</span> 가 잠깐 나옵니다. 그 안에 누르면 원래대로 돌아옵니다.</div></div>
+  <div class="box ok"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg><div><span class="t">③ 잘못 눌러도 대부분 되돌릴 수 있습니다.</span><br>포장 완료는 칩을 한 번 더 누르면 풀리고, 펜은 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg> 되돌리기가 있고, 상차 스캔도 취소할 수 있습니다.</div></div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></svg> 상품 칩 색깔의 뜻 (주문 목록)</h3>
+  <p class="sub" style="margin-bottom:4px">색만 보지 말고 테두리 모양과 글자도 함께 보세요. 위에서부터 먼저 해당하는 색이 적용됩니다.</p>
+  <div class="legend">
+    <div><span class="chip unship-all">아귀간 5kg</span><span>미출고 <b>전량</b> — 주문은 있는데 하나도 못 보냄 (진한 노랑·점선)</span></div>
+    <div><span class="chip unship">아귀간 5kg</span><span>미출고 <b>일부</b> (연한 노랑·점선)</span></div>
+    <div><span class="chip done"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 아귀간 5kg</span><span><b>포장 완료</b> — 회색, 가운데 흐린 체크</span></div>
+    <div><span class="chip new">아귀간 5kg</span><span><b>신규</b> — 처음 입력한 뒤에 추가된 상품 (연초록)</span></div>
+    <div><span class="chip mod">아귀간 5kg</span><span><b>수정</b> — 수량 등이 고쳐진 상품 (연노랑)</span></div>
+    <div><span class="chip cx">아귀간 5kg</span><span><b>취소</b> — 빨간 취소선</span></div>
+    <div><span class="chip first">아귀간 5kg</span><span><b>변경 없음</b> — 처음 주문 그대로 (진한 검정 테두리)</span></div>
+    <div><span class="chip first">아귀간 5kg <small>(키로6-8미, 기포기)</small></span><span>괄호 안은 <b>중량·사이즈·물봉/기포기</b> 요청 (하늘색 글자)</span></div>
+  </div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg> 이 가이드에 나오는 아이콘</h3>
+  <div class="icon-table">
+    <div><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg></span><span class="lab">라벨 출력</span></div>
+    <div><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 22H7a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v.5"/><path d="m16 19 2 2 4-4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/></svg></span><span class="lab">이미 출력함 — 다시 출력</span></div>
+    <div><span class="ibtn amber"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></span><span class="lab">재출력 필요 (노란색)</span></div>
+    <div><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span><span class="lab">빼기 · 닫기</span></div>
+    <div><span class="ibtn bell"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M22 8c0-2.3-.8-4.3-2-6"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/><path d="M4 2C2.8 3.7 2 5.7 2 8"/></svg></span><span class="lab">알림 벨 (초록=정상)</span></div>
+    <div><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span><span class="lab">별도 주문(택배·직배송) 보기</span></div>
+    <div><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></span><span class="lab">모니터 설정 (전체보기·모니터 1·2)</span></div>
+    <div><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span><span class="lab">새 주문 추가 · 엑셀</span></div>
+    <div><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></span><span class="lab">강조 상품 고르기</span></div>
+    <div><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="lab">글 복사 (보내기 메뉴)</span></div>
+    <div><span class="ibtn round solid"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><span class="lab">칠판 펜 켜기/끄기 (플로팅 버튼)</span></div>
+    <div><span class="ibtn round"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></svg></span><span class="lab">펜 색·굵기</span></div>
+    <div><span class="ibtn round"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg></span><span class="lab">지우개</span></div>
+    <div><span class="ibtn round"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></span><span class="lab">되돌리기</span></div>
+    <div><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/></svg></span><span class="lab">카메라 스캔</span></div>
+    <div><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg></span><span class="lab">카카오톡 보내기</span></div>
+  </div>
+  <p class="foot" style="margin-top:6px">버튼 위에 손가락(또는 마우스)을 잠깐 올려 두면 이름이 말풍선으로 나옵니다.</p>
+</section>
+
+<!-- ═══════════ 1. 박스 할당 · 라벨 출력 ═══════════ -->
+<section class="sheet guide" id="g1">
+  <div class="guide-head"><span class="no">1</span><div><h2>박스 할당 · 라벨 출력</h2><p>어떤 상품을 어느 박스에 담을지 정하고, 박스마다 붙일 라벨을 뽑습니다 · 메뉴 "박스 할당 / 라벨 출력"</p></div></div>
+
+  <div class="box tip"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><div><span class="t">한 줄 요약</span><br>① 업체를 고른다 → ② 추천을 확인하거나 고쳐 담는다 → ③ <b>제출</b> → ④ 라벨을 뽑아 박스에 붙인다. <b>라벨은 제출한 뒤에만</b> 뽑을 수 있습니다.</div></div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg> 화면 보는 법</h3>
+  <div class="mock" aria-label="박스 할당 화면 예시">
+    <span class="cap">박스 할당 / 라벨 출력 (예시 화면)</span>
+    <div class="mock-bar">
+      <span class="ibtn" style="width:24px;height:24px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></span><b>11/14</b><span class="ibtn" style="width:24px;height:24px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span>
+      <span class="sub">업체 3곳 · 제출 1곳</span>
+      <span class="btn" style="margin-left:auto"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg> 라벨 일괄 출력 (2곳 · 5장)</span><span class="pin">1</span>
+    </div>
+    <div class="pk">
+      <div class="pk-list">
+        <div class="pk-co"><b>바다식당</b><span class="tag done">제출 · 박스 2개</span> <span class="tag">라벨 미출력</span></div>
+        <div class="pk-co on"><b>한산상회</b><span class="tag">미기록</span> <span class="tag chg">주문 변경</span></div>
+        <div class="pk-co"><b>미륵횟집 (1차)</b><span class="tag part">라벨 1/3 출력</span></div>
+        <div style="text-align:center"><span class="pin">2</span></div>
+      </div>
+      <div>
+        <div class="mock-card" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><b>박스 추천</b><span class="tag">신뢰도 높음 86%</span><span class="btn solid">1순위 선어박스 1개 · 10K 2개</span><span class="btn">2순위</span><span class="pin">3</span></div>
+        <div class="pk-pool" style="margin-top:6px"><span class="sub"><b>아직 담지 않은 상품 (1/3)</b></span><span class="chip pick">활전갱이 20미 <span class="badge">물봉</span></span><span class="pin">4</span></div>
+        <div class="pk-move"><b>활전갱이</b><span class="sub">담을 박스</span><span class="num">1</span><span class="num">2</span><span class="sel-box">새 박스…</span><span class="btn gray">빼기</span><span class="pin">5</span></div>
+        <div class="pk-row"><span class="no">1번</span><span class="sel-box">선어박스 ▾</span><span style="display:flex;gap:5px;flex-wrap:wrap"><span class="chip first">방어 3kg</span><span class="ibtn" style="width:22px;height:22px;font-size:12px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></span><span class="ibtn" style="width:22px;height:22px;font-size:12px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span><span class="pin abs" style="top:-11px;right:26px">6</span></div>
+        <div class="pk-row"><span class="no">2번</span><span class="sel-box">10K ▾</span><span style="display:flex;gap:5px"><span class="chip first">문어다리 5kg</span><span class="ibtn" style="width:22px;height:22px;font-size:12px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></span><span class="ibtn" style="width:22px;height:22px;font-size:12px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span><span></span></div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center"><span class="btn">+ 박스 추가…</span><span class="btn">합포장: 박스 번호 골라 묶기</span><span class="btn solid" style="margin-left:auto">맞아요. 제출하고 다음 업체</span><span class="pin">7</span></div>
+      </div>
+    </div>
+    <div class="mock-card" style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>송장 라벨 출력</b><span class="sub">박스 2개</span>
+      <span style="display:inline-flex;gap:5px;align-items:center;border:1.5px solid var(--line);border-radius:8px;padding:2px 6px;background:#fff"><b>박스 1번</b><span class="tag">미출력</span><span class="ibtn solid" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg></span></span>
+      <span style="display:inline-flex;gap:5px;align-items:center;border:1.5px solid var(--line);border-radius:8px;padding:2px 6px;background:#fff"><b>박스 2번</b><span class="tag edit">출력 1회</span><span class="ibtn" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 22H7a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v.5"/><path d="m16 19 2 2 4-4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/></svg></span></span>
+      <span class="pin">8</span></div>
+  </div>
+  <div class="legend">
+    <div><span class="pin">1</span><span><b>라벨 일괄 출력</b> — 제출한 업체 중 아직 안 뽑은 라벨을 업체 번호 순서대로 한 번에 뽑습니다.</span></div>
+    <div><span class="pin">2</span><span><b>업체 목록</b> — 눌러서 고릅니다. 이름 아래 칩으로 진행 상태가 보입니다(아래 표).</span></div>
+    <div><span class="pin">3</span><span><b>박스 추천</b> — 1·2·3순위 탭. 맞으면 그대로 제출합니다.</span></div>
+    <div><span class="pin">4</span><span><b>아직 담지 않은 상품</b> — 박스에 안 들어간 상품이 여기 모입니다.</span></div>
+    <div><span class="pin">5</span><span><b>이동 줄</b> — 상품을 누르면 켜집니다. 담을 박스 번호를 누릅니다.</span></div>
+    <div><span class="pin">6</span><span><b>박스 한 줄</b> — 번호 · 박스 종류 · 담긴 상품. 상품 옆 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> 는 그 상품만 빼기, 줄 끝 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> 는 박스 빼기.</span></div>
+    <div><span class="pin">7</span><span><b>제출</b> — 모든 상품을 담으면 켜집니다.</span></div>
+    <div><span class="pin">8</span><span><b>라벨 출력</b> — 박스마다 한 줄. 아이콘을 누르면 뽑힙니다.</span></div>
+  </div>
+
+  <h4>업체 목록의 칩</h4>
+  <div class="scroll"><table class="tbl">
+    <tr><th>칩</th><th>뜻</th></tr>
+    <tr><td><span class="tag done">제출 · 박스 2개</span></td><td>박스 할당을 제출했습니다.</td></tr>
+    <tr><td><span class="tag">미기록</span></td><td>아직 박스 할당을 하지 않았습니다. <b>여기부터 하면 됩니다.</b></td></tr>
+    <tr><td><span class="tag edit">수정 중</span></td><td>고친 내용이 아직 제출되지 않았습니다.</td></tr>
+    <tr><td><span class="tag chg">주문 변경</span></td><td>추천(또는 제출) 뒤에 주문이 바뀌었습니다. 박스를 다시 확인하세요.</td></tr>
+    <tr><td><span class="tag">라벨 미출력</span> <span class="tag part">라벨 1/3 출력</span> <span class="tag done">라벨 3/3 모두 출력</span></td><td>라벨을 몇 장 뽑았는지. 노란 칩은 아직 안 뽑은 박스가 남았다는 뜻입니다.</td></tr>
+  </table></div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/></svg> 따라하기</h3>
+  <div class="steps">
+    <div class="step"><span class="n">1</span><div class="body"><h4>업체를 고릅니다</h4>
+      <p>화면 위 날짜가 <b>오늘</b>인지 보고, 왼쪽 목록에서 <span class="tag">미기록</span> 업체를 누릅니다. 위에서부터 차례로 하면 됩니다.</p>
+      <div class="box tip" style="margin:0"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><div>주문이 <b>모두 취소</b>된 업체는 목록에서 빠집니다. 과거 날짜는 보기만 됩니다(설정에서 "과거 날짜 편집"을 켜야 고칠 수 있습니다).</div></div></div></div>
+
+    <div class="step"><span class="n">2</span><div class="body"><h4>추천이 맞으면 바로 제출</h4>
+      <p>위쪽 <b>박스 추천</b>의 1순위가 현장 포장과 같으면 아래 <span class="btn solid">맞아요. 제출하고 다음 업체</span> 를 누릅니다. 제출되면 <b>다음 미기록 업체로 저절로 넘어갑니다.</b></p></div></div>
+
+    <div class="step"><span class="n">3</span><div class="body"><h4>다르게 담았다면 — 상품을 눌러 옮깁니다</h4>
+      <div class="how"><span class="chip first pick">활전갱이 20미</span><span class="arrow">누르면</span><span class="pk-move" style="margin:0"><b>활전갱이</b> <span class="sub">담을 박스</span> <span class="num">1</span><span class="num">2</span></span><span class="arrow">에서</span><span class="num sel">2</span><span class="arrow">누르기</span></div>
+      <ul>
+        <li><b>일부만 담기</b>: 이동 줄의 <b>담을 수량</b> 칸에 숫자를 쓰고 박스 번호를 누릅니다. 남은 수량은 "아직 담지 않은 상품"에 남습니다.</li>
+        <li><b>새 박스에 담기</b>: 이동 줄의 <span class="sel-box">새 박스…</span> 에서 종류를 고릅니다.</li>
+        <li><b>실측 kg</b>: 이동 줄의 <b>실측 kg</b> 칸에 무게를 적을 수 있습니다(선택).</li>
+        <li><b>다른 박스로 옮기기</b>: 박스에 들어 있는 상품을 눌러도 같은 이동 줄이 켜집니다. 지금 있는 박스 번호는 흐리게 막혀 있습니다.</li>
+        <li>마우스로 상품을 끌어다 박스 줄에 놓아도 됩니다.</li>
+      </ul></div></div>
+
+    <div class="step"><span class="n">4</span><div class="body"><h4>잘못 담았을 때 — 상품 하나만 빼기</h4>
+      <div class="how"><span class="chip first">방어 3kg</span><span class="ibtn" style="width:24px;height:24px;font-size:13px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span><span class="arrow">상품 옆 x 를 누르면</span><span class="chip first pick">방어 3kg</span><span class="arrow">이 "아직 담지 않은 상품"으로 돌아옵니다</span></div>
+      <p>박스는 그대로 두고 그 상품만 빠지니, 다시 눌러서 다른 박스에 담으면 됩니다. 박스 전체를 빼려면 줄 끝의 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> 를 누르세요(담긴 상품은 "아직 담지 않은 상품"으로 돌아옵니다).</p>
+      <div class="box warn" style="margin:0"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><div>박스가 비면 제출이 안 됩니다. <b>"N번 박스가 비어 있습니다. 상품을 담거나 박스를 지워주세요."</b> 라고 나오면 상품을 담거나 그 박스를 빼세요.</div></div></div></div>
+
+    <div class="step"><span class="n">5</span><div class="body"><h4>박스가 모자라면 — 박스 추가</h4>
+      <p>맨 아래 <span class="btn">+ 박스 추가…</span> 에서 박스 종류를 고르면 한 줄이 늘어납니다. 박스 종류는 줄 가운데 <span class="sel-box">선어박스 ▾</span> 에서 바꿀 수 있고, 담긴 상품은 그대로입니다.</p>
+      <p class="sub">물봉이 필요한 상품이 물봉용이 아닌 박스에 들어가면 <span class="tag chg">물봉 필요</span> 경고가 뜹니다.</p></div></div>
+
+    <div class="step"><span class="n">6</span><div class="body"><h4>(필요할 때) 합포장 — 같이 내보낼 박스 묶기</h4>
+      <p>박스가 2개 이상일 때 나오는 <b>합포장</b> 줄에서 같이 내보낼 박스 번호를 두 개 이상 누르고 <span class="btn">묶기</span> 를 누르면 <span class="tag done">1·2번</span> 으로 묶입니다. 묶음 옆 ✕ 로 풀 수 있습니다. 묶음은 제출할 때 함께 저장되고, 라벨에 "합포장 1·2"가 찍힙니다.</p></div></div>
+
+    <div class="step"><span class="n">7</span><div class="body"><h4>제출합니다</h4>
+      <p>모든 상품이 박스에 들어가면 제출 버튼이 켜집니다. 버튼 글자가 상황마다 다릅니다.</p>
+      <div class="scroll"><table class="tbl">
+        <tr><td><span class="btn solid">맞아요. 제출하고 다음 업체</span></td><td>추천 그대로</td></tr>
+        <tr><td><span class="btn solid">이대로 제출하고 다음 업체 (박스 2개)</span></td><td>직접 고쳤거나 추천이 없을 때</td></tr>
+        <tr><td><span class="btn solid">수정한 내용으로 다시 제출 (박스 2개)</span></td><td>이미 제출한 업체를 고쳤을 때</td></tr>
+      </table></div>
+      <p class="sub">버튼 아래 회색 글씨가 왜 안 눌리는지 알려 줍니다. 예) "아직 담지 않은 상품 1개", "박스를 추가해주세요".</p></div></div>
+  </div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg> 라벨 출력 · 붙이기</h3>
+  <p>제출한 업체의 화면 아래 <b>송장 라벨 출력</b> 영역에 박스마다 한 줄이 생깁니다. 제출 전에는 "박스 할당을 제출하면 라벨을 출력할 수 있습니다."라고 나옵니다.</p>
+  <div class="steps">
+    <div class="step"><span class="n">1</span><div class="body"><h4>미리보기를 확인합니다</h4>
+      <p>왼쪽 그림이 실제로 찍힐 라벨입니다(고객명·터미널·바코드). 줄을 누르면 그 박스의 라벨로 바뀝니다. 그림 속 <b>점선 "접는 선"</b>이 박스 뚜껑 모서리에 닿는 자리입니다.</p></div></div>
+    <div class="step"><span class="n">2</span><div class="body"><h4>아이콘을 눌러 뽑습니다</h4>
+      <div class="scroll"><table class="tbl">
+        <tr><td><span class="ibtn solid"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg></span></td><td><b>출력</b> — 처음 뽑을 때. 상태 칩은 <span class="tag">미출력</span></td></tr>
+        <tr><td><span class="ibtn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 22H7a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v.5"/><path d="m16 19 2 2 4-4"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/></svg></span></td><td><b>다시 출력</b> — 이미 뽑은 라벨을 한 번 더(구겨졌거나 잃어버렸을 때). 같은 바코드로 나옵니다.</td></tr>
+        <tr><td><span class="ibtn amber"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></span></td><td><b>재출력 필요</b> — 붙여 둔 라벨의 박스 종류가 지금과 달라졌습니다. 다시 뽑아서 바꿔 붙이세요.</td></tr>
+        <tr><td><span class="tag wait">출력 확인 중</span></td><td>프린터 PC가 인쇄 완료를 확인하는 방식을 쓰는 경우에만 보입니다. 몇 초 뒤 "출력"으로 바뀝니다. 인쇄 창을 취소했거나 30분이 지나도 안 바뀌면 다시 출력하세요.</td></tr>
+      </table></div>
+      <p>박스가 여러 개면 <span class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg> 전체 출력 (3장)</span> 으로 한 번에 뽑을 수 있습니다. 여러 업체를 한꺼번에 뽑으려면 맨 위의 <span class="btn">라벨 일괄 출력 (2곳 · 5장)</span> 을 누르세요(제출한 업체 중 안 뽑은 라벨만, 업체 번호 순서대로. 택배 업체는 제외).</p></div></div>
+    <div class="step"><span class="n">3</span><div class="body"><h4>붙입니다</h4>
+      <p>인쇄 창이 뜨면 <b>용지 크기가 라벨 크기와 같은지</b> 보고 인쇄합니다. 나온 라벨의 <b>점선을 박스 뚜껑 모서리에 맞춰</b> 위쪽은 뚜껑 위에, 아래쪽은 옆면으로 꺾어 붙입니다. 라벨에는 <b>박스 번호만</b> 찍혀 있어서 박스 수가 늘어나도 이미 붙인 라벨은 그대로 둡니다.</p></div></div>
+  </div>
+
+  <div class="box warn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><div><span class="t">라벨을 붙인 뒤에는 이것만 조심하세요</span>
+    <ul style="margin-top:3px">
+      <li><b>가운데 박스를 빼면</b> 뒤 박스 번호가 한 칸씩 앞당겨져 붙여 둔 스티커와 어긋납니다. 이때 "이미 라벨을 출력한 업체입니다…그래도 지울까요?" 확인창이 뜹니다. 정말 필요할 때만 "그래도"를 누르고, 번호가 바뀐 박스의 라벨은 다시 뽑아 바꿔 붙이세요.</li>
+      <li><b>합포장을 바꾸거나 박스 종류를 바꾸면</b> "…옛 표시이니 다시 출력해서 바꿔 붙이세요" 노란 안내가 뜹니다.</li>
+      <li>박스를 줄였을 때 남은 번호의 라벨은 <b>붙이지 마세요</b>(안내가 뜹니다).</li>
+    </ul></div></div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg> 팁</h3>
+  <div class="cols2">
+    <div class="box tip" style="margin:0"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><div><span class="t">추천 탭을 누르면 새로 시작합니다</span><br>상품을 직접 옮긴 뒤 다른 순위 탭을 누르면 작성하던 내용이 사라집니다. 처음으로 돌리려면 <span class="btn gray">추천대로 되돌리기</span>.</div></div>
+    <div class="box tip" style="margin:0"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><div><span class="t">자동으로 다시 나누기</span><br>고치다 꼬였으면 <span class="btn gray">상품 자동으로 다시 나눠 담기</span> 로 박스 칸을 새로 채웁니다(이 버튼은 고치는 중일 때만 보입니다).</div></div>
+    <div class="box tip" style="margin:0"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><div><span class="t">주문 목록에서도 열립니다</span><br>주문 목록의 <b>박스 칸</b>(숫자)을 누르면 이 화면이 팝업으로 뜹니다. 제출하면 팝업이 닫힙니다.</div></div>
+    <div class="box tip" style="margin:0"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><div><span class="t">"오늘 필요한 박스"</span><br>화면 위 줄에 박스 종류별 개수가 나옵니다. 박스를 준비할 때 보세요.</div></div>
+  </div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg> 이럴 땐 이렇게</h3>
+  <div class="faq">
+    <div><div class="q">제출 버튼이 안 눌려요</div><div class="a">버튼 아래 회색 글씨를 읽어 보세요. "아직 담지 않은 상품 N개"면 남은 상품을 담고, "N번 박스가 비어 있습니다"면 담거나 그 박스를 빼고, "삭제된 박스가 있습니다"면 그 박스를 지우고 다른 박스를 추가하세요.</div></div>
+    <div><div class="q">"박스에 담을 수 없는 상품 N개가 목록에서 빠져 있습니다"라고 나와요</div><div class="a">수량이 "미정"이거나 전량 미출고인 상품입니다. 박스에 담아야 한다면 <b>주문 목록</b>에서 수량이나 미출고를 먼저 고쳐 주세요.</div></div>
+    <div><div class="q">노란 "주문 변경"이 떴어요</div><div class="a">박스를 정한 뒤 주문이 바뀐 것입니다. 상품을 다시 확인하고, 필요하면 고쳐서 <span class="btn solid">수정한 내용으로 다시 제출</span> 하세요. 제출이 끝나면 칩이 사라집니다.</div></div>
+    <div><div class="q">라벨 버튼이 안 보여요</div><div class="a">제출 전이거나, 택배(별도 주문) 업체이거나, 라벨 출력 권한이 없는 계정입니다. 제출 후에도 안 보이면 관리자에게 알려 주세요.</div></div>
+    <div><div class="q">라벨이 계속 "출력 확인 중"이에요</div><div class="a">프린터 PC가 인쇄 완료를 알려 줘야 바뀝니다. 프린터가 꺼졌거나 인쇄 창을 취소했다면 30분 뒤 "미출력"으로 돌아가니 그때 다시 출력하세요. 계속되면 프린터 PC를 확인해 달라고 알려 주세요.</div></div>
+    <div><div class="q">과거 날짜는 왜 고칠 수 없나요?</div><div class="a">실수로 지난 기록을 고치지 않도록 막아 둔 것입니다. 꼭 고쳐야 하면 관리자에게 설정의 "과거 날짜 편집"을 켜 달라고 하세요.</div></div>
+  </div>
+</section>
+
+<!-- ═══════════ 2. 주문 목록 ═══════════ -->
+<section class="sheet guide" id="g2">
+  <div class="guide-head"><span class="no">2</span><div><h2>주문 목록</h2><p>오늘 주문을 한눈에 보고, 포장이 끝난 상품에 체크합니다 · 모니터 1·2 · 별도 주문 팝업 · 칠판 펜</p></div></div>
+
+  <div class="box tip"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><div><span class="t">한 줄 요약</span><br><b>상품 칩을 한 번 누르면 "포장 완료"</b>, 한 번 더 누르면 풀립니다. 수정·취소·미출고는 <b>고객명</b>을 눌러서 합니다.</div></div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg> 화면 보는 법</h3>
+  <div class="mock" aria-label="주문 목록 화면 예시">
+    <span class="cap">주문 목록 (예시 화면)</span>
+    <div class="mock-bar">
+      <span class="ibtn" style="width:24px;height:24px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></span><b>2026.11.14</b><span class="ibtn" style="width:24px;height:24px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span><span class="pin">1</span>
+      <span class="tag">대구 4</span><span class="tag">서울 2</span><span class="pin">2</span>
+      <span style="margin-left:auto;display:flex;gap:5px;align-items:center">
+        <span class="ibtn bell" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M22 8c0-2.3-.8-4.3-2-6"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/><path d="M4 2C2.8 3.7 2 5.7 2 8"/></svg></span><span class="pin">3</span>
+        <span class="btn" style="padding:1px 8px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg> 모니터 1</span><span class="pin">4</span>
+        <span class="ibtn" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span><span class="pin">5</span>
+        <span class="ibtn" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></span><span class="ibtn" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span>
+        <span class="ibtn" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span></span>
+    </div>
+    <div class="ol">
+      <div class="th"><div>No</div><div>터미널</div><div>고객명</div><div>박스</div><div>상품 1</div><div>상품 2</div><div>상품 3</div></div>
+      <div class="tr"><div class="c"><b>1</b></div><div class="c"><span class="term">대구</span></div><div><b>통영수산</b></div><div class="c"><b>3</b></div><div><span class="chip mod">아귀간 8kg</span></div><div><span class="chip first">활전갱이 20미</span></div><div></div></div>
+      <div class="tr"><div class="c"><b>2</b></div><div class="c"><span class="term t2">서울</span></div><div><b>바다식당</b> <span class="tag done" style="margin-left:3px">완료</span></div><div class="c"><b>2</b></div><div><span class="chip done"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 방어 3kg</span></div><div><span class="chip done"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 문어다리 5kg</span></div><div></div></div>
+      <div class="tr"><div class="c"><b>3</b></div><div class="c"><span class="term">대구</span></div><div><b>한산상회</b></div><div class="c" style="background:#f9d7d2"><b>1</b>&nbsp;<span style="color:#b3261e"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span></div><div><span class="chip new">방어 3kg</span></div><div><span class="chip unship">미출고 2 · 문어다리 5kg</span></div><div><span class="chip cx">활전갱이 10미</span></div></div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap"><span class="pin">6</span><span class="sub">표의 칩 = 상품 한 줄 (누르면 포장 완료)</span><span class="pin" style="margin-left:10px">7</span><span class="sub">고객명 (누르면 수정 패널)</span><span class="pin" style="margin-left:10px">8</span><span class="sub">박스 칸 (누르면 박스 할당 팝업)</span></div>
+  </div>
+  <div class="legend">
+    <div><span class="pin">1</span><span><b>날짜 이동</b> — ‹ › 로 하루씩, 날짜 글자를 누르면 달력. 미래 날짜는 고를 수 없습니다.</span></div>
+    <div><span class="pin">2</span><span><b>터미널별 박스 수</b> — 터미널마다 오늘 보낼 박스 개수(취소된 업체와 별도 주문은 제외).</span></div>
+    <div><span class="pin">3</span><span><b>알림 벨</b> — 다른 사람이 주문을 바꾸면 소리와 숫자로 알려 줍니다.</span></div>
+    <div><span class="pin">4</span><span><b>모니터 설정</b> — 전체보기 · 모니터 1 · 모니터 2 선택.</span></div>
+    <div><span class="pin">5</span><span><b>트럭</b> — 별도 주문(택배·직배송) 팝업. 별도 주문이 있을 때만 보입니다. 옆의 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg> 는 <b>강조 상품</b>(고른 상품의 이름 색이 달라짐), <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg> 는 칠판 펜 그림 <b>보기/숨기기</b>, <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg> 는 <b>새 주문 추가·엑셀</b>입니다.</span></div>
+    <div><span class="pin">6</span><span><b>상품 칩</b> — 색은 첫 쪽의 "칩 색깔의 뜻"을 보세요.</span></div>
+    <div><span class="pin">7</span><span><b>고객명</b> — "완료" 초록 배지는 그 업체의 모든 상품이 끝났다는 뜻. 1차·2차 배지는 같은 날 두 번 주문한 업체에만 붙습니다.</span></div>
+    <div><span class="pin">8</span><span><b>박스 칸</b> — 박스 수. 칸이 <b>붉고 ⚠</b>이면 박스를 정한 뒤 주문이 바뀐 것이니 눌러서 다시 확인하세요. <span class="tag done">합</span> 은 합포장.</span></div>
+  </div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg> 모니터 1 · 모니터 2 · 전체보기</h3>
+  <p>TV 두 대를 나란히 쓸 때 주문을 <b>반으로 나눠</b> 보여 주는 방식입니다. 화면 위의 <span class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg> 모니터 1</span> 을 눌러 고릅니다.</p>
+  <div class="cols2" style="margin-top:8px">
+    <div class="box" style="margin:0;display:block"><b>모니터 1</b><br>맨 위 주문부터 <b>화면에 들어가는 만큼만</b> 보입니다. 스크롤이 없습니다.</div>
+    <div class="box" style="margin:0;display:block"><b>모니터 2</b><br>모니터 1에 다 들어가지 못한 <b>다음 주문부터</b> 이어서 보입니다. 오른쪽에 <b>품목별 수량</b> 패널이 붙습니다.</div>
+  </div>
+  <div class="box tip"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><div>모니터 2가 <b>"이 모니터에 표시할 주문이 없습니다"</b>라고 나오면 고장이 아니라, 주문이 모니터 1에 다 들어간 것입니다. <b>전체보기</b>는 스크롤하는 보통 표이고 위에 품목별 수량 카드가 있습니다. 휴대폰은 항상 전체보기입니다. 주문이 하나도 없으면 표 대신 "주문이 없습니다" 안내만 나옵니다.</div></div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/></svg> 따라하기</h3>
+  <div class="steps">
+    <div class="step"><span class="n">1</span><div class="body"><h4>포장이 끝난 상품에 체크</h4>
+      <div class="how"><span class="chip first">방어 3kg</span><span class="arrow">한 번 누르면</span><span class="chip done"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> 방어 3kg</span><span class="arrow">회색 + 체크 = 포장 완료</span></div>
+      <p>다시 누르면 풀립니다. 한 업체의 상품이 모두 끝나면 고객명 칸에 <span class="tag done">완료</span> 가 붙습니다. 취소된 상품(빨간 취소선)은 눌러도 변하지 않습니다.</p>
+      <div class="box warn" style="margin:0"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><div><b>눌러도 안 되면?</b> ① 칠판 펜이 켜져 있지 않은지 ② 과거 날짜를 보고 있지 않은지 ③ 수정 권한이 있는 계정인지 확인하세요. 이럴 때 따로 안내 글은 뜨지 않습니다.</div></div></div></div>
+
+    <div class="step"><span class="n">2</span><div class="body"><h4>주문을 고치려면 — 고객명을 누릅니다</h4>
+      <p>고객명을 누르면 그 옆에 <b>패널</b>이 열립니다(닫기는 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> · Esc · 바깥 누르기).</p>
+      <div class="scroll"><table class="tbl">
+        <tr><td><span class="btn">상품 추가</span></td><td>새 상품을 넣습니다. 수량을 비우면 "수량 미정"으로 저장됩니다.</td></tr>
+        <tr><td><span class="btn">주문 수정</span></td><td>고객명·터미널을 바꿉니다.</td></tr>
+        <tr><td><span class="btn gray">주문 삭제</span></td><td>이 날짜의 주문 전체 삭제(삭제 권한이 있는 계정에만 보임). 확인창이 뜹니다.</td></tr>
+        <tr><td>상품 줄 오른쪽 아이콘</td><td>연필 <b>수정</b> · 상자 <b>미출고 처리</b>(주문은 유효, 출고만 못 함) · 노란 × <b>주문 취소</b> · 휴지통 <b>삭제</b></td></tr>
+      </table></div>
+      <p class="sub">별도 주문 팝업에서는 고객명 옆 연필(마우스를 올리면 보임)로 <b>이 날짜의 고객명</b>만 바꿀 수도 있습니다.</p></div></div>
+
+    <div class="step"><span class="n">3</span><div class="body"><h4>"미출고"와 "취소"는 다릅니다</h4>
+      <div class="cols2"><div class="box" style="margin:0;display:block"><span class="chip unship">미출고 2 · 문어다리</span><br>주문은 <b>그대로 유효</b>한데 현장에서 <b>못 보낸</b> 수량. 사유를 고르거나 적습니다. 풀려면 <b>미출고 해제</b>.</div>
+      <div class="box" style="margin:0;display:block"><span class="chip cx">활전갱이 10미</span><br>주문 <b>자체가 없어진</b> 것. 박스 할당·라벨·상차에서 빠집니다. 바로 취소되며, 직후 나오는 <b>되돌리기</b>로 복구합니다.</div></div></div></div>
+
+    <div class="step"><span class="n">4</span><div class="body"><h4>박스 칸을 누르면 박스 할당 팝업</h4>
+      <p>표의 <b>박스 칸</b>을 누르면 그 업체의 박스 할당 화면이 팝업으로 뜹니다(가이드 1과 같은 화면, 그 업체만). 제출하면 팝업이 닫힙니다. 펜이 켜져 있거나 취소된 업체에서는 열리지 않습니다.</p></div></div>
+
+    <div class="step"><span class="n">5</span><div class="body"><h4>품목별 수량 — 오늘 이 상품이 모두 얼마?</h4>
+      <div class="how"><span class="chip mod" style="font-size:13px">아귀간 10kg <span class="delta">+3kg</span></span><span class="arrow">칩을 누르면</span><span class="mock-card" style="padding:4px 8px">이 상품을 주문한 <b>고객사 목록</b></span></div>
+      <ul>
+        <li>목록의 줄을 누르면 그 고객의 이 상품이 한꺼번에 <b>포장 완료</b>로 켜지고 꺼집니다(체크 칸 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>).</li>
+        <li>수량 옆 <span class="ibtn" style="width:24px;height:24px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></span> <span class="ibtn" style="width:24px;height:24px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span> 로 수량을 바꿀 수 있습니다(고객당 줄이 하나일 때). 바꾸고 0.6초 뒤에 저장됩니다.</li>
+        <li>칩의 <span class="delta" style="border:1px solid #9ec5e2;border-radius:4px;padding:0 4px;color:#1f5f8f">+3kg</span> 는 <b>처음 입력한 뒤 바뀐 양</b>(새로 늘어난 것 + 수량을 고친 만큼, 줄면 −)입니다.</li>
+        <li><b>"미정 N곳"</b>은 수량을 못 정한 주문입니다. 고객명을 눌러 수량을 채우세요.</li>
+      </ul></div></div>
+
+    <div class="step"><span class="n">6</span><div class="body"><h4>새 주문을 직접 추가</h4>
+      <p>위쪽 <span class="ibtn" style="width:24px;height:24px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span> → <b>새 주문 추가</b>. 고객명은 <b>검색해서 고릅니다</b>(직접 타이핑으로 확정되지 않습니다. 오타 방지). 고르면 터미널이 자동으로 채워지고, <b>1차/2차</b>를 고른 뒤 <span class="btn solid">저장</span>. 같은 업체가 이미 올라와 있으면 상품은 그 업체의 <b>고객명을 눌러 "상품 추가"</b>로 넣으세요.</p>
+      <p class="sub">처음 열 때 고객사 목록이 "불러오는 중…"으로 잠깐 보일 수 있습니다. 등록 안 된 새 고객은 고객사 관리나 주문 입력에서 먼저 등록해야 합니다.</p></div></div>
+  </div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg> 별도 주문 (택배·직배송) 팝업</h3>
+  <p>택배·직배송처럼 "별도 주문"으로 정해 둔 터미널의 주문은 <b>기본 표에 나오지 않고</b> 위쪽 <span class="ibtn" style="width:24px;height:24px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span> 를 눌러 여는 팝업에서만 봅니다(숫자는 건수). 기본 표의 품목별 수량·터미널별 박스 수에도 세지 않습니다.</p>
+  <div class="mock" style="margin-top:14px">
+    <span class="cap">별도 주문 팝업 (예시)</span>
+    <div class="mock-bar" style="background:#003057;color:#fff;border-color:#003057"><b>별도 주문 (3) — 택배</b><span style="margin-left:auto;display:flex;gap:5px"><span class="tag" style="background:#fff;color:#003057">모니터 1</span><span class="tag" style="background:rgba(255,255,255,.2);color:#fff;border-color:transparent">모니터 2</span></span></div>
+    <div class="ol"><div class="th"><div>No</div><div>터미널</div><div>고객명</div><div>박스</div><div>상품 1</div><div>상품 2</div><div>상품 3</div></div>
+    <div class="tr"><div class="c"><b>501</b></div><div class="c"><span class="term">택배</span></div><div><b>해운대횟집</b></div><div class="c"><b>2</b></div><div><span class="chip first">방어 3kg</span></div><div><span class="chip first">광어 2kg</span></div><div></div></div></div>
+  </div>
+  <ul>
+    <li><b>표 모양은 주문 목록과 똑같고</b>, 칩을 누르면 포장 완료, 고객명을 누르면 수정 패널이 열립니다. 오른쪽에 <b>품목별 수량</b> 패널도 있습니다.</li>
+    <li>주문이 많아 한 쪽에 안 들어가면 제목줄에 <span class="tag edit">모니터 1</span> <span class="tag">모니터 2</span> 탭이 생깁니다. 먼저 줄 간격을 줄여서 <b>모니터 1에 최대한 다 담고</b>, 그래도 안 되면 모니터 2로 넘깁니다.</li>
+    <li>펜도 쓸 수 있습니다. 그림은 쪽(모니터 1·2…)마다 따로 저장됩니다.</li>
+    <li>팝업이 떠 있는 동안 뒤 화면은 스크롤되지 않습니다. 닫기는 제목줄 오른쪽 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>, Esc, 또는 바깥 누르기.</li>
+    <li>별도 주문이 없으면 "별도 주문이 없습니다…"라고 나옵니다. 트럭 버튼 자체가 안 보이면 별도 주문 터미널이 없는 것입니다.</li>
+  </ul>
+  <div class="scroll"><table class="tbl"><tr><td><span class="btn">+</span> → <b>정산용 엑셀 다운로드</b></td><td>별도 주문(택배) 고객의 정산용 엑셀 파일을 받습니다. 별도 주문 고객이 없으면 안내가 뜹니다.</td></tr></table></div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg> 칠판 펜 (스마트 칠판)</h3>
+  <div class="box warn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><div><b>펜이 켜진 동안은 "칠판 모드"입니다.</b> 칩 눌러 체크 · 고객명 · 박스 칸 · 순서 끌기가 모두 막힙니다. 일반 조작을 하려면 펜을 끄세요. 펜은 <b>모니터 1·2 보기</b>(전체보기 제외)와 <b>별도 주문 팝업</b>에서만 쓸 수 있습니다.</div></div>
+  <div class="steps">
+    <div class="step"><span class="n">1</span><div class="body"><h4>펜 켜기 · 끄기</h4>
+      <div class="how"><span class="ibtn round"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><span class="arrow">짧게 누르면 켜짐</span><span class="ibtn round solid"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg></span><span class="arrow">한 번 더 누르면 꺼짐</span></div>
+      <p>화면 오른쪽 아래에 둥근 버튼이 있습니다. <b>끌어서</b> 원하는 곳으로 옮길 수 있고, <b>길게(0.5초) 누르면</b> 메뉴가 펼쳐집니다. 버튼이 안 보이면 터치 칠판이 아닌 기기입니다(PC에서는 그림을 보기만 합니다).</p></div></div>
+    <div class="step"><span class="n">2</span><div class="body"><h4>포장 완료는 선이나 동그라미로</h4>
+      <div class="how"><span class="chip first" style="width:130px;justify-content:center">방어 3kg</span><span class="arrow">위에</span><b>동그라미</b><span class="arrow">또는</span><b>직선(방향 상관없음)</b><span class="arrow">→ 포장 완료</span></div>
+      <ul><li>선이 칸의 <b>25%만 지나가도</b> 인식됩니다. 너무 짧은 선(점)은 그냥 낙서입니다.</li>
+      <li>그은 선은 그 칸에 붙어서, 칸이 움직여도 따라갑니다.</li>
+      <li>이미 완료됐거나 취소된 칸에는 효과가 없습니다(선만 남음). 두 칸 사이에 걸치면 애매해서 무시됩니다.</li></ul></div></div>
+    <div class="step"><span class="n">3</span><div class="body"><h4>메뉴 — 펜 설정 · 지우개 · 되돌리기</h4>
+      <div class="legend" style="margin:0">
+        <div><span class="ibtn round"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></svg></span><span><b>펜 설정</b> — 색(빨강·파랑·검정·초록·주황)과 굵기</span></div>
+        <div><span class="ibtn round"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg></span><span><b>지우개</b> — 선택하고 문지르면 지워집니다. <b>1초 꾹 누르면</b> 그림 전체 삭제(포장 상태는 그대로). 지운 선이 붙어 있던 상품은 <b>포장 완료가 풀립니다.</b></span></div>
+        <div><span class="ibtn round"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg></span><span><b>되돌리기</b> — 마지막 동작 취소. 그 선으로 포장 완료됐던 상품은 다시 미완료가 됩니다.</span></div>
+      </div>
+      <div class="box tip" style="margin:6px 0 0"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg><div><b>두 손가락 탭</b> — 손가락 두 개로 화면을 <b>동시에 톡</b> 치면 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg> 와 같습니다. 두 손가락이 같이 닿고, 움직이지 않고, 같이 떼야 합니다. 한 손가락으로 글씨를 쓸 때는 작동하지 않습니다. "되돌렸습니다"가 잠깐 뜹니다.</div></div></div></div>
+  </div>
+  <div class="box tip"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><div>PC에서는 칠판에서 그린 그림이 <b>읽기 전용으로 겹쳐서</b> 보입니다. 안 보이면 위쪽 툴바의 펜 그림 보기 버튼이 꺼져 있는지 보세요. 그림은 서버에 저장되어 칠판을 새로고침해도 남고, <b>마지막으로 그린 뒤 3일</b> 보관됩니다.</div></div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg> 알림 벨 · 소리</h3>
+  <div class="legend">
+    <div><span class="ibtn bell"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M22 8c0-2.3-.8-4.3-2-6"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/><path d="M4 2C2.8 3.7 2 5.7 2 8"/></svg></span><span><b>초록</b> — 정상(실시간 연결됨)</span></div>
+    <div><span class="ibtn bell y"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg></span><span><b>노랑</b> — 연결 중이거나, 이 창은 소리가 꺼져 있음</span></div>
+    <div><span class="ibtn bell r"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg></span><span><b>빨강</b> — 끊김, 또는 5분 넘게 갱신 안 됨("오래됨")</span></div>
+    <div><span class="btn warn" style="padding:1px 8px">소리 켜기</span><span>브라우저가 소리를 막았을 때 나옵니다. <b>누르거나 화면 아무 곳이나 한 번 누르면</b> 켜집니다.</span></div>
+  </div>
+  <ul>
+    <li>벨을 누르면 <b>최근 변경 목록</b>과 마지막 갱신 시각이 열립니다. 벨 위 숫자는 확인하지 않은 변경 수이고, <b>포장된 품목이 바뀌면 빨간색</b>입니다. <b>모두 확인</b>을 누르면 숫자가 사라집니다.</li>
+    <li>알림은 <b>지금 보고 있는 날짜</b>의 변경만 셉니다. 일반 포장 체크는 소리·목록에 남기지 않습니다.</li>
+    <li>화면 위에 빨간 띠 <b>"연결이 끊겼습니다 — 화면이 최신이 아닐 수 있습니다"</b>가 뜨면 연결이 돌아올 때까지 이 화면을 믿지 말고, 인터넷을 확인하세요(돌아오면 저절로 갱신됩니다).</li>
+    <li>"화면을 불러오지 못했습니다"가 나오면 10초마다 저절로 다시 시도합니다. 계속되면 화면의 <b>오류 번호</b>를 알려 주세요.</li>
+  </ul>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg> 이럴 땐 이렇게</h3>
+  <div class="faq">
+    <div><div class="q">다른 사람이 고친 게 바로 안 보여요</div><div class="a">다른 기기의 변경은 <b>약 0.5초</b> 뒤 반영됩니다. 라벨 출력·상차 상태(박스 칸 점)는 최대 3분까지 늦을 수 있습니다. 벨이 빨강이면 연결을 먼저 확인하세요.</div></div>
+    <div><div class="q">모니터 2에 아무것도 안 나와요</div><div class="a">정상입니다. 모니터 1에 주문이 다 들어갔다는 뜻입니다(위 "모니터 1 · 2" 참고).</div></div>
+  </div>
+</section>
+
+<!-- ═══════════ 3. 상차 스캔 ═══════════ -->
+<section class="sheet guide" id="g3">
+  <div class="guide-head"><span class="no">3</span><div><h2>상차 스캔</h2><p>트럭에 실을 때 박스 라벨의 QR을 읽어 "상차 완료"로 기록합니다 · 메뉴 "상차 스캔"</p></div></div>
+
+  <div class="box tip"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg><div><span class="t">한 줄 요약</span><br>박스를 실을 때마다 <b>라벨 QR을 비추거나 번호 12자리를 넣으면</b> 초록색으로 "상차 완료"가 됩니다. 노랑·빨강이면 아래 표를 보세요.</div></div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg> 화면 보는 법</h3>
+  <div class="mock" aria-label="상차 스캔 화면 예시">
+    <span class="cap">상차 스캔 (예시 화면)</span>
+    <div class="cols2">
+      <div>
+        <div class="mock-card" style="background:#1f2937;color:#d1d5db;text-align:center;padding:16px 8px;position:relative"><span style="display:inline-block;border:3px solid #34d399;border-radius:10px;width:90px;height:60px"></span><br><span style="font-size:12px">라벨의 QR 코드를 초록 네모 안에 맞추세요</span><span class="pin abs" style="top:6px;left:6px">1</span><span class="ibtn" style="position:absolute;top:6px;right:6px;width:22px;height:22px;font-size:12px;background:#fff"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+        <div class="mock-bar" style="margin-top:6px"><span class="sel-box" style="flex:1;padding:4px 8px">라벨 번호 12자리 입력</span><span class="btn solid">확인</span><span class="pin">2</span></div>
+        <div style="background:#16a34a;color:#fff;border-radius:8px;padding:6px 10px;margin-top:6px"><b>바다식당 1번</b><br><span style="font-size:12px">서울 · 합포장 1·2번 함께 상차</span><br><b>1/2</b> 이 업체 상차 현황<span class="pin" style="margin-left:8px">3</span></div>
+      </div>
+      <div>
+        <div class="mock-card"><b>상차 현황 3/5박스</b> <span class="tag">미완료 업체만 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span><span class="pin" style="margin-left:6px">4</span>
+          <div style="margin-top:6px;display:grid;gap:3px">
+            <div style="display:flex;justify-content:space-between"><b>대구</b><span>2/3</span></div>
+            <div style="height:6px;background:#e5e1d6;border-radius:3px"><div style="width:66%;height:100%;background:#16a34a;border-radius:3px"></div></div>
+            <div style="display:flex;justify-content:space-between"><span><span class="term">대구</span> 통영수산</span><span>1/2</span></div>
+            <div style="display:flex;justify-content:space-between"><span><span class="term">대구</span> 한산상회</span><b style="color:#16a34a">1/1</b></div>
+          </div></div>
+        <div class="mock-card" style="margin-top:6px"><b>최근 스캔</b> <span class="sub">바다식당 1번 · 10:42</span><span class="pin" style="margin-left:6px">5</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <div><span class="pin">1</span><span><b>카메라</b> — 영역을 누르면 켜집니다(<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> 로 끔). 초록 네모 안의 QR만 읽습니다.</span></div>
+    <div><span class="pin">2</span><span><b>번호 입력</b> — 라벨 번호 12자리를 쓰고 확인(또는 Enter). 하이픈·공백은 자동으로 지워집니다.</span></div>
+    <div><span class="pin">3</span><span><b>결과 띠</b> — 색으로 결과를 알려 줍니다(아래 표).</span></div>
+    <div><span class="pin">4</span><span><b>상차 현황</b> — 터미널별·업체별 "실은 박스/전체 박스". 다 끝난 업체는 초록입니다.</span></div>
+    <div><span class="pin">5</span><span><b>최근 스캔</b> — 눌러서 펼치면 최근 8건. 실패(빨강)·중복(갈색)이 구분되어 보입니다.</span></div>
+  </div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/></svg> 따라하기</h3>
+  <div class="steps">
+    <div class="step"><span class="n">1</span><div class="body"><h4>날짜가 오늘인지 확인합니다</h4>
+      <p>오늘이 아닌 날짜로 열면 노란 띠로 <b>"○○ 날짜의 상차 현황입니다. 오늘 상차를 스캔하려면 오늘 날짜로 돌아가세요."</b>라고 나옵니다. 그 화면에서는 오늘 박스를 상차할 수 없으니 오늘 화면으로 다시 들어오세요.</p></div></div>
+
+    <div class="step"><span class="n">2</span><div class="body"><h4>라벨을 읽습니다 — 카메라 또는 번호 입력</h4>
+      <div class="cols2">
+        <div class="box" style="margin:0;display:block"><b>① 카메라</b><br>"스캔 시작하기"를 누르고 QR을 초록 네모에 맞춥니다. 같은 QR을 2.5초 안에 다시 읽는 것은 무시합니다. 카메라 권한이 막혀 있으면 주소창에서 허용해 주세요.</div>
+        <div class="box" style="margin:0;display:block"><b>② 번호 입력</b><br>"라벨 번호 12자리 입력" 칸에 숫자 12자리를 쓰고 <span class="btn solid">확인</span>. 숫자 키패드가 나옵니다.</div>
+      </div></div></div>
+
+    <div class="step"><span class="n">3</span><div class="body"><h4>결과 색을 봅니다</h4>
+      <p>결과마다 소리와 진동이 달라서 화면을 안 보고도 알 수 있습니다. <b>짧게 한 번 = 성공 · 두 번 = 이미 상차됨 · 길게 두 번 = 실패</b> (아이폰 사파리는 진동이 없습니다).</p>
+      <p class="sub">카메라가 켜져 있으면 결과 띠가 영상 아래에 2.4초만 나왔다 사라집니다. 방금 건을 확인하거나 되돌리려면 영상 바로 아래 <b>"마지막 스캔"</b> 줄을 보세요.</p></div></div>
+  </div>
+
+  <div class="scroll"><table class="tbl">
+    <tr><th style="width:150px">결과</th><th>화면 문구</th><th>어떻게 하나요</th></tr>
+    <tr><td><span class="tag done">초록 성공</span></td><td>"업체명 N번" · "합포장 1·2번 함께 상차" · 진행 N/M</td><td>다음 박스를 읽습니다. 업체의 마지막 박스면 더 진한 초록으로 <b>"이 업체 상차 완료"</b>가 나옵니다.</td></tr>
+    <tr><td><span class="tag chg">노랑 중복</span></td><td>"이미 상차된 박스" · "HH:MM에 처리됨"</td><td>이미 실은 박스입니다. 다시 실었으면 그대로 두고, 잘못 기록된 것이면 아래 "취소"를 하세요.</td></tr>
+    <tr><td><span class="tag cx">빨강</span></td><td>"출력된 적 없는 번호"</td><td>형식은 맞지만 발급된 적 없는 번호입니다. 입력을 다시 확인하세요.</td></tr>
+    <tr><td><span class="tag cx">빨강</span></td><td>"우리 라벨이 아닙니다" · "번호는 숫자 12자리입니다"</td><td>다른 스티커이거나 자릿수가 틀렸습니다.</td></tr>
+    <tr><td><span class="tag cx">빨강</span></td><td>"번호를 다시 확인해 주세요" · "확인 숫자가 맞지 않습니다"</td><td>숫자를 잘못 읽거나 썼습니다. 다시 입력하세요.</td></tr>
+    <tr><td><span class="tag cx">빨강</span></td><td>"M/D 날짜의 라벨입니다" · "오늘 박스가 아니라서 상차하지 않았습니다"</td><td>어제 등 <b>지난 날짜 스티커</b>입니다. 박스 할당 화면에서 오늘 라벨을 다시 뽑아 붙이세요.</td></tr>
+    <tr><td><span class="tag cx">빨강</span></td><td>"취소된 고객사의 박스입니다"</td><td>라벨을 붙인 뒤 주문이 모두 취소된 업체입니다. 실지 마세요.</td></tr>
+    <tr><td><span class="tag cx">빨강</span></td><td>"전송 실패 — 처리되지 않았습니다"</td><td>신호가 불안정했습니다. 같은 라벨을 <b>다시 비추면</b> 바로 처리됩니다.</td></tr>
+  </table></div>
+
+  <div class="steps">
+    <div class="step"><span class="n">4</span><div class="body"><h4>잘못 읽었을 때 — 취소</h4>
+      <div class="cols2">
+        <div class="box" style="margin:0;display:block"><b>방금 스캔한 것</b> (초록)<br>배너의 <span class="btn gray">잘못 스캔했어요 (되돌리기)</span> 를 한 번 누르면 바로 취소됩니다. 카메라가 켜져 있으면 영상 아래 "마지막 스캔" 줄의 <b>되돌리기</b>.</div>
+        <div class="box" style="margin:0;display:block"><b>이미 상차된 박스</b> (노랑)<br><span class="btn gray">상차를 취소할래요</span> 를 누르면 4초 동안 <span class="btn warn" style="padding:1px 8px">정말 취소할까요? 한 번 더 누르세요</span> 로 바뀝니다. 그때 한 번 더 눌러야 취소됩니다.</div>
+      </div>
+      <p class="sub">취소하면 노란 띠로 "업체 N번 상차를 취소했습니다. 이 박스는 다시 상차 전 상태입니다."가 나오고, 최근 스캔에 "(취소됨)"으로 남습니다. 되돌리기·취소 버튼은 권한이 있는 계정에만 보입니다.</p></div></div>
+
+    <div class="step"><span class="n">5</span><div class="body"><h4>합포장은 하나만 읽어도 전부</h4>
+      <p>같이 묶어 둔 박스(합포장 1·2번)는 <b>하나만 스캔해도 모두 상차</b> 처리됩니다. 취소할 때도 <b>묶음 전체가 같이 취소</b>됩니다. "N번만 실었다"와 다르게 보일 수 있으니 결과 띠의 "합포장 1·2번 함께 상차"를 확인하세요.</p></div></div>
+
+    <div class="step"><span class="n">6</span><div class="body"><h4>끝나면 — 현황을 확인하고 카카오톡 글을 보냅니다</h4>
+      <p><b>상차 현황</b>에서 <b>미완료 업체만</b>(기본으로 켜져 있음)을 보면 아직 안 실은 업체가 남습니다. 라벨을 한 번도 뽑지 않은 업체는 이 화면에 나오지 않으니, 빠진 업체는 박스 할당에서 라벨을 뽑았는지 확인하세요.</p>
+      <div class="box ok" style="margin:0"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg><div><b>상차 완료 글(카카오톡)은 상차 스캔 화면이 아니라 메뉴 "보내기" → "퀵기사" 탭</b>에 있습니다.<br>
+        터미널마다 카드가 있고, 아이콘 두 개로 보냅니다: <span class="ibtn" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span> 복사 · <span class="ibtn" style="width:26px;height:26px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg></span> 카카오톡 보내기.
+        <ul style="margin-top:3px"><li><b>보내기</b>는 <b>휴대폰에서만</b> 켜집니다. 컴퓨터에서는 <b>복사</b>를 눌러 카톡에 붙여넣으세요(복사에 실패하면 글이 입력창에 나타나니 직접 복사).</li>
+        <li>카드에 <span class="tag done">보냄 ✓ 10:42</span> 가 남고, 보낸 뒤 상차가 더 되어 글이 바뀌면 <span class="tag chg">보냄 10:42 이후 변경됨</span> 으로 바뀝니다. 그때 다시 보내세요.</li>
+        <li>글은 이렇게 나옵니다: <i>"11/14(금) 대구 상차 완료 / 통영수산 2박스 / 합계 3박스 / 미상차: …"</i> (일부만 실었으면 "3/5"처럼 표시되고 미상차 줄이 붙습니다).</li></ul></div></div></div></div>
+  </div>
+
+  <h3 class="sec"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg> 이럴 땐 이렇게</h3>
+  <div class="faq">
+    <div><div class="q">카메라가 안 켜져요</div><div class="a">브라우저 주소창의 카메라 아이콘에서 <b>허용</b>으로 바꾸세요. 그래도 안 되면 <b>번호 입력</b>으로 하세요(번호는 라벨에 인쇄되어 있습니다).</div></div>
+    <div><div class="q">업체가 상차 현황에 안 나와요</div><div class="a">그 업체의 라벨을 아직 한 번도 뽑지 않았거나(박스 할당 화면에서 확인), "미완료 업체만"이 켜져 있어 이미 끝난 업체가 가려진 것입니다.</div></div>
+    <div><div class="q">라벨이 어제 날짜라고 나와요</div><div class="a">어제 뽑은 스티커입니다. 오늘 라벨을 다시 뽑아 붙이세요(박스 할당 화면 → 라벨 출력).</div></div>
+    <div><div class="q">스캔 버튼이 눌리지 않아요</div><div class="a">상차 스캔 권한이 없는 계정입니다. 이때는 안내 글이 따로 뜨지 않으니 관리자에게 권한을 요청하세요.</div></div>
+  </div>
+  <p class="foot">통영아재수산 현장 사용 가이드 · 화면이 업데이트되면 이 가이드도 함께 고칩니다.</p>
+</section>
+
+</div>
+</body>
+</html>
