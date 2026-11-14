@@ -6,6 +6,7 @@ import { assignBusinessNumber, dailyKey, separateTerminalIds } from '@/lib/busin
 import { colorComboKey, pickUnusedColor } from '@/lib/color-palette';
 import { loadAppSettings } from '@/lib/settings-server';
 import { newOrderItemRow } from '@/lib/order-item-row';
+import { commitFailureMessage, deleteCreatedCards, isFrameworkSignal, type CleanupResult } from '@/lib/commit-failure';
 import { editableDateError } from '@/lib/order-date';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from '@/lib/kakao-parser';
@@ -385,7 +386,35 @@ async function registerNewProducts(supabase: Awaited<ReturnType<typeof createCli
 //
 // DB 왕복 횟수가 곧 지연 시간이므로(서버↔DB 왕복 1회 = 수십~수백 ms) 줄마다 조회/삽입하지 않고
 // 터미널 → 업체 → 오늘 카드 → 상품 순으로 단계별로 모아서 한 번에 처리한다.
-export async function commitOrderLines(orderDate: string, round: OrderRound, decisions: LineDecision[], rawText?: string) {
+// 확정이 중간에 실패했을 때 뒷정리에 필요한 것: 이번 확정이 새로 만든 업체 카드, 상품 줄이 저장됐는지.
+interface CommitState {
+  createdDailyIds: string[];
+  itemsSaved: boolean;
+}
+
+export type CommitResult = { ok: true } | { ok: false; error: string };
+
+// 실패하면 던지지 않고 원인 문구를 값으로 돌려준다(운영에서는 던진 오류의 문구가 가려져 "Minified React error #441"로만 보였다).
+// 상품 줄이 저장되기 전에 실패하면 이번에 만든 업체 카드를 지워서 "고객사만 남은" 반쪽 상태를 만들지 않는다(2026-11-15).
+export async function commitOrderLines(orderDate: string, round: OrderRound, decisions: LineDecision[], rawText?: string): Promise<CommitResult> {
+  const state: CommitState = { createdDailyIds: [], itemsSaved: false };
+  try {
+    await commitOrderLinesInto(state, orderDate, round, decisions, rawText);
+    return { ok: true };
+  } catch (error) {
+    if (isFrameworkSignal(error)) throw error;
+    console.error('[commitOrderLines] failed', error);
+    let cleaned: CleanupResult = { attempted: 0, error: null };
+    if (!state.itemsSaved) {
+      const supabase = await createClient();
+      cleaned = await deleteCreatedCards(state.createdDailyIds, (ids) => supabase.from('daily_businesses').delete().in('id', ids));
+      if (cleaned.error) console.error('[commitOrderLines] cleanup failed', cleaned.error);
+    }
+    return { ok: false, error: commitFailureMessage(error, cleaned) };
+  }
+}
+
+async function commitOrderLinesInto(state: CommitState, orderDate: string, round: OrderRound, decisions: LineDecision[], rawText?: string) {
   const access = await requirePermission('orders:edit');
   // 확인 화면을 거치지 않고 직접 호출해도 이상한 값이 DB에 들어가지 않도록 서버에서 한 번 더 검사한다.
   if (!isIsoDate(orderDate)) throw new Error('날짜 형식이 올바르지 않습니다.');
@@ -414,10 +443,6 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
   // 그날 첫 입력(로그가 아직 없음)으로 들어오는 상품은 "최초주문"(none), 이후 입력으로 새로 들어오는
   // 상품은 "추가됨"(new)으로 구분한다 — 대시보드에서 오전 최초 주문과 이후 추가분을 한눈에 가른다.
   const isFirstInputOfDay = (logCount?.count ?? 0) === 0;
-  if (rawText) {
-    const { error } = await supabase.from('kakao_message_log').insert({ order_date: orderDate, round, raw_text: rawText, created_by: userId });
-    if (error) throw new Error(`메시지 기록 저장 실패: ${error.message}`);
-  }
 
   const active = decisions.filter((d) => d.kind !== 'no_change');
   const cancelIds = active
@@ -508,15 +533,17 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
     if (rowsToCreate.length > 0) {
       const { data: created, error: dailyError } = await supabase.from('daily_businesses').insert(rowsToCreate).select('id, business_id, terminal_id');
       if (dailyError) throw new Error(`주문 카드 생성 실패: ${dailyError.message}`);
-      for (const d of created ?? []) dailyIdByKey.set(dailyKey(d.business_id, d.terminal_id), d.id);
+      for (const d of created ?? []) {
+        dailyIdByKey.set(dailyKey(d.business_id, d.terminal_id), d.id);
+        state.createdDailyIds.push(d.id);
+      }
     }
   }
 
-  const productRegistration = registerNewProducts(supabase, [...new Set(resolved.map((r) => r.decision.product.productName))]);
-
   // 4) 상품 — 수정은 병렬로, 신규는 업체별 순번을 순서대로 발급(업체끼리는 병렬)한 뒤 한 번에 삽입한다.
   const memoByDaily = new Map<string, string>();
-  const updates: Promise<unknown>[] = [];
+  // 기존 줄 수정·취소·메모는 새 줄 저장이 성공한 뒤에 실행한다(새 줄 저장이 실패했을 때 기존 줄만 바뀌어 남지 않게 함수로 모아 둔다).
+  const updates: (() => PromiseLike<unknown>)[] = [];
   const newByDaily = new Map<string, { product: ParsedProduct; aiRepaired: boolean }[]>();
 
   for (const { decision, key } of resolved) {
@@ -526,15 +553,16 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
     if (decision.memo && !memoByDaily.has(dailyBusinessId)) memoByDaily.set(dailyBusinessId, decision.memo);
 
     const { product } = decision;
-    if (decision.kind === 'update_line' && decision.existingOrderItemId) {
+    const existingId = decision.existingOrderItemId; // 나중에 실행하는 함수 안에서도 null이 아님을 유지하려고 값으로 꺼낸다
+    if (decision.kind === 'update_line' && existingId) {
       // 주문 수량이 미출고 수량보다 작아지면 미출고 수량도 맞춘다(필터가 맞을 때만 실행되는 조건부 갱신).
       updates.push(
-        Promise.resolve(
-          supabase.from('order_items').update({ unshipped_quantity: product.quantity }).eq('id', decision.existingOrderItemId).gt('unshipped_quantity', product.quantity),
+        () => Promise.resolve(
+          supabase.from('order_items').update({ unshipped_quantity: product.quantity }).eq('id', existingId).gt('unshipped_quantity', product.quantity),
         ),
       );
       updates.push(
-        Promise.resolve(
+        () => Promise.resolve(
           supabase
             .from('order_items')
             .update({
@@ -554,7 +582,7 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
               // true일 때만 쓴다: 마이그레이션 0055 전에도 일반 줄 입력이 막히지 않게 하고, 한 번 AI 보정이면 그 기록을 지우지 않는다.
               ...(decision.aiRepaired ? { ai_repaired: true } : {}),
             })
-            .eq('id', decision.existingOrderItemId),
+            .eq('id', existingId),
         ),
       );
     } else {
@@ -565,9 +593,9 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
   }
 
   for (const [dailyBusinessId, memo] of memoByDaily) {
-    updates.push(Promise.resolve(supabase.from('daily_businesses').update({ memo }).eq('id', dailyBusinessId)));
+    updates.push(() => Promise.resolve(supabase.from('daily_businesses').update({ memo }).eq('id', dailyBusinessId)));
   }
-  if (cancelPromise) updates.push(Promise.resolve(cancelPromise));
+  if (cancelPromise) updates.push(() => Promise.resolve(cancelPromise));
 
   const newRowGroups = await Promise.all(
     [...newByDaily].map(async ([dailyBusinessId, products]) => {
@@ -596,10 +624,19 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
     const { error } = await supabase.from('order_items').insert(newRows, { defaultToNull: false });
     if (error) throw new Error(`상품 저장 실패: ${error.message}`);
   }
-  const results = await Promise.all([...updates, productRegistration]);
+  state.itemsSaved = true;
+  const productNames = [...new Set(resolved.map((r) => r.decision.product.productName))];
+  const results = await Promise.all([...updates.map((run) => run()), registerNewProducts(supabase, productNames)]);
   for (const result of results) {
     const error = (result as { error?: { message: string } | null } | null | undefined)?.error;
     if (error) throw new Error(`주문 반영 중 일부 저장 실패: ${error.message}`);
+  }
+
+  // 메시지 기록은 주문이 모두 저장된 뒤에 남긴다. 기록은 보관용이라 실패해도 저장된 주문을 되돌리거나 다시 입력하게 하지 않는다.
+  // (DB 규칙상 이 기록은 입력만 되고 지울 수 없어서, 앞에 남기면 실패한 확정의 기록을 정리할 수도 없다.)
+  if (rawText) {
+    const { error } = await supabase.from('kakao_message_log').insert({ order_date: orderDate, round, raw_text: rawText, created_by: userId });
+    if (error) console.error('[commitOrderLines] message log insert failed', error.message);
   }
 
   revalidatePath('/dashboard');
