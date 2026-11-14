@@ -1,4 +1,5 @@
 // 송장 라벨의 DB 접근(서버 전용): 라벨 디자인 읽기, 업체 카드별 박스 라벨 상태 읽기.
+import { LABEL_CONFIRM_KEY, normalizeConfirmMode, pendingSeqsOf, PENDING_VISIBLE_MINUTES, type LabelConfirmMode, type PrintJobItem } from './print-job';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
 import { loadAppSettings } from '@/lib/settings-server';
@@ -150,4 +151,21 @@ export async function loadLabelRotate(supabase: Client): Promise<boolean> {
 export async function loadLabelMargin(supabase: Client): Promise<number> {
   const { data } = await supabase.from('app_settings').select('value').eq('key', LABEL_MARGIN_KEY).maybeSingle();
   return data ? clampLabelMargin(data.value) : DEFAULT_LABEL_MARGIN_MM;
+}
+
+// 라벨 출력 확정 방식(설정). 값이 없으면 'button'(예전 동작).
+export async function loadLabelConfirmMode(supabase: Client): Promise<LabelConfirmMode> {
+  const { data } = await supabase.from('app_settings').select('value').eq('key', LABEL_CONFIRM_KEY).maybeSingle();
+  return normalizeConfirmMode(data?.value);
+}
+
+// 한 업체 카드에서 에이전트의 인쇄 완료 확인을 기다리는 박스 순번. 마이그레이션 0061 전이면 테이블이 없으므로 빈 배열(확정 방식이 'button'이면 부를 필요도 없다).
+export async function loadPendingLabelSeqs(supabase: Client, dailyBusinessId: string): Promise<number[]> {
+  const since = new Date(Date.now() - PENDING_VISIBLE_MINUTES * 60_000).toISOString();
+  const { data, error } = await supabase.from('label_print_jobs').select('items, created_at').eq('status', 'pending').gte('created_at', since);
+  if (error) {
+    if (missingTable(error.message) === 'label_print_jobs') return [];
+    throw new Error(`출력 확인 대기 조회 실패: ${error.message}`);
+  }
+  return pendingSeqsOf((data ?? []).map((j) => ({ items: j.items as PrintJobItem[], createdAt: j.created_at })), dailyBusinessId, new Date());
 }

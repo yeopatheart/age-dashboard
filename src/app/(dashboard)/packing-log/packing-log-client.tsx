@@ -1,6 +1,6 @@
 'use client';
 import '@/components/admin/admin.css';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -27,6 +27,7 @@ import { prepareBatchLabelPrint } from '../labels/actions';
 import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
 import { mergeKey, mergeUids, pruneUidGroups, seqGroupsFromUid, uidGroupsFromSeq, unmergeUids, type UidGroups } from '@/lib/packing/merge-draft';
 import { LabelPanel } from './label-panel';
+import type { LabelConfirmMode } from '@/lib/labels/print-job';
 import { useCan } from '@/components/permissions-context';
 import { DateNav } from '@/components/date-nav';
 
@@ -103,6 +104,7 @@ export function PackingLogClient({
   boxes,
   embedded = false,
   onSubmitted,
+  labelConfirmMode = 'button',
 }: {
   orderDate: string;
   today: string;
@@ -112,6 +114,8 @@ export function PackingLogClient({
   // 주문 목록의 박스 할당 팝업 안에서 쓸 때: 업체 목록·제목 줄·필요 박스 줄 없이 업체 한 곳(rows[0])의 편집 영역만 보이고, 제출하면 onSubmitted를 부른다.
   embedded?: boolean;
   onSubmitted?: () => void;
+  // 라벨 출력 확정 방식(설정): 'spooler'면 프린터 PC가 인쇄 완료를 알려야 "출력"으로 기록된다.
+  labelConfirmMode?: LabelConfirmMode;
 }) {
   const router = useRouter();
   // 주문 상품이 모두 취소된 고객사는 박스 할당·라벨 출력이 필요 없어 목록에서 뺀다(업체 수·제출 수·필요 박스에도 세지 않는다).
@@ -443,13 +447,24 @@ export function PackingLogClient({
   // 라벨 일괄 출력: 제출한 업체(택배 제외) 중 아직 한 번도 출력하지 않은 라벨을 업체 번호순으로 한 번에 낸다. 대상 수는 목록의 출력 현황으로 센다.
   const [batchJob, setBatchJob] = useState<LabelPrintJob | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
+  // 스풀러 방식: 일괄 출력 뒤 1분 동안 5초마다 목록을 새로 읽어, 에이전트가 확정한 출력 현황이 보이게 한다.
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = setInterval(() => router.refresh(), 5000);
+    const stop = setTimeout(() => setConfirming(false), 60_000);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(stop);
+    };
+  }, [confirming, router]);
   const batchTargets = rows.filter((r) => r.submitted && !r.parcel && r.labelStatus && r.labelStatus.total > r.labelStatus.printed);
   const batchLabels = batchTargets.reduce((sum, r) => sum + (r.labelStatus ? r.labelStatus.total - r.labelStatus.printed : 0), 0);
   const unsubmittedCount = rows.filter((r) => !r.submitted && !r.parcel).length;
   const handleBatchPrint = async () => {
     if (batchBusy || batchLabels === 0) return;
     const warn = unsubmittedCount > 0 ? `\n\n아직 박스를 제출하지 않은 업체 ${unsubmittedCount}곳은 제외됩니다.` : '';
-    if (!window.confirm(`아직 출력하지 않은 라벨 ${batchLabels}장(${batchTargets.length}곳)을 업체 번호순으로 한꺼번에 출력합니다.${warn}\n\n인쇄 창을 닫거나 취소해도 "출력함"으로 기록됩니다. 계속할까요?`)) return;
+    if (!window.confirm(`아직 출력하지 않은 라벨 ${batchLabels}장(${batchTargets.length}곳)을 업체 번호순으로 한꺼번에 출력합니다.${warn}\n\n${labelConfirmMode === 'spooler' ? '프린터 PC가 인쇄 완료를 확인한 라벨만 "출력"으로 기록됩니다.' : '인쇄 창을 닫거나 취소해도 "출력함"으로 기록됩니다.'} 계속할까요?`)) return;
     setBatchBusy(true);
     setError(null);
     const payload = await prepareBatchLabelPrint(orderDate);
@@ -457,7 +472,8 @@ export function PackingLogClient({
     if (payload.error || !payload.template) return setError(payload.error ?? '라벨을 준비하지 못했습니다.');
     if (payload.skipped.length > 0) setError(`일부 업체의 라벨은 준비하지 못했습니다: ${payload.skipped.join(' / ')}`);
     else setNotice(`${payload.businesses}곳 · 라벨 ${payload.labels.length}장을 출력합니다.`);
-    setBatchJob({ template: payload.template, labels: payload.labels, rotate: payload.rotated });
+    setBatchJob({ template: payload.template, labels: payload.labels, rotate: payload.rotated, jobId: payload.jobId });
+    if (payload.jobId) setConfirming(true);
   };
 
   const go = (date: string) => router.push(`/packing-log?date=${date}`);

@@ -222,6 +222,18 @@ type BoxLabelEvent = {
   created_by: string | null;
 };
 
+// 라벨 출력 작업(0061). 스풀러 방식에서 인쇄 완료를 기다리는 동안의 기록. 상태는 confirm_label_print 함수만 바꾼다.
+type LabelPrintJob = {
+  id: string;
+  items: { daily_business_id: string; seq: number; barcode: string; printed_box_type: string | null }[];
+  label_kind: string | null;
+  created_by: string | null;
+  created_at: string;
+  status: "pending" | "printed" | "partial";
+  confirmed_at: string | null;
+  printed_count: number | null;
+};
+
 type PackingBox = {
   id: string;
   record_id: string;
@@ -570,6 +582,7 @@ export type Database = {
         BoxLabelEvent,
         Pick<BoxLabelEvent, "label_id" | "event"> & { id?: string; label_kind?: "label" | "top" | "side" | null; created_at?: string; created_by?: string | null }
       >;
+      label_print_jobs: TableDef<LabelPrintJob, Pick<LabelPrintJob, "items"> & { id?: string; label_kind?: string | null; created_by?: string | null; created_at?: string }>;
       packing_recommendations: TableDef<
         PackingRecommendation,
         Pick<

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useCan } from '@/components/permissions-context';
 import { mergeGroupOf, mergeLabelText, mergeSelected, normalizeMergeGroups, unmergeGroup, type MergeGroups } from '@/lib/box-merge';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Barcode, Loader2, Printer, PrinterCheck, RefreshCw } from 'lucide-react';
 import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
 import { LabelView } from '@/components/labels/label-view';
@@ -30,6 +31,9 @@ export function LabelPanel({ dailyBusinessId, boxCount, boxTypes }: { dailyBusin
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<LabelPrintJob | null>(null);
+  // 출력 확정 방식이 '스풀러'일 때 인쇄 완료 확인을 기다리는 박스. 에이전트가 확정하면 비워지고 "출력"으로 바뀐다.
+  const [pendingSeqs, setPendingSeqs] = useState<number[]>([]);
+  const router = useRouter();
   const [groups, setGroups] = useState<MergeGroups>([]);
   // 합포장 표시가 바뀐 박스 중 이미 라벨을 출력한 박스 — 다시 출력하기 전까지 알려 준다.
   const [staleSeqs, setStaleSeqs] = useState<number[]>([]);
@@ -42,6 +46,7 @@ export function LabelPanel({ dailyBusinessId, boxCount, boxTypes }: { dailyBusin
       const result = await getCardLabels(dailyBusinessId);
       if (cancelled) return;
       setInfos(result.infos);
+      setPendingSeqs(result.pendingSeqs);
       setSource({ template: result.template, base: result.base });
       setGroups(result.base?.mergeGroups ?? []);
       setLoaded(true);
@@ -51,6 +56,24 @@ export function LabelPanel({ dailyBusinessId, boxCount, boxTypes }: { dailyBusin
     };
   }, [dailyBusinessId]);
 
+  // 확인을 기다리는 박스가 있는 동안 5초마다 다시 읽는다. 다 확정되면 목록의 출력 현황도 새로 읽게 화면을 갱신한다.
+  const waiting = pendingSeqs.length > 0;
+  useEffect(() => {
+    if (!waiting) return;
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      const result = await getCardLabels(dailyBusinessId);
+      if (cancelled) return;
+      setInfos(result.infos);
+      setPendingSeqs(result.pendingSeqs);
+      if (result.pendingSeqs.length === 0) router.refresh();
+    }, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [waiting, dailyBusinessId, router]);
+
   const print = async (targetSeqs: number[], key: string) => {
     if (targetSeqs.length === 0 || busyKey) return;
     setBusyKey(key);
@@ -59,8 +82,9 @@ export function LabelPanel({ dailyBusinessId, boxCount, boxTypes }: { dailyBusin
     setBusyKey(null);
     if (payload.error || !payload.template) return setError(payload.error ?? '라벨을 준비하지 못했습니다.');
     setInfos(payload.infos);
+    setPendingSeqs(payload.pendingSeqs);
     setStaleSeqs((prev) => prev.filter((n) => !targetSeqs.includes(n)));
-    setJob({ template: payload.template, labels: payload.labels, rotate: payload.rotated });
+    setJob({ template: payload.template, labels: payload.labels, rotate: payload.rotated, jobId: payload.jobId });
   };
 
   const changeGroups = async (next: MergeGroups) => {
@@ -78,7 +102,7 @@ export function LabelPanel({ dailyBusinessId, boxCount, boxTypes }: { dailyBusin
   };
 
   return (
-    <LabelPanelView boxCount={boxCount} boxTypes={boxTypes} groups={normalizeMergeGroups(groups, boxCount)} staleSeqs={staleSeqs} onGroupsChange={canMerge ? changeGroups : undefined} infos={infos} source={source} loaded={loaded} busyKey={busyKey} error={error} job={job} onPrint={print} onJobDone={() => setJob(null)} />
+    <LabelPanelView boxCount={boxCount} boxTypes={boxTypes} groups={normalizeMergeGroups(groups, boxCount)} staleSeqs={staleSeqs} pendingSeqs={pendingSeqs} onGroupsChange={canMerge ? changeGroups : undefined} infos={infos} source={source} loaded={loaded} busyKey={busyKey} error={error} job={job} onPrint={print} onJobDone={() => setJob(null)} />
   );
 }
 
@@ -132,6 +156,7 @@ export function LabelPanelView({
   boxTypes,
   groups,
   staleSeqs,
+  pendingSeqs = [],
   onGroupsChange,
   infos,
   source,
@@ -146,6 +171,7 @@ export function LabelPanelView({
   boxTypes: string[];
   groups: MergeGroups;
   staleSeqs: number[];
+  pendingSeqs?: number[]; // 스풀러 방식에서 인쇄 완료 확인을 기다리는 박스 순번
   onGroupsChange?: (next: MergeGroups) => void; // 없으면 합포장은 보기만 한다(권한 없음)
   infos: CardLabelInfo[];
   source: Pick<CardLabelPreviewSource, 'template' | 'base'> | null;
@@ -180,6 +206,7 @@ export function LabelPanelView({
   const statusOf = (seq: number) => {
     const info = bySeq.get(seq);
     if (info?.loadedAt) return { text: '상차 완료', tone: 'done' as const };
+    if ((!info || info.printCount === 0) && pendingSeqs.includes(seq)) return { text: '출력 확인 중', tone: 'pending' as const };
     if (!info || info.printCount === 0) return { text: '미출력', tone: 'new' as const };
     return { text: `출력 ${info.printCount}회`, tone: 'printed' as const };
   };
@@ -267,6 +294,9 @@ export function LabelPanelView({
       {extra.length > 0 && (
         <p className="lp-warn">박스를 줄여서 번호 {extra.map((e) => e.seq).join(', ')}번 라벨이 남아 있습니다. 해당 라벨은 붙이지 마세요.</p>
       )}
+      {pendingSeqs.length > 0 && (
+        <p className="lp-warn">프린터 PC가 인쇄 완료를 알려 주면 {pendingSeqs.join(', ')}번 라벨이 &quot;출력&quot;으로 바뀝니다. 인쇄 창을 취소했거나 30분이 지나도 안 바뀌면 다시 출력하세요.</p>
+      )}
       {error && <p className="lp-error">{error}</p>}
       <p className="lp-note">
         점선(접는 선)을 박스 뚜껑 모서리에 맞춰 붙입니다. 인쇄 창은 <Link href="/labels">라벨 설정의 바로 출력 설정</Link>으로 연 창에서 출력하세요.
@@ -312,6 +342,7 @@ export function LabelPanelView({
         .lp-chip { font-size: 0.75rem; font-weight: 800; border-radius: 999px; padding: 0.15rem 0.6rem; background: #f1f5f9; color: #475569; white-space: nowrap; }
         .lp-new .lp-chip { background: #fef3c7; color: #92400e; }
         .lp-printed .lp-chip { background: #dbeafe; color: #1d4ed8; }
+        .lp-pending .lp-chip { background: #e0e7ff; color: #3730a3; }
         .lp-done .lp-chip { background: #dcfce7; color: #15803d; }
         .lp-row .lp-chip-merge { background: #ecfdf5; color: #047857; }
         .lp-print { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; padding: 0; border-radius: 9px; border: 0; background: var(--primary); color: #fff; font-size: var(--fs-sm); font-weight: 800; cursor: pointer; flex: none; white-space: nowrap; }

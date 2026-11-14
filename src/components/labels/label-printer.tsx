@@ -3,12 +3,15 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { LabelView } from './label-view';
 import type { LabelData, LabelTemplate } from '@/lib/labels/template';
+import { printJobTitle } from '@/lib/labels/print-job';
 
 export interface LabelPrintJob {
   template: LabelTemplate;
   labels: LabelData[];
   // 롤 방향에 맞춰 라벨을 시계 방향으로 90도 돌려 출력한다. 용지(드라이버)는 높이×가로로 바뀐다(예: 100×80 라벨 → 80×100 용지).
   rotate?: boolean;
+  // 출력 확정 방식이 '스풀러'일 때의 출력 작업 id. 인쇄하는 동안 문서 제목을 이 id가 든 이름으로 바꿔서, 프린터 PC의 에이전트가 Windows 인쇄 완료 이벤트에서 작업을 알아본다.
+  jobId?: string | null;
 }
 
 // 라벨을 한 장씩 한 페이지로 인쇄한다. 화면의 다른 요소는 인쇄에서 숨기고, 페이지 크기를 라벨 크기(mm)에 맞춘다.
@@ -36,6 +39,9 @@ export function LabelPrinter({ job, onDone }: { job: LabelPrintJob | null; onDon
         .label-rot { position: absolute; left: 0; top: 0; width: ${widthMm}mm; height: ${heightMm}mm; transform-origin: 0 0; transform: translate(${heightMm}mm, 0) rotate(90deg); }
       }`;
     document.head.appendChild(style);
+    // 인쇄 작업 이름은 문서(페이지) 제목이다. 인쇄가 끝나면(또는 이 효과가 정리되면) 원래 제목으로 되돌린다.
+    const previousTitle = document.title;
+    if (job.jobId) document.title = printJobTitle(job.jobId);
     const finish = () => onDone();
     window.addEventListener('afterprint', finish, { once: true });
     // 막대(SVG)가 그려진 뒤에 인쇄하도록 두 프레임을 기다린다.
@@ -45,6 +51,7 @@ export function LabelPrinter({ job, onDone }: { job: LabelPrintJob | null; onDon
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener('afterprint', finish);
+      if (job.jobId) document.title = previousTitle;
       style.remove();
     };
     // job이 바뀔 때만 한 번 인쇄한다.
