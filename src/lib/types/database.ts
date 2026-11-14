@@ -36,6 +36,8 @@ type Terminal = {
   is_separate: boolean;
   // true면 택배사 송장을 붙이는 택배 터미널(박스 라벨을 출력·스캔하지 않는다). 별도 주문 중에서만 지정한다.
   is_parcel: boolean;
+  // false면 이 터미널은 퀵이 안 된다(0062). 정산에서 퀵 배송비를 제안하지 않는다.
+  quick_allowed: boolean;
 };
 
 type Business = {
@@ -48,6 +50,10 @@ type Business = {
   // 선택 입력(0024). 사업자등록번호는 000-00-00000 형식.
   business_registration_no: string | null;
   representative_name: string | null;
+  // 정산 배송비 기본 금액(0062): 수단별 박스당 원. null이면 그 수단을 쓰지 않는 고객사
+  bus_rate: number | null;
+  quick_rate: number | null;
+  parcel_rate: number | null;
 };
 
 type Product = {
@@ -335,6 +341,19 @@ type SettlementSale = {
   updated_at: string;
 };
 
+// 정산 배송비(0062). 행은 출고 완료된 그날 고객 카드(daily_businesses) × 수단(bus/quick/parcel) 하나다.
+type SettlementShipping = {
+  id: string;
+  daily_business_id: string;
+  method: string;
+  boxes: number;
+  amount: number;
+  seller_id: string | null;
+  paid: boolean;
+  memo: string | null;
+  updated_at: string;
+};
+
 // 발행한 영수증 이력(0047). snapshot의 모양은 src/lib/settlement/receipt.ts의 ReceiptSnapshot이다.
 type SettlementReceipt = {
   id: string;
@@ -390,7 +409,7 @@ export type Database = {
       >;
       terminals: TableDef<
         Terminal,
-        Pick<Terminal, "name"> & { id?: string; created_at?: string; created_via?: CreatedVia; fill_color?: string | null; border_color?: string | null; is_separate?: boolean; is_parcel?: boolean }
+        Pick<Terminal, "name"> & { id?: string; created_at?: string; created_via?: CreatedVia; fill_color?: string | null; border_color?: string | null; is_separate?: boolean; is_parcel?: boolean; quick_allowed?: boolean }
       >;
       businesses: TableDef<
         Business,
@@ -402,6 +421,9 @@ export type Database = {
           created_via?: CreatedVia;
           business_registration_no?: string | null;
           representative_name?: string | null;
+          bus_rate?: number | null;
+          quick_rate?: number | null;
+          parcel_rate?: number | null;
         }
       >;
       products: TableDef<
@@ -505,6 +527,10 @@ export type Database = {
       settlement_sales: TableDef<
         SettlementSale,
         Pick<SettlementSale, "order_item_id"> & { seller_id?: string | null; price?: number | null; unit_price?: number | null; product_override?: string | null; quantity_override?: number | null; unit_override?: string | null; paid?: boolean; memo?: string | null; updated_at?: string }
+      >;
+      settlement_shipping: TableDef<
+        SettlementShipping,
+        Pick<SettlementShipping, "daily_business_id" | "method" | "amount"> & { id?: string; boxes?: number; seller_id?: string | null; paid?: boolean; memo?: string | null; updated_at?: string }
       >;
       settlement_receipts: TableDef<
         SettlementReceipt,

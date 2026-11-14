@@ -69,3 +69,14 @@ export async function setTerminalParcel(id: string, isParcel: boolean): Promise<
   revalidatePath('/dashboard');
   return { error: null };
 }
+
+// 퀵이 안 되는 터미널은 끈다. 꺼진 터미널의 고객 카드에는 정산 배송비로 퀵을 제안하지 않는다(이미 저장한 값은 그대로 둔다).
+export async function setTerminalQuickAllowed(id: string, allowed: boolean): Promise<{ error: string | null }> {
+  await requirePermission('terminals:edit');
+  const supabase = await createClient();
+  const { error } = await supabase.from('terminals').update({ quick_allowed: allowed }).eq('id', id);
+  if (error) return { error: error.message };
+  revalidatePath('/terminals');
+  revalidatePath('/settlement');
+  return { error: null };
+}

@@ -1,6 +1,8 @@
 // 정산 판매내역 → 영수증 만들기(순수 함수). 영수증 한 장은 고객사 × 사업자 × 출고일이다(결정: docs/decisions/2026-11-06-settlement-receipt.md).
 // 서버(발행·스냅샷 저장)와 화면(미리보기·이력)이 같이 쓴다.
 
+import { shippingLabel, shippingUnitPrice, type ShippingRow } from './shipping.ts'; // 상대 경로+.ts: 단위 테스트(node --test)가 @ 별칭을 못 푼다
+
 // 영수증 품목표의 한 장당 행 수. 넘으면 여러 장으로 나눈다(기존 Auto-Receipt와 같은 15행).
 export const RECEIPT_PAGE_ROWS = 15;
 
@@ -59,6 +61,36 @@ export function groupForReceipts(rows: ReceiptSourceRow[]): { groups: ReceiptGro
     (a, b) => (a.orderDate === b.orderDate ? 0 : a.orderDate < b.orderDate ? -1 : 1) || a.customer.localeCompare(b.customer, 'ko'),
   );
   return { groups, skipped };
+}
+
+// 저장한 배송비 줄을 영수증 품목 줄로 바꾼다("버스 · 3박스 · 30,000원"). 스냅샷 모양(ReceiptLine)을 바꾸지 않고 품목 줄로 들어간다.
+// 저장하지 않은 제안 줄, 금액이 0원인 줄, 사업자를 알 수 없는 줄은 넣지 않는다(null).
+export function shippingReceiptRow(row: ShippingRow): ReceiptSourceRow | null {
+  if (!row.saved || row.amount === null || row.amount <= 0) return null;
+  return {
+    itemId: `ship:${row.key}`,
+    orderDate: row.orderDate,
+    customer: row.customer,
+    product: shippingLabel(row.method),
+    quantity: row.boxes,
+    unit: '박스',
+    sellerId: row.sellerId,
+    price: row.amount,
+    unitPrice: shippingUnitPrice(row.amount, row.boxes),
+  };
+}
+
+// 영수증 묶음(고객 × 사업자 × 출고일)마다 같은 묶음의 배송비 줄을 맨 뒤에 붙인다. 판매 줄이 없는 묶음은 만들지 않는다(배송비만으로 영수증을 만들지 않는다).
+export function attachShippingLines(groups: ReceiptGroup[], shipping: ReceiptSourceRow[]): ReceiptGroup[] {
+  const byKey = new Map<string, (ReceiptSourceRow & { price: number })[]>();
+  for (const r of shipping) {
+    if (r.sellerId === null || r.price === null) continue;
+    const key = `${r.orderDate}|${r.sellerId}|${r.customer}`;
+    const list = byKey.get(key) ?? [];
+    list.push({ ...r, price: r.price });
+    byKey.set(key, list);
+  }
+  return groups.map((g) => (byKey.has(g.key) ? { ...g, rows: [...g.rows, ...byKey.get(g.key)!] } : g));
 }
 
 // ── 발행 스냅샷(settlement_receipts.snapshot에 저장하는 모양) ──────────────────────────────────

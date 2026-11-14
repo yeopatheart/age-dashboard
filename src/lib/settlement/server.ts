@@ -8,11 +8,27 @@ import { stageOfCard, type LabelRow } from '@/lib/overview';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { buildSalesRows, type SalesRow, type SalesSourceCard, type SalesSourceItem, type StoredSale } from './sales';
 import type { StoredPurchase } from './purchases';
+import { buildShippingRows, type ShippingCard, type ShippingRow, type StoredShipping, type ShippingMethod } from './shipping';
 
 type Client = SupabaseClient<Database>;
 const CHUNK = 100;
 
+// 출고 완료된 그날 고객 카드(배송비를 붙이는 단위). 판매내역과 같은 stageOfCard 판정을 쓴다.
+export interface DoneCard {
+  id: string;
+  orderDate: string;
+  name: string; // 판매내역에 보이는 고객명(차수 표시 포함)
+  businessId: string;
+  terminalId: string | null;
+  terminal: string;
+  boxes: number; // 제출한 박스 수(택배는 제출 전이면 1)
+}
+
 export async function loadSalesRows(supabase: Client, from: string, to: string): Promise<SalesRow[]> {
+  return (await loadSalesAndCards(supabase, from, to)).rows;
+}
+
+export async function loadSalesAndCards(supabase: Client, from: string, to: string): Promise<{ rows: SalesRow[]; doneCards: DoneCard[] }> {
   const [dailies, businesses, terminalsResult] = await Promise.all([
     fetchAll(
       (a, b) =>
@@ -30,7 +46,7 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
     supabase.from('terminals').select('id, name, is_parcel'),
   ]);
   if (terminalsResult.error) throw new Error(`터미널 조회 실패: ${terminalsResult.error.message}`);
-  if (dailies.length === 0) return [];
+  if (dailies.length === 0) return { rows: [], doneCards: [] };
   const ids = dailies.map((d) => d.id);
 
   const [itemRows, labelRows, recordRows] = await Promise.all([
@@ -76,12 +92,13 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
   const businessName = new Map(businesses.map((b) => [b.id, b.name]));
   const split = businessIdsInBothRounds(dailies.map((d) => ({ businessId: d.business_id, round: d.round })));
 
+  const parcelOf = (terminalId: string | null) => !!terminalId && parcelTerminals.has(terminalId);
   const cards: SalesSourceCard[] = dailies.map((d) => {
     const { stage } = stageOfCard({
       items: (itemsByDaily.get(d.id) ?? []).map((i) => ({ changeStatus: i.change_status, isPacked: i.is_packed, quantity: Number(i.quantity), unit: i.unit, unshippedQuantity: Number(i.unshipped_quantity ?? 0) })),
       submittedBoxes: submittedBoxes.has(d.id) ? submittedBoxes.get(d.id)! : null,
       labels: labelsByDaily.get(d.id) ?? [],
-      parcel: !!d.terminal_id && parcelTerminals.has(d.terminal_id),
+      parcel: parcelOf(d.terminal_id),
     });
     const name = d.display_name ?? businessName.get(d.business_id) ?? '';
     return { id: d.id, orderDate: d.order_date, name: split.has(d.business_id) ? `${name} ${roundLabel(d.round)}` : name, sortOrder: d.sort_order, stage, terminal: (d.terminal_id && terminalName.get(d.terminal_id)) || '미지정' };
@@ -108,7 +125,47 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
     )
   ).map((s) => ({ orderItemId: s.order_item_id, sellerId: s.seller_id, price: s.price === null ? null : Number(s.price), unitPrice: s.unit_price === null ? null : Number(s.unit_price), productOverride: s.product_override, quantityOverride: s.quantity_override === null ? null : Number(s.quantity_override), unitOverride: s.unit_override, paid: s.paid, memo: s.memo }));
 
-  return buildSalesRows(cards, items, stored);
+  const doneCards: DoneCard[] = dailies.flatMap((d, i) =>
+    cards[i].stage === 'done'
+      ? [{ id: d.id, orderDate: d.order_date, name: cards[i].name, businessId: d.business_id, terminalId: d.terminal_id, terminal: cards[i].terminal, boxes: submittedBoxes.get(d.id) ?? (parcelOf(d.terminal_id) ? 1 : 0) }]
+      : [],
+  );
+  return { rows: buildSalesRows(cards, items, stored), doneCards };
+}
+
+// 정산 배송비 줄: 출고 완료 카드마다 저장한 값 + 설정(고객사 박스당 금액·터미널 퀵 가능)으로 만든 제안.
+// 설정 열(0062)이나 settlement_shipping 테이블이 없으면 missingTable 오류가 그대로 던져진다(호출한 화면이 rowsOrMissing로 안내한다).
+export async function loadShippingRows(supabase: Client, doneCards: DoneCard[], sales: SalesRow[]): Promise<{ rows: ShippingRow[]; cards: ShippingCard[] }> {
+  if (doneCards.length === 0) return { rows: [], cards: [] };
+  const [terminals, businesses] = await Promise.all([
+    fetchAll((a, b) => supabase.from('terminals').select('id, quick_allowed').order('id').range(a, b), '터미널 설정 조회 실패(마이그레이션 0062 적용 필요): '),
+    fetchAll((a, b) => supabase.from('businesses').select('id, bus_rate, quick_rate, parcel_rate').order('id').range(a, b), '고객사 배송비 설정 조회 실패(마이그레이션 0062 적용 필요): '),
+  ]);
+  const stored: StoredShipping[] = (
+    await mapChunks(
+      doneCards.map((c) => c.id),
+      CHUNK,
+      (chunk) => fetchAll((a, b) => supabase.from('settlement_shipping').select('id, daily_business_id, method, boxes, amount, seller_id, paid, memo').in('daily_business_id', chunk).order('id').range(a, b), '정산 배송비 조회 실패(마이그레이션 0062 적용 필요): '),
+    )
+  ).map((r) => ({ id: r.id, cardId: r.daily_business_id, method: r.method as ShippingMethod, boxes: r.boxes, amount: Number(r.amount), sellerId: r.seller_id, paid: r.paid, memo: r.memo }));
+
+  const quickAllowed = new Map(terminals.map((t) => [t.id, t.quick_allowed]));
+  const ratesByBusiness = new Map(businesses.map((b) => [b.id, { bus: b.bus_rate, quick: b.quick_rate, parcel: b.parcel_rate }]));
+  // 그 고객의 판매 줄 사업자(같은 출고일·고객명의 첫 사업자)
+  const sellerByCustomer = new Map<string, string>();
+  for (const r of sales) if (r.sellerId && !sellerByCustomer.has(`${r.orderDate}|${r.customer}`)) sellerByCustomer.set(`${r.orderDate}|${r.customer}`, r.sellerId);
+
+  const cards: ShippingCard[] = doneCards.map((c) => ({
+    cardId: c.id,
+    orderDate: c.orderDate,
+    customer: c.name,
+    terminal: c.terminal,
+    quickAllowed: c.terminalId ? (quickAllowed.get(c.terminalId) ?? true) : true,
+    boxes: c.boxes,
+    rates: ratesByBusiness.get(c.businessId) ?? { bus: null, quick: null, parcel: null },
+    sellerId: sellerByCustomer.get(`${c.orderDate}|${c.name}`) ?? null,
+  }));
+  return { rows: buildShippingRows(cards, stored), cards };
 }
 
 // 매입내역에 사용자가 입력해서 저장한 값(기간 안의 출고일). 행 목록은 판매내역에서 계산하고 여기서는 입력값만 읽는다.

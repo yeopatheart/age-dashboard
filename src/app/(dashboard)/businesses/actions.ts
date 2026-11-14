@@ -70,3 +70,25 @@ export async function deleteBusiness(id: string): Promise<{ error: string | null
   revalidatePath('/dashboard');
   return { error: null };
 }
+
+export interface BusinessShippingRates {
+  bus: number | null; // 박스당 기본 금액(원). null = 그 수단을 쓰지 않는 고객사
+  quick: number | null;
+  parcel: number | null;
+}
+
+const MAX_RATE = 10_000_000; // 박스당 천만 원. 0062 열은 integer라 넘치지 않게만 막는다
+
+// 정산 배송비 제안에 쓰는 고객사별 수단별 박스당 기본 금액. 날짜별 금액은 정산에서 고친다.
+export async function setBusinessShippingRates(id: string, rates: BusinessShippingRates): Promise<{ error: string | null }> {
+  await requirePermission('businesses:edit');
+  for (const v of [rates.bus, rates.quick, rates.parcel]) {
+    if (v !== null && (!Number.isInteger(v) || v < 0 || v > MAX_RATE)) return { error: `박스당 금액은 0~${MAX_RATE.toLocaleString('ko-KR')}원 사이 정수로 입력해주세요.` };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.from('businesses').update({ bus_rate: rates.bus, quick_rate: rates.quick, parcel_rate: rates.parcel }).eq('id', id);
+  if (error) return { error: error.message };
+  revalidatePath('/businesses');
+  revalidatePath('/settlement');
+  return { error: null };
+}

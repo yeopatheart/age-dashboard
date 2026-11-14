@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
 import { MapPinned, Plus, Trash2 } from 'lucide-react';
-import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate, setTerminalParcel } from './actions';
+import { createTerminal, updateTerminal, deleteTerminal, setTerminalColor, setTerminalSeparate, setTerminalParcel, setTerminalQuickAllowed } from './actions';
 import { ColorPicker } from '@/components/color-picker';
 import { terminalBadgeProps } from '@/lib/terminal-color';
 import { useCan } from '@/components/permissions-context';
@@ -30,7 +30,8 @@ interface Terminal {
   is_parcel: boolean;
 }
 
-export function TerminalsClient({ terminals, businessCount }: { terminals: Terminal[]; businessCount: Record<string, number> }) {
+// quickAllowed: 터미널 id → 퀵 가능 여부(정산 배송비 설정, 0062). null이면 마이그레이션 전이라 그 설정 칸을 숨긴다.
+export function TerminalsClient({ terminals, businessCount, quickAllowed }: { terminals: Terminal[]; businessCount: Record<string, number>; quickAllowed: Record<string, boolean> | null }) {
   const can = useCan();
   const canEdit = can('terminals:edit');
   const canDelete = can('terminals:delete');
@@ -47,6 +48,8 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
   // 색·별도 주문은 누르는 즉시 저장하고 화면에도 바로 반영한다(서버 갱신을 기다리지 않는다).
   const [local, setLocal] = useState<Record<string, Partial<Terminal>>>({});
 
+  const [quickLocal, setQuickLocal] = useState<Record<string, boolean>>({});
+  const quickOf = (t: Terminal) => quickLocal[t.id] ?? quickAllowed?.[t.id] ?? true;
   const view = (t: Terminal): Terminal => ({ ...t, ...local[t.id] });
   const filtered = useMemo(() => {
     const k = search.trim().toLowerCase();
@@ -89,6 +92,15 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
     setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], is_parcel: value, ...(value ? { is_separate: true } : {}) } }));
     await setTerminalParcel(t.id, value);
   };
+  const setQuick = async (t: Terminal, value: boolean) => {
+    const previous = quickOf(t);
+    setQuickLocal((p) => ({ ...p, [t.id]: value }));
+    const result = await setTerminalQuickAllowed(t.id, value).catch(() => ({ error: '저장하지 못했습니다. 권한이나 연결을 확인한 뒤 다시 시도해주세요.' }));
+    if (result.error) {
+      setQuickLocal((p) => ({ ...p, [t.id]: previous }));
+      setError(result.error);
+    }
+  };
   const setColor = async (t: Terminal, fill: string | null, border: string | null) => {
     setLocal((p) => ({ ...p, [t.id]: { ...p[t.id], fill_color: fill, border_color: border } }));
     await setTerminalColor(t.id, fill, border);
@@ -121,6 +133,9 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
       label: '택배',
       render: (t) => <Toggle checked={t.is_parcel} onChange={(v) => setParcel(t, v)} label={`${t.name} 택배`} disabled={!canEdit} />,
     },
+    ...(quickAllowed
+      ? [{ key: 'quick', label: '퀵 가능', render: (t: Terminal) => <Toggle checked={quickOf(t)} onChange={(v) => setQuick(t, v)} label={`${t.name} 퀵 가능`} disabled={!canEdit} /> } satisfies Column<Terminal>]
+      : []),
     { key: 'via', label: '등록', render: (t) => <ViaTag via={t.created_via} date={t.created_at} /> },
   ];
 
@@ -228,6 +243,15 @@ export function TerminalsClient({ terminals, businessCount }: { terminals: Termi
             </span>
             <Toggle checked={open.is_parcel} onChange={(v) => setParcel(open, v)} label="택배" disabled={!canEdit} />
           </div>
+          {quickAllowed && (
+            <div className="ak-setting">
+              <span>
+                퀵 가능
+                <small>끄면 이 터미널로 가는 고객에게는 정산 배송비로 퀵을 제안하지 않습니다(이미 저장한 값은 그대로 둡니다)</small>
+              </span>
+              <Toggle checked={quickOf(open)} onChange={(v) => setQuick(open, v)} label="퀵 가능" disabled={!canEdit} />
+            </div>
+          )}
           <div className="ak-field">
             <span className="ak-field-label">색상</span>
             <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><ColorPicker fill={open.fill_color} border={open.border_color} onChange={(f, b) => setColor(open, f, b)} sample={open.name} /></fieldset>

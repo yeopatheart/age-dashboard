@@ -3,9 +3,9 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { requirePermission } from '@/lib/permissions/access';
-import { loadSalesRows } from '@/lib/settlement/server';
-import { buildSnapshot, groupForReceipts, type ReceiptSeller, type ReceiptSkipReason, type ReceiptSnapshot, type ReceiptSourceRow } from '@/lib/settlement/receipt';
-import { migrationsFor, missingTable } from '@/lib/supabase/missing-table';
+import { loadSalesAndCards, loadShippingRows } from '@/lib/settlement/server';
+import { attachShippingLines, buildSnapshot, groupForReceipts, shippingReceiptRow, type ReceiptSeller, type ReceiptSkipReason, type ReceiptSnapshot, type ReceiptSourceRow } from '@/lib/settlement/receipt';
+import { migrationsFor, missingTable, valueOrMissing } from '@/lib/supabase/missing-table';
 import { isIsoDate } from '@/lib/validate';
 
 const MAX_ITEMS = 2000;
@@ -48,7 +48,8 @@ export async function issueReceipts(input: { itemIds: string[]; from: string; to
   const supabase = await createClient();
   try {
     const wanted = new Set(ids);
-    const sales = (await loadSalesRows(supabase, input.from, input.to)).filter((r) => wanted.has(r.itemId));
+    const { rows: allSales, doneCards } = await loadSalesAndCards(supabase, input.from, input.to);
+    const sales = allSales.filter((r) => wanted.has(r.itemId));
     const sources: ReceiptSourceRow[] = sales.map((r) => ({
       itemId: r.itemId,
       orderDate: r.orderDate,
@@ -61,7 +62,10 @@ export async function issueReceipts(input: { itemIds: string[]; from: string; to
       unitPrice: r.unitPrice,
     }));
     const notFound = ids.length - sources.length;
-    const { groups, skipped } = groupForReceipts(sources);
+    const { groups: salesGroups, skipped } = groupForReceipts(sources);
+    // 저장한 배송비는 같은 고객·사업자·출고일 묶음의 맨 뒤 줄로 들어간다. 배송비 테이블(0062)이 아직 없으면 판매 줄만 발행한다.
+    const shipping = await valueOrMissing(loadShippingRows(supabase, doneCards, allSales));
+    const groups = attachShippingLines(salesGroups, (shipping.value?.rows ?? []).map(shippingReceiptRow).filter((r): r is ReceiptSourceRow => r !== null));
     const skippedLines: SkippedLine[] = skipped.map((s) => ({ orderDate: s.row.orderDate, customer: s.row.customer, product: s.row.product, reason: s.reason }));
     if (groups.length === 0) {
       return { ...fail('발행할 수 있는 줄이 없습니다. 선택한 줄의 사업자 구분과 판매가를 입력해주세요.'), skipped: skippedLines, notFound };

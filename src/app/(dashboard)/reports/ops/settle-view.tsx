@@ -147,7 +147,7 @@ export function SettleView({ data, granularity, periodKey }: { data: SettleData;
                 <thead><tr><th>출고일</th><th>미입력 줄</th><th>전체 줄</th><th /></tr></thead>
                 <tbody>
                   {data.openSales.map((d) => (
-                    <tr key={d.date}><td>{dateLabel(d.date)}</td><td>{d.lines}</td><td>{d.total}</td><td><Link href={`/settlement?g=day&d=${d.date}`} className="op-muted" style={{ textDecoration: 'underline' }}>정산에서 열기</Link></td></tr>
+                    <tr key={d.date}><td>{dateLabel(d.date)}</td><td>{d.lines}</td><td>{d.total}</td><td><Link href={`/settlement?d=${d.date}`} className="op-muted" style={{ textDecoration: 'underline' }}>정산에서 열기</Link></td></tr>
                   ))}
                 </tbody>
               </table>
@@ -165,7 +165,7 @@ export function SettleView({ data, granularity, periodKey }: { data: SettleData;
                   <thead><tr><th>출고일</th><th>품목</th><th /></tr></thead>
                   <tbody>
                     {data.openPurchases.map((p) => (
-                      <tr key={`${p.date}|${p.product}`}><td>{dateLabel(p.date)}</td><td>{p.product}</td><td><Link href={`/settlement?g=day&d=${p.date}`} className="op-muted" style={{ textDecoration: 'underline' }}>정산에서 열기</Link></td></tr>
+                      <tr key={`${p.date}|${p.product}`}><td>{dateLabel(p.date)}</td><td>{p.product}</td><td><Link href={`/settlement?d=${p.date}`} className="op-muted" style={{ textDecoration: 'underline' }}>정산에서 열기</Link></td></tr>
                     ))}
                   </tbody>
                 </table>

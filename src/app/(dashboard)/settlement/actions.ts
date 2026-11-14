@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { requirePermission } from '@/lib/permissions/access';
+import { parseShippingMethod, shippingInputError, UUID_PATTERN, type ShippingInput } from '@/lib/settlement/shipping';
 
 export interface SalesPatch {
   itemIds: string[]; // 값을 바꿀 판매내역 줄(주문 줄 id). 여러 줄이면 같은 값을 일괄 적용한다
@@ -135,6 +136,46 @@ export async function savePurchases(patch: PurchasePatch): Promise<{ error: stri
       return { error: error.message };
     }
   }
+  revalidatePath('/settlement');
+  return { error: null };
+}
+
+// ─── 배송비(버스·퀵·택배) ────────────────────────────────────────────────────
+
+// 배송비 저장. 행은 (카드 × 수단)이고 처음 저장하면 만들고 이미 있으면 보낸 값으로 바꾼다. 제안 줄도 이 액션으로 저장한다.
+export async function saveShippingRows(rows: ShippingInput[]): Promise<{ error: string | null }> {
+  await requirePermission('settlement:edit');
+  if (rows.length === 0) return { error: null };
+  if (rows.length > MAX_ROWS) return { error: `한 번에 ${MAX_ROWS.toLocaleString('ko-KR')}건까지만 바꿀 수 있습니다.` };
+  for (const r of rows) {
+    const problem = shippingInputError(r);
+    if (problem) return { error: problem };
+  }
+  const byKey = new Map(rows.map((r) => [`${r.cardId}|${r.method}`, r])); // 같은 행이 겹치면 마지막 값
+  const supabase = await createClient();
+  const list = [...byKey.values()];
+  for (let i = 0; i < list.length; i += CHUNK) {
+    const chunk = list.slice(i, i + CHUNK).map((r) => {
+      const memo = (r.memo ?? '').trim();
+      return { daily_business_id: r.cardId, method: parseShippingMethod(r.method)!, boxes: r.boxes, amount: r.amount, seller_id: r.sellerId, paid: r.paid === true, memo: memo === '' ? null : memo };
+    });
+    const { error } = await supabase.from('settlement_shipping').upsert(chunk, { onConflict: 'daily_business_id,method' });
+    if (error) {
+      if (error.code === '23503') return { error: '주문 카드나 사업자가 바뀌어 저장하지 못했습니다. 화면을 새로고침한 뒤 다시 시도해주세요.' };
+      return { error: error.message };
+    }
+  }
+  revalidatePath('/settlement');
+  return { error: null };
+}
+
+// 저장한 배송비 한 줄을 지운다(설정으로 만든 제안 줄은 다시 나타난다). 잘못 추가한 줄을 정리할 때 쓴다.
+export async function deleteShippingRow(cardId: string, method: string): Promise<{ error: string | null }> {
+  await requirePermission('settlement:edit');
+  if (!UUID_PATTERN.test(cardId) || !parseShippingMethod(method)) return { error: '배송비 행이 올바르지 않습니다.' };
+  const supabase = await createClient();
+  const { error } = await supabase.from('settlement_shipping').delete().eq('daily_business_id', cardId).eq('method', parseShippingMethod(method)!);
+  if (error) return { error: error.message };
   revalidatePath('/settlement');
   return { error: null };
 }
