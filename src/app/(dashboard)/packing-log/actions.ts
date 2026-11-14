@@ -8,6 +8,7 @@ import { assignToBoxes, trainModel, type PackingItem } from '@/lib/packing/model
 import { emptyBoxMessage, firstEmptyBoxIndex } from '@/lib/packing/box-rules';
 import { compareWithRecommendation, getTodayModel, orderSignature } from '@/lib/packing/server';
 import { requirePermission } from '@/lib/permissions/access';
+import { normalizeMergeGroups } from '@/lib/box-merge';
 import { missingTable } from '@/lib/supabase/missing-table';
 import { loadPackingRows } from '@/lib/packing/load-rows';
 import type { PackingBoxType, PackingBusiness } from '@/lib/packing/types';
@@ -19,6 +20,8 @@ export interface PackingSubmission {
   weights: Record<string, number | null>;
   // 상품 배치를 사람이 직접 확인했는지(상세 수정). 박스가 1개면 배치가 자명하므로 항상 확인된 것으로 저장한다.
   itemsVerified: boolean;
+  // 합포장 묶음(박스 순번). 값이 있을 때만 저장한다 — 화면에서 합포장을 건드리지 않았으면 보내지 않아 다른 곳(라벨 영역)에서 바꾼 묶음을 덮어쓰지 않는다.
+  mergeGroups?: number[][];
 }
 
 const EPSILON = 0.0001;
@@ -56,6 +59,9 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
       .select('id, name, inner_width_cm, inner_depth_cm, inner_height_cm, is_mulbong_box')
       .in('id', [...new Set(input.boxes.map((b) => b.boxId))]),
   ]);
+
+  // 주문 상품이 모두 취소된 고객사는 박스 할당이 필요 없다.
+  if ((items ?? []).length > 0 && (items ?? []).every((i) => i.change_status === 'cancelled')) return { error: '주문이 모두 취소된 고객사라 박스를 할당할 수 없습니다.' };
 
   // 담아야 할 수량 = 주문 − 미출고. 전량 미출고인 상품은 대상에서 뺀다.
   const liveItems = (items ?? [])
@@ -181,7 +187,10 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   await Promise.all(weightUpdates);
 
   // daily_businesses.total_boxes(운영 시간 리포트의 박스 수 등이 읽는다)를 제출한 박스 수에 맞춰 둔다.
-  await supabase.from('daily_businesses').update({ total_boxes: input.boxes.length }).eq('id', daily.id);
+  // 합포장은 화면에서 건드렸을 때만 함께 저장한다(박스 수를 넘는 번호는 뺀다).
+  const dailyUpdate: { total_boxes: number; merge_groups?: number[][] } = { total_boxes: input.boxes.length };
+  if (input.mergeGroups !== undefined) dailyUpdate.merge_groups = normalizeMergeGroups(input.mergeGroups, input.boxes.length);
+  await supabase.from('daily_businesses').update(dailyUpdate).eq('id', daily.id);
 
   // 제출 이력(0055): 재제출하면 위에서 packing_records를 지우고 다시 만들기 때문에, 제출마다 한 줄씩 따로 쌓아 둔다(재제출 횟수·최초 제출 때의 추천 적중 등).
   // 리포트용 기록이라 실패해도 현장 제출을 막지 않는다 — 서버 로그에만 남기고, 마이그레이션 전(테이블 없음)에는 조용히 건너뛴다.

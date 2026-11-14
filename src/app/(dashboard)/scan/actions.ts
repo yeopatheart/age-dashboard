@@ -6,6 +6,7 @@ import { barcodeOrderDate, barcodeProblem, normalizeBarcodeInput, type BarcodePr
 import { nameWithRound } from '@/lib/orders';
 import { todayKST } from '@/lib/order-date';
 import { mergeGroupOf, normalizeMergeGroups } from '@/lib/box-merge';
+import { cancelledCardIds } from '@/lib/card-cancelled';
 import { requirePermission } from '@/lib/permissions/access';
 
 // 스캔 결과 화면에 보여줄 박스 정보
@@ -28,7 +29,8 @@ export type ScanResult =
   | { status: 'duplicate'; box: ScannedBox } // 이미 상차 완료된 박스를 다시 스캔함
   | { status: 'invalid'; code: string; reason: BarcodeProblem } // 우리 바코드가 아님: format = 숫자 12자리가 아님, check = 확인 숫자가 맞지 않음
   | { status: 'unknown'; code: string } // 형식은 맞지만 발급된 적 없는 번호
-  | { status: 'past'; code: string; date: string }; // 오늘이 아닌 날짜의 라벨(어제 스티커 등) — 상차하지 않는다
+  | { status: 'past'; code: string; date: string } // 오늘이 아닌 날짜의 라벨(어제 스티커 등) — 상차하지 않는다
+  | { status: 'cancelled'; code: string; business: string }; // 주문이 모두 취소된 고객사의 박스 — 상차하지 않는다
 
 // 스캔 결과 화면에 보여줄 정보를 모은다. 업체 카드·같은 카드의 라벨은 서로 무관해서 같이 읽고, 이름은 그 다음에 한 번에 읽는다.
 async function describe(supabase: Awaited<ReturnType<typeof createClient>>, label: { id: string; daily_business_id: string; seq: number; barcode: string; loaded_at: string | null }): Promise<ScannedBox> {
@@ -85,6 +87,11 @@ export async function scanBarcode(raw: string): Promise<ScanResult> {
     supabase.from('box_labels').select('id, daily_business_id, seq, barcode, loaded_at').eq('barcode', code).maybeSingle(),
   ]);
   if (!label) return { status: 'unknown', code };
+  // 주문이 모두 취소된 고객사의 박스는 상차하지 않는다(라벨을 이미 붙여 둔 뒤 취소된 경우).
+  if ((await cancelledCardIds(supabase, [label.daily_business_id])).size > 0) {
+    const box = await describe(supabase, label);
+    return { status: 'cancelled', code, business: box.business };
+  }
 
   if (label.loaded_at) return { status: 'duplicate', box: await describe(supabase, label) };
 

@@ -7,6 +7,9 @@ import { mergeLabelText, normalizeMergeGroups, type MergeGroups } from '@/lib/bo
 import { LABEL_PRESETS, LABEL_TEMPLATE_KEY, buildTemplate, parseElements, type LabelData, type LabelPresetKey, type LabelTemplate } from '@/lib/labels/template';
 import { printedBoxTypeValue } from '@/lib/labels/reprint';
 import { printableSeqError } from '@/lib/packing/box-rules';
+import { unprintedSeqs } from '@/lib/label-status';
+import { cancelledCardIds } from '@/lib/card-cancelled';
+import { isIsoDate } from '@/lib/validate';
 import { missingTable } from '@/lib/supabase/missing-table';
 import { LABEL_ACTIVE_DESIGN_KEY, LABEL_MARGIN_KEY, LABEL_ROTATE_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelDesigns, loadLabelRotate, loadLabelTemplate, loadSubmittedBoxTypes, type CardLabelBase, type CardLabelInfo, type LabelDesign } from '@/lib/labels/server';
 import { requirePermission } from '@/lib/permissions/access';
@@ -145,48 +148,48 @@ export interface LabelPrintPayload {
   rotated: boolean; // 롤 방향에 맞춰 90도 돌려 출력하는 설정(라벨 설정 화면)
 }
 
-// 박스 순번(seqs)의 라벨을 출력할 준비를 한다: 아직 바코드가 없는 순번에는 바코드를 발급하고, 출력 이력을 남기고,
-// 인쇄에 필요한 라벨 디자인과 값을 돌려준다. 같은 박스를 다시 부르면 같은 바코드로 재출력이 된다.
-export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: number[] }): Promise<LabelPrintPayload> {
-  await requirePermission('packing:print');
-  const fail = (error: string): LabelPrintPayload => ({ error, template: null, labels: [], infos: [], rotated: false });
-  const seqs = [...new Set(input.seqs)].filter((n) => Number.isInteger(n) && n >= 1 && n <= 99).sort((a, b) => a - b);
-  if (seqs.length === 0) return fail('출력할 박스를 선택해주세요.');
+// 업체 한 곳의 박스 순번(seqs) 라벨을 출력할 준비를 한다: 아직 바코드가 없는 순번에는 바코드를 발급하고, 출력 이력을 남기고, 인쇄할 라벨 값을 돌려준다.
+// 한 업체 출력(prepareLabelPrint)과 일괄 출력(prepareBatchLabelPrint)이 같이 쓴다. 같은 박스를 다시 부르면 같은 바코드로 재출력이 된다.
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+async function prepareCardLabels(
+  supabase: Supabase,
+  userId: string | null,
+  dailyBusinessId: string,
+  rawSeqs: number[],
+  template: LabelTemplate,
+): Promise<{ error: string } | { error: null; labels: LabelData[] }> {
+  const seqs = [...new Set(rawSeqs)].filter((n) => Number.isInteger(n) && n >= 1 && n <= 99).sort((a, b) => a - b);
+  if (seqs.length === 0) return { error: '출력할 박스를 선택해주세요.' };
+  if ((await cancelledCardIds(supabase, [dailyBusinessId])).size > 0) return { error: '주문이 모두 취소된 고객사라 라벨을 출력할 수 없습니다.' };
 
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims.sub ?? null;
-
-  const [base, template, rotated, { data: existing }] = await Promise.all([
-    loadCardLabelBase(supabase, input.dailyBusinessId),
-    loadLabelTemplate(supabase),
-    loadLabelRotate(supabase),
-    supabase.from('box_labels').select('id, seq, barcode').eq('daily_business_id', input.dailyBusinessId),
+  const [base, { data: existing }] = await Promise.all([
+    loadCardLabelBase(supabase, dailyBusinessId),
+    supabase.from('box_labels').select('id, seq, barcode').eq('daily_business_id', dailyBusinessId),
   ]);
-  if (!base) return fail('업체 주문을 찾지 못했습니다.');
+  if (!base) return { error: '업체 주문을 찾지 못했습니다.' };
 
   // 라벨은 제출한 박스에 대해서만 출력한다(제출 전이나 제출한 박스 수보다 큰 번호는 막는다).
   // 제출한 박스 종류도 같이 읽는다: 라벨 N번 = N번째 박스(박스 종류 항목이 있는 디자인이면 라벨에 찍힌다).
-  const boxTypes = await loadSubmittedBoxTypes(supabase, input.dailyBusinessId);
+  const boxTypes = await loadSubmittedBoxTypes(supabase, dailyBusinessId);
   const seqError = printableSeqError(boxTypes.length, seqs);
-  if (seqError) return fail(seqError);
+  if (seqError) return { error: seqError };
 
   const labelBySeq = new Map((existing ?? []).map((l) => [l.seq, l]));
   const missing = seqs.filter((s) => !labelBySeq.has(s));
   if (missing.length > 0) {
     let rows;
     try {
-      rows = missing.map((seq) => ({ daily_business_id: input.dailyBusinessId, seq, barcode: makeBoxBarcode(base.orderDate, base.businessNumber, seq) }));
+      rows = missing.map((seq) => ({ daily_business_id: dailyBusinessId, seq, barcode: makeBoxBarcode(base.orderDate, base.businessNumber, seq) }));
     } catch (e) {
-      return fail(e instanceof Error ? e.message : '바코드를 만들지 못했습니다.');
+      return { error: e instanceof Error ? e.message : '바코드를 만들지 못했습니다.' };
     }
     const { data: created, error } = await supabase.from('box_labels').upsert(rows, { onConflict: 'daily_business_id,seq' }).select('id, seq, barcode');
-    if (error) return fail(error.message);
+    if (error) return { error: error.message };
     for (const l of created ?? []) labelBySeq.set(l.seq, l);
   }
 
   const ids = seqs.flatMap((s) => (labelBySeq.get(s) ? [labelBySeq.get(s)!.id] : []));
-  if (ids.length !== seqs.length) return fail('바코드를 발급하지 못한 박스가 있습니다. 다시 시도해주세요.');
+  if (ids.length !== seqs.length) return { error: '바코드를 발급하지 못한 박스가 있습니다. 다시 시도해주세요.' };
 
   // 이번에 라벨에 찍히는 박스 종류를 기억해 둔다(나중에 박스 종류가 바뀌면 "재출력 필요"로 알린다). 같은 값끼리 묶어 한 번에 쓴다.
   // 열(0051)이 아직 없으면 건너뛴다 — 그 경우 화면은 재출력 안내만 하지 않는다.
@@ -197,13 +200,94 @@ export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: 
   }
   for (const [value, labelIds] of idsByPrinted) {
     const { error } = await supabase.from('box_labels').update({ printed_box_type: value }).in('id', labelIds);
-    if (error && missingTable(error.message) !== 'label_printed_box_type') return fail(error.message);
+    if (error && missingTable(error.message) !== 'label_printed_box_type') return { error: error.message };
   }
   await supabase.from('box_label_events').insert(ids.map((label_id) => ({ label_id, event: 'print' as const, label_kind: LABEL_TEMPLATE_KEY, created_by: userId })));
 
-  const labels: LabelData[] = seqs.map((seq) => ({ ...base.data, boxNo: seq, barcode: labelBySeq.get(seq)!.barcode, merge: mergeLabelText(base.mergeGroups, seq), boxType: boxTypes[seq - 1] ?? '' }));
+  return { error: null, labels: seqs.map((seq) => ({ ...base.data, boxNo: seq, barcode: labelBySeq.get(seq)!.barcode, merge: mergeLabelText(base.mergeGroups, seq), boxType: boxTypes[seq - 1] ?? '' })) };
+}
+
+export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: number[] }): Promise<LabelPrintPayload> {
+  await requirePermission('packing:print');
+  const fail = (error: string): LabelPrintPayload => ({ error, template: null, labels: [], infos: [], rotated: false });
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const [template, rotated] = await Promise.all([loadLabelTemplate(supabase), loadLabelRotate(supabase)]);
+  const result = await prepareCardLabels(supabase, claims?.claims.sub ?? null, input.dailyBusinessId, input.seqs, template);
+  if (result.error !== null) return fail(result.error);
   revalidatePath('/packing-log');
-  return { error: null, template, labels, infos: await loadCardLabels(supabase, input.dailyBusinessId), rotated };
+  return { error: null, template, labels: result.labels, infos: await loadCardLabels(supabase, input.dailyBusinessId), rotated };
+}
+
+export interface BatchLabelPayload {
+  error: string | null;
+  template: LabelTemplate | null;
+  labels: LabelData[];
+  rotated: boolean;
+  businesses: number; // 라벨을 낸 업체 수
+  skipped: string[]; // 준비하지 못한 업체 이름(이유 포함)
+}
+
+const BATCH_CONCURRENCY = 4;
+
+// 날짜의 제출한 업체(택배 제외) 중 아직 한 번도 출력하지 않은 라벨을 업체 번호순으로 모아 한 번에 출력할 준비를 한다.
+// 업체마다 바코드를 발급하고 출력 이력을 남기므로, 인쇄 대화상자를 닫거나 취소해도 "출력함"으로 기록된다(업체별 출력과 같다).
+export async function prepareBatchLabelPrint(orderDate: string): Promise<BatchLabelPayload> {
+  await requirePermission('packing:print');
+  const fail = (error: string): BatchLabelPayload => ({ error, template: null, labels: [], rotated: false, businesses: 0, skipped: [] });
+  if (!isIsoDate(orderDate)) return fail('날짜 형식이 올바르지 않습니다.');
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = claims?.claims.sub ?? null;
+
+  const { data: dailies, error: dailyError } = await supabase
+    .from('daily_businesses')
+    .select('id, business_id, business_number, display_name, terminal_id')
+    .eq('order_date', orderDate)
+    .order('business_number');
+  if (dailyError) return fail(dailyError.message);
+  const businessIds = [...new Set((dailies ?? []).map((d) => d.business_id))];
+  const [{ data: terminals }, { data: businessRows }, { data: records }, template, rotated] = await Promise.all([
+    supabase.from('terminals').select('id, is_parcel'),
+    businessIds.length ? supabase.from('businesses').select('id, name').in('id', businessIds) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    supabase.from('packing_records').select('id, daily_business_id').eq('order_date', orderDate),
+    loadLabelTemplate(supabase),
+    loadLabelRotate(supabase),
+  ]);
+  const businessName = new Map((businessRows ?? []).map((b) => [b.id, b.name]));
+  const parcel = new Set((terminals ?? []).filter((t) => t.is_parcel).map((t) => t.id));
+  const submitted = new Set((records ?? []).map((r) => r.daily_business_id));
+  // 주문이 모두 취소된 고객사는 라벨이 필요 없다.
+  const cancelled = await cancelledCardIds(supabase, (dailies ?? []).map((d) => d.id));
+  const targets = (dailies ?? []).filter((d) => submitted.has(d.id) && !cancelled.has(d.id) && !(d.terminal_id && parcel.has(d.terminal_id)));
+
+  const perBusiness: { order: number; name: string; labels: LabelData[]; error: string | null }[] = [];
+  for (let i = 0; i < targets.length; i += BATCH_CONCURRENCY) {
+    const chunk = targets.slice(i, i + BATCH_CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map(async (d, k) => {
+        const name = d.display_name ?? businessName.get(d.business_id) ?? `업체 ${d.business_number}번`;
+        const [infos, boxTypes] = await Promise.all([loadCardLabels(supabase, d.id), loadSubmittedBoxTypes(supabase, d.id)]);
+        const seqs = unprintedSeqs(boxTypes.length, infos.filter((l) => l.printCount > 0).map((l) => l.seq));
+        if (seqs.length === 0) return { order: i + k, name, labels: [] as LabelData[], error: null };
+        const result = await prepareCardLabels(supabase, userId, d.id, seqs, template);
+        return result.error === null ? { order: i + k, name, labels: result.labels, error: null } : { order: i + k, name, labels: [] as LabelData[], error: result.error };
+      }),
+    );
+    perBusiness.push(...results);
+  }
+  perBusiness.sort((a, b) => a.order - b.order);
+  const labels = perBusiness.flatMap((b) => b.labels);
+  if (labels.length === 0 && perBusiness.every((b) => !b.error)) return fail('아직 출력하지 않은 라벨이 없습니다.');
+  revalidatePath('/packing-log');
+  return {
+    error: null,
+    template,
+    labels,
+    rotated,
+    businesses: perBusiness.filter((b) => b.labels.length > 0).length,
+    skipped: perBusiness.filter((b) => b.error).map((b) => `${b.name}: ${b.error}`),
+  };
 }
 
 // 합포장 묶음 저장(박스 할당 화면의 라벨 영역). 묶음을 바꾸면 이미 출력한 라벨의 합포장 표시가 달라지므로 화면에서 다시 출력하도록 안내한다.

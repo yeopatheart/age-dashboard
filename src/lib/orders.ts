@@ -110,6 +110,12 @@ export function isCardComplete(items: Pick<OrderItem, 'changeStatus' | 'isPacked
   return live.every((i) => !isUndecidedQuantity(i) && (i.isPacked || i.quantity - i.unshippedQuantity <= 0));
 }
 
+// 업체 카드의 주문 상품이 모두 취소됐는지(상품이 하나 이상 있고 전부 취소). 이 카드는 "취소된 고객사"라서 박스 할당·라벨 출력·상차가 필요 없다.
+// 상품이 아직 하나도 없는 카드(방금 만든 빈 카드)는 취소가 아니다.
+export function isCardCancelled(items: Pick<OrderItem, 'changeStatus'>[]): boolean {
+  return items.length > 0 && items.every((i) => i.changeStatus === 'cancelled');
+}
+
 // 준비 방식: 일반 / 물봉(물봉 안에 상품을 담는다) / 기포기(물봉 + 기포기를 부착해서 나간다).
 // 같은 상품도 준비 방식이 다르면 별개 줄·별개 합계다.
 export type Prep = 'none' | 'mulbong' | 'aerator';

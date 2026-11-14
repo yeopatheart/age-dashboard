@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
 import { loadAppSettings } from '@/lib/settings-server';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
+import { normalizeMergeGroups } from '@/lib/box-merge';
 import { ensureRecommendations, getTodayModel, orderSignature, type LiveOrderItem, type RecommendationState } from '@/lib/packing/server';
 import type { PackingBusiness } from '@/lib/packing/types';
 import { fetchAll, mapChunks, selectAll } from '@/lib/supabase/fetch-all';
@@ -14,7 +15,7 @@ import { todayKST } from '@/lib/order-date';
 export async function loadPackingRows(supabase: SupabaseClient<Database>, orderDate: string, onlyDailyId?: string) {
   // 1단계: 서로 의존하지 않는 조회를 한 번에 보낸다.
   const [{ data: dailies, error: dailyError }, businesses, { data: terminals }, { data: boxes }, products, settings] = await Promise.all([
-    supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id, display_name').eq('order_date', orderDate).order('sort_order'),
+    supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id, display_name, merge_groups').eq('order_date', orderDate).order('sort_order'),
     fetchAll((from, to) => supabase.from('businesses').select('id, name').order('id').range(from, to), '업체 조회 실패: '),
     supabase.from('terminals').select('id, name, is_parcel'),
     supabase.from('boxes').select('id, name, is_active, inner_width_cm, inner_depth_cm, inner_height_cm, is_mulbong_box').order('name'),
@@ -132,6 +133,8 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
         const reason = excludedReason(Number(i.quantity), i.unit, Number(i.unshipped_quantity ?? 0));
         return reason ? [{ name: i.product_name_raw, reason }] : [];
       }),
+      cancelled: (items ?? []).some((i) => i.daily_business_id === d.id) && (items ?? []).filter((i) => i.daily_business_id === d.id).every((i) => i.change_status === 'cancelled'),
+      mergeGroups: normalizeMergeGroups(d.merge_groups),
       recommendation: recommendations.get(d.id)?.current ?? null,
       // 택배 터미널과 미제출 업체는 라벨 표시를 하지 않는다.
       labelStatus: record && !(!!d.terminal_id && parcelTerminalIds.has(d.terminal_id)) ? labelPrintStatus(packedBoxes.filter((b) => b.record_id === record.id).length, printedSeqsByDaily.get(d.id) ?? []) : null,

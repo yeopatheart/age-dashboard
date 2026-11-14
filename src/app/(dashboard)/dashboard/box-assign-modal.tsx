@@ -54,7 +54,8 @@ export function BoxAssignModal({ dailyBusinessId, title, onClose }: { dailyBusin
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {state.status === 'loading' && <p className="px-4 py-10 text-center text-sm text-slate-400">불러오는 중…</p>}
           {state.status === 'error' && <p className="px-4 py-10 text-center text-sm font-bold text-rose-600">{state.message}</p>}
-          {state.status === 'ready' && (
+          {state.status === 'ready' && state.data.row.cancelled && <p className="px-4 py-10 text-center text-sm font-bold text-rose-600">주문이 모두 취소된 고객사라 박스 할당이 필요 없습니다.</p>}
+          {state.status === 'ready' && !state.data.row.cancelled && (
             <PackingLogClient embedded orderDate={state.data.orderDate} today={state.data.today} allowPast={state.data.allowPast} rows={[state.data.row]} boxes={state.data.boxes} onSubmitted={onClose} />
           )}
         </div>

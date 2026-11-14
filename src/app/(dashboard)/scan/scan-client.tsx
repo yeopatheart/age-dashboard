@@ -120,6 +120,8 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
         const b = result.box;
         const at = b.loadedAt ? new Date(b.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
         next = { tone: 'dup', title: '이미 상차된 박스', detail: `${b.business} ${b.boxNo}번${at ? ` · ${at}에 처리됨` : ''}`, labelId: b.labelId, box: { business: b.business, boxNo: b.boxNo, mergedSeqs: b.mergedSeqs }, progress: { loaded: b.loadedCount, total: b.totalCount } };
+      } else if (result.status === 'cancelled') {
+        next = { tone: 'bad', title: '취소된 고객사의 박스입니다', detail: `${result.business} · 주문이 모두 취소되어 상차하지 않았습니다 · ${result.code}` };
       } else if (result.status === 'past') {
         const [, month, day] = result.date.split('-');
         next = { tone: 'bad', title: `${Number(month)}/${Number(day)} 날짜의 라벨입니다`, detail: `오늘(${today}) 박스가 아니라서 상차하지 않았습니다 · ${result.code}` };

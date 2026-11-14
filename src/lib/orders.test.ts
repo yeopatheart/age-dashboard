@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { businessIdsInBothRounds, getProductCustomers, getProductSummary, nameWithRound, roundLabel, type OrderItem } from './orders.ts';
+import { businessIdsInBothRounds, getProductCustomers, getProductSummary, isCardCancelled, nameWithRound, roundLabel, type OrderItem } from './orders.ts';
 
 test('1·2차가 둘 다 있는 업체만 이름에 차수를 붙인다', () => {
   const split = businessIdsInBothRounds([
@@ -96,4 +96,11 @@ test('품목별 고객 목록: 고객마다 이 품목의 줄(id·수량·포장
   assert.deepEqual(list.map((c) => [c.name, c.quantity, c.allPacked]), [['나', 4, true], ['가', 5, false]]);
   assert.deepEqual(list[0].lines, [{ id: 'b1', quantity: 4, isPacked: true }]);
   assert.deepEqual(list[1].lines.map((l) => l.id), ['a1', 'a2']);
+});
+
+test('고객사 취소: 상품이 하나 이상이고 전부 취소일 때만 취소된 고객사다', () => {
+  assert.equal(isCardCancelled([item({ changeStatus: 'cancelled' }), item({ changeStatus: 'cancelled' })]), true);
+  assert.equal(isCardCancelled([item({ changeStatus: 'cancelled' }), item({ changeStatus: 'none' })]), false);
+  assert.equal(isCardCancelled([item({ changeStatus: 'modified' })]), false);
+  assert.equal(isCardCancelled([]), false); // 빈 카드는 취소가 아니다
 });
