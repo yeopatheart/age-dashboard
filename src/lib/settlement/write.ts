@@ -4,7 +4,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
 import { parseShippingMethod, type ShippingInput } from './shipping';
-import type { SalesChange } from './excel-import';
+import type { CardChange, PriceChange, SalesChange } from './excel-import';
 
 type Client = SupabaseClient<Database>;
 const CHUNK = 500;
@@ -58,6 +58,34 @@ export async function upsertShippingRows(supabase: Client, rows: ShippingInput[]
       return { daily_business_id: r.cardId, method: parseShippingMethod(r.method)!, boxes: r.boxes, amount: r.amount, seller_id: r.sellerId, paid: r.paid === true, memo: memo === '' ? null : memo };
     });
     const { error } = await supabase.from('settlement_shipping').upsert(chunk, { onConflict: 'daily_business_id,method' });
+    if (error) return { error: error.code === '23503' ? FK_MESSAGE : error.message };
+  }
+  return { error: null };
+}
+
+// 고객 카드 단위 값(사업자구분·입금). 바뀐 열이 같은 카드끼리 묶어서 보낸다(빠진 열이 null로 덮어써지지 않게).
+export async function upsertCardChanges(supabase: Client, changes: CardChange[]): Promise<Result> {
+  const items = changes.map((c) => {
+    const cols: Record<string, unknown> = {};
+    if (c.sellerId !== undefined) cols.seller_id = c.sellerId;
+    if (c.paid !== undefined) cols.paid = c.paid;
+    return { id: c.cardId, cols };
+  });
+  for (const group of groupByColumns(items)) {
+    for (let i = 0; i < group.length; i += CHUNK) {
+      const rows = group.slice(i, i + CHUNK).map((g) => ({ daily_business_id: g.id, ...g.cols }));
+      const { error } = await supabase.from('settlement_cards').upsert(rows, { onConflict: 'daily_business_id' });
+      if (error) return { error: error.code === '23503' ? FK_MESSAGE : error.message };
+    }
+  }
+  return { error: null };
+}
+
+// 날짜별 품목 단가표(행 전체 값을 보낸다).
+export async function upsertPriceChanges(supabase: Client, orderDate: string, changes: PriceChange[]): Promise<Result> {
+  for (let i = 0; i < changes.length; i += CHUNK) {
+    const rows = changes.slice(i, i + CHUNK).map((c) => ({ order_date: orderDate, product_name: c.product, sale_unit_price: c.entry.saleUnitPrice, supplier_id: c.entry.supplierId, purchase_unit_price: c.entry.purchaseUnitPrice }));
+    const { error } = await supabase.from('settlement_prices').upsert(rows, { onConflict: 'order_date,product_name' });
     if (error) return { error: error.code === '23503' ? FK_MESSAGE : error.message };
   }
   return { error: null };
