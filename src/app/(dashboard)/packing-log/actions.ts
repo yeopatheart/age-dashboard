@@ -9,6 +9,8 @@ import { emptyBoxMessage, firstEmptyBoxIndex } from '@/lib/packing/box-rules';
 import { compareWithRecommendation, getTodayModel, orderSignature } from '@/lib/packing/server';
 import { requirePermission } from '@/lib/permissions/access';
 import { missingTable } from '@/lib/supabase/missing-table';
+import { loadPackingRows } from '@/lib/packing/load-rows';
+import type { PackingBoxType, PackingBusiness } from '@/lib/packing/types';
 
 export interface PackingSubmission {
   dailyBusinessId: string;
@@ -266,4 +268,18 @@ export async function deletePackingRecord(dailyBusinessId: string): Promise<{ er
   revalidatePath('/packing-log');
   revalidatePath('/dashboard');
   return { error: null };
+}
+
+// 주문 목록의 박스 열을 눌렀을 때 뜨는 박스 할당 팝업이 한 업체의 편집 데이터를 읽는다(박스 할당 화면과 같은 로더).
+export async function getPackingEditorData(
+  dailyBusinessId: string,
+): Promise<{ error: string } | { error: null; row: PackingBusiness; boxes: PackingBoxType[]; orderDate: string; today: string; allowPast: boolean }> {
+  await requirePermission('packing:view');
+  const supabase = await createClient();
+  const { data: daily } = await supabase.from('daily_businesses').select('order_date').eq('id', dailyBusinessId).maybeSingle();
+  if (!daily) return { error: '주문을 찾지 못했습니다.' };
+  const { rows, boxes, settings } = await loadPackingRows(supabase, daily.order_date, dailyBusinessId);
+  const row = rows[0];
+  if (!row) return { error: '주문을 찾지 못했습니다.' };
+  return { error: null, row, boxes, orderDate: daily.order_date, today: todayKST(), allowPast: settings.allowPastOrderEdit };
 }

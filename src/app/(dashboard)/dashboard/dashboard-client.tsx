@@ -14,6 +14,7 @@ import { DashboardSound } from './dashboard-sound';
 import { InkLayer, type InkItem } from './ink-layer';
 import { ProductCustomersPopover } from './product-customers-popover';
 import { CustomerOrderPanel } from './customer-order-panel';
+import { BoxAssignModal } from './box-assign-modal';
 import { fitRowHeight } from '@/lib/row-fit';
 import { useTouchDesktop } from '@/lib/use-touch-desktop';
 import { useHydrated } from '@/lib/use-hydrated';
@@ -1224,6 +1225,10 @@ export function DashboardClient({
     const r = el.getBoundingClientRect();
     setCustomerPanel({ dailyBusinessId, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } });
   };
+  // 박스 열을 누르면 그 업체의 박스 할당 팝업을 연다(박스 할당 보기 권한이 있고 펜이 꺼져 있을 때). 제출·고치기 권한은 팝업 안에서 따로 확인한다.
+  const [boxModal, setBoxModal] = useState<{ dailyBusinessId: string; title: string } | null>(null);
+  const canOpenBox = can('packing:view') && !penActive;
+  const closeBoxModal = useCallback(() => setBoxModal(null), []);
   const closeCustomerPanel = useCallback(() => setCustomerPanel(null), []);
   const [picked, setPicked] = useState<{ scope: 'main' | 'separate'; productKey: string; anchor: { left: number; top: number; right: number; bottom: number } } | null>(null);
   const pickProduct = (scope: 'main' | 'separate', product: ProductSummaryRow, rect: DOMRect) => {
@@ -1302,6 +1307,7 @@ export function DashboardClient({
     <>
       {toastNode}
       {undoNode}
+      {boxModal && <BoxAssignModal key={boxModal.dailyBusinessId} dailyBusinessId={boxModal.dailyBusinessId} title={boxModal.title} onClose={closeBoxModal} />}
       {customerPanel && panelRow && (
         <CustomerOrderPanel
           row={panelRow}
@@ -1744,8 +1750,16 @@ export function DashboardClient({
                     </div>
                     {/* 박스 구성을 정한 뒤 주문이 바뀌면 이 칸이 붉게 바뀌고 경고 아이콘이 붙는다. 고객명 칸에는 아무것도 붙이지 않는다(이름은 절대 가려지면 안 된다, 2026-11-14). */}
                     <div
-                      className={`border-r border-slate-100 px-1 flex items-center justify-center gap-1 whitespace-nowrap ${row.packingChanged ? 'bg-rose-100' : 'bg-slate-50/60'}`}
-                      title={row.packingChanged ? '주문이 바뀌었습니다 — 박스 할당에서 박스 구성을 다시 확인하세요' : undefined}
+                      className={`border-r border-slate-100 px-1 flex items-center justify-center gap-1 whitespace-nowrap ${row.packingChanged ? 'bg-rose-100' : 'bg-slate-50/60'} ${canOpenBox ? 'cursor-pointer hover:bg-slate-200/70' : ''}`}
+                      title={canOpenBox ? (row.packingChanged ? '주문이 바뀌었습니다 — 눌러서 박스 할당을 다시 확인하세요' : '누르면 이 업체의 박스 할당을 고칩니다') : row.packingChanged ? '주문이 바뀌었습니다 — 박스 할당에서 박스 구성을 다시 확인하세요' : undefined}
+                      {...(canOpenBox
+                        ? {
+                            role: 'button',
+                            tabIndex: 0,
+                            onClick: () => setBoxModal({ dailyBusinessId: row.dailyBusinessId, title: row.businessName }),
+                            onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setBoxModal({ dailyBusinessId: row.dailyBusinessId, title: row.businessName })),
+                          }
+                        : {})}
                     >
                       <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null ? 'text-slate-300' : row.packingChanged ? 'text-rose-700' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{row.totalBoxes ?? '-'}</span>
                       {row.packingChanged && <TriangleAlert className="w-3.5 h-3.5 shrink-0 text-rose-600" strokeWidth={2.5} aria-label="박스 재확인 필요" />}
