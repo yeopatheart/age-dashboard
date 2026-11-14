@@ -137,3 +137,9 @@ export function endInk(ctx: CanvasRenderingContext2D, live: LiveInk): void {
     live.drawn++;
   }
 }
+
+// 쓰는 도중에 캔버스를 지우고 다시 그려야 할 때(데이터 갱신으로 전체를 다시 그릴 때) 진행 중인 획을 이미 그려 둔 구간까지 그대로 복원한다.
+// extendInk가 그린 것과 같은 구간을 같은 이웃 점으로 그리므로 이어서 그려도 이음매가 생기지 않는다.
+export function redrawLive(ctx: CanvasRenderingContext2D, live: LiveInk): void {
+  for (let k = 0; k < live.drawn; k++) drawSegment(ctx, live.pts[k - 1] ?? null, live.pts[k], live.pts[k + 1], live.pts[k + 2]);
+}
