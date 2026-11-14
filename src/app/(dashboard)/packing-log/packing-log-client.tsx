@@ -637,7 +637,7 @@ export function PackingLogClient({
                     <div className="pk-rows">
                       {draft.boxes.length === 0 && <p className="pk-hint">아래에서 박스를 추가한 뒤, 상품을 눌러 박스에 담으세요.</p>}
                       {draft.boxes.map((box, idx) => (
-                        <BoxRow key={box.uid} box={box} index={idx + 1} items={selected.items} boxTypes={boxes} picked={activePick} onPick={(id) => togglePick(id, box.uid)} onChangeType={(boxId) => changeBoxType(box.uid, boxId)} onRemove={() => removeBox(box.uid)} />
+                        <BoxRow key={box.uid} box={box} index={idx + 1} items={selected.items} boxTypes={boxes} picked={activePick} onPick={(id) => togglePick(id, box.uid)} onChangeType={(boxId) => changeBoxType(box.uid, boxId)} onRemove={() => removeBox(box.uid)} onUnassign={(itemId) => unassign(itemId, box.uid)} />
                       ))}
                     </div>
                     {draft.boxes.length >= 2 && <MergeBar boxes={draft.boxes} groups={draft.mergeUids} onChange={changeMerge} />}
@@ -789,6 +789,7 @@ export function PackingLogClient({
         .pk-chip { display: inline-flex; align-items: center; gap: 0.35rem; background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.25rem 0.55rem; font-size: var(--fs-sm); cursor: pointer; touch-action: none; user-select: none; font-family: inherit; }
         .pk-chip:hover { border-color: var(--primary); }
         .pk-chip-sel { border: 2px solid var(--primary); background: var(--primary-light); padding: calc(0.25rem - 1px) calc(0.55rem - 1px); }
+        .pk-chipwrap { display: inline-flex; align-items: center; gap: 0.1rem; }
         .pk-chip-static { cursor: default; }
         .pk-chip-static:hover { border-color: #cbd5e1; }
         .pk-chip-ghost { box-shadow: var(--shadow-md); border-color: var(--primary); padding: 0.45rem 0.8rem; }
@@ -974,6 +975,7 @@ function BoxRow({
   onPick,
   onChangeType,
   onRemove,
+  onUnassign,
   readOnly = false,
 }: {
   box: DraftBox;
@@ -985,6 +987,8 @@ function BoxRow({
   onPick?: (itemId: string) => void;
   onChangeType?: (boxId: string) => void;
   onRemove?: () => void;
+  // 박스는 그대로 두고 담은 상품 하나만 빼서 "아직 담지 않은 상품"으로 돌린다(칩 옆 ✕). 다른 박스에 다시 나눠 담을 때 쓴다.
+  onUnassign?: (itemId: string) => void;
   // 수정 중이 아닐 때: 끌어다 놓기·빼기 없이 어떤 상품이 담겼는지만 보여준다.
   readOnly?: boolean;
 }) {
@@ -1024,7 +1028,14 @@ function BoxRow({
               </span>
             );
           }
-          return <ItemChip key={bi.orderItemId} item={item} qty={bi.quantity} fromUid={box.uid} picked={!!picked && picked.fromUid === box.uid && picked.itemId === item.id} mulbongMismatch={mismatch} onPick={() => onPick(item.id)} />;
+          return (
+            <span key={bi.orderItemId} className="pk-chipwrap">
+              <ItemChip item={item} qty={bi.quantity} fromUid={box.uid} picked={!!picked && picked.fromUid === box.uid && picked.itemId === item.id} mulbongMismatch={mismatch} onPick={() => onPick(item.id)} />
+              {onUnassign && (
+                <button type="button" className="pk-x pk-chip-x" onClick={() => onUnassign(item.id)} title="이 상품만 박스에서 빼기 (아직 담지 않은 상품으로 돌아갑니다)" aria-label={`${item.name} 박스에서 빼기`}><X size={14} /></button>
+              )}
+            </span>
+          );
         })}
       </div>
       {!readOnly && onRemove ? <button className="pk-x" onClick={onRemove} title="박스 빼기 (담은 상품은 상품 목록으로 돌아갑니다)" aria-label={`${index}번 박스 빼기`}><X size={16} /></button> : <span />}
