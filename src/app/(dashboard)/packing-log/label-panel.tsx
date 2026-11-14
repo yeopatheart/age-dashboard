@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useCan } from '@/components/permissions-context';
 import { mergeGroupOf, mergeLabelText, mergeSelected, normalizeMergeGroups, unmergeGroup, type MergeGroups } from '@/lib/box-merge';
 import Link from 'next/link';
-import { Barcode, Printer } from 'lucide-react';
+import { Barcode, Loader2, Printer, PrinterCheck, RefreshCw } from 'lucide-react';
 import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
 import { LabelView } from '@/components/labels/label-view';
 import { makeBoxBarcode } from '@/lib/labels/barcode';
@@ -239,6 +239,8 @@ export function LabelPanelView({
               const data = previewData(seq);
               const printed = bySeq.get(seq)?.printCount ?? 0;
               const reprint = needsReprint(seq);
+              // 버튼은 아이콘뿐이라 뜻은 툴팁·스크린리더 이름으로 알린다: 처음 출력 / 다시 출력 / 박스 종류가 달라 재출력 필요.
+              const printTitle = busyKey === String(seq) ? '준비 중…' : reprint ? '재출력 필요' : printed > 0 ? '다시 출력' : '출력';
               return (
                 <div key={seq} className={`lp-row lp-${st.tone} ${seq === selSeq ? 'lp-row-on' : ''}`}>
                   <button type="button" className="lp-row-main" onClick={() => setPicked(seq)} aria-pressed={seq === selSeq} aria-label={`박스 ${seq}번 미리보기`}>
@@ -246,8 +248,8 @@ export function LabelPanelView({
                     <span className="lp-chip">{loaded ? st.text : '…'}</span>
                     {mergeGroupOf(groups, seq) && <span className="lp-chip lp-chip-merge">{mergeLabelText(groups, seq)}</span>}
                   </button>
-                  <button type="button" className={`lp-print ${reprint ? 'lp-print-need' : printed > 0 ? 'lp-print-again' : ''}`} disabled={!!busyKey || !data} onClick={() => print([seq], String(seq))}>
-                    <Printer size={14} /> {busyKey === String(seq) ? '준비 중…' : reprint ? '재출력 필요' : printed > 0 ? '다시 출력' : '출력'}
+                  <button type="button" className={`lp-print ${reprint ? 'lp-print-need' : printed > 0 ? 'lp-print-again' : ''}`} disabled={!!busyKey || !data} onClick={() => print([seq], String(seq))} title={printTitle} aria-label={`박스 ${seq}번 ${printTitle}`}>
+                    {busyKey === String(seq) ? <Loader2 size={16} className="animate-spin" /> : reprint ? <RefreshCw size={16} /> : printed > 0 ? <PrinterCheck size={16} /> : <Printer size={16} />}
                   </button>
                 </div>
               );
@@ -301,24 +303,26 @@ export function LabelPanelView({
         .lp-fold span { position: absolute; right: 3px; top: 1px; font-size: 0.625rem; font-weight: 800; color: #2563eb; background: rgba(255, 255, 255, 0.85); padding: 0 3px; border-radius: 3px; }
         .lp-keepout { position: absolute; left: 0; right: 0; background: rgba(37, 99, 235, 0.06); pointer-events: none; }
         .lp-loading { font-size: 0.8125rem; color: var(--muted-foreground); }
-        .lp-rows { display: flex; flex-direction: column; gap: 0.35rem; max-height: 14rem; overflow-y: auto; padding: 1px; }
-        .lp-row { display: flex; align-items: center; gap: 0.5rem; border: 1.5px solid var(--border); border-radius: 11px; padding-right: 0.4rem; background: #fff; flex: none; }
+        /* 박스가 많아도 스크롤이 덜 생기게 한 줄에 2~3개씩 놓는다(폭에 따라 칸 수가 정해진다). */
+        .lp-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr)); gap: 0.35rem; align-content: start; max-height: 14rem; overflow-y: auto; padding: 1px; }
+        .lp-row { display: flex; align-items: center; gap: 0.5rem; border: 1.5px solid var(--border); border-radius: 11px; padding-right: 0.4rem; background: #fff; min-width: 0; }
         .lp-row-on { border-color: var(--primary); background: var(--primary-light); }
-        .lp-row-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 0.5rem; height: 2.5rem; padding: 0 0 0 0.75rem; background: none; border: 0; text-align: left; font: inherit; cursor: pointer; }
+        .lp-row-main { flex: 1 1 auto; min-width: 0; overflow: hidden; display: flex; align-items: center; gap: 0.4rem; height: 2.5rem; padding: 0 0 0 0.65rem; background: none; border: 0; text-align: left; font: inherit; cursor: pointer; }
         .lp-row-main strong { font-size: var(--fs-md); font-weight: 900; white-space: nowrap; }
         .lp-chip { font-size: 0.75rem; font-weight: 800; border-radius: 999px; padding: 0.15rem 0.6rem; background: #f1f5f9; color: #475569; white-space: nowrap; }
         .lp-new .lp-chip { background: #fef3c7; color: #92400e; }
         .lp-printed .lp-chip { background: #dbeafe; color: #1d4ed8; }
         .lp-done .lp-chip { background: #dcfce7; color: #15803d; }
         .lp-row .lp-chip-merge { background: #ecfdf5; color: #047857; }
-        .lp-print { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; height: 2rem; padding: 0 0.9rem; border-radius: 9px; border: 0; background: var(--primary); color: #fff; font-size: var(--fs-sm); font-weight: 800; cursor: pointer; flex: none; white-space: nowrap; }
+        .lp-print { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; padding: 0; border-radius: 9px; border: 0; background: var(--primary); color: #fff; font-size: var(--fs-sm); font-weight: 800; cursor: pointer; flex: none; white-space: nowrap; }
         .lp-print-again { background: #fff; color: var(--primary); border: 1.5px solid var(--primary); }
         .lp-print-need { background: #f59e0b; color: #fff; border: 0; }
         .lp-warn { font-size: 0.8125rem; font-weight: 700; color: #92400e; background: #fffbeb; border-radius: 10px; padding: 0.35rem 0.7rem; }
         .lp-error { font-size: 0.875rem; font-weight: 700; color: var(--danger, #dc2626); }
         /* 손으로 누르는 화면(휴대폰·태블릿·터치 입력)에서는 누르는 요소를 44px 이상으로 둔다. PC(마우스)는 촘촘한 크기를 유지한다. */
         @media (max-width: 900px), (pointer: coarse) {
-          .lp-bulk, .lp-print, .lp-merge-do { min-height: 44px; }
+          .lp-bulk, .lp-merge-do { min-height: 44px; }
+          .lp-print { width: 44px; height: 44px; }
           .lp-merge-pick button, .lp-merge-group button { min-width: 44px; min-height: 44px; }
           .lp-row-main { height: 44px; }
         }
@@ -330,7 +334,7 @@ export function LabelPanelView({
           .lp-rows { max-height: none; }
           .lp-row { padding-right: 0.3rem; }
           .lp-row-main { height: var(--cta-h); }
-          .lp-print { height: calc(var(--cta-h) - 0.5rem); padding: 0 1.1rem; font-size: var(--fs-md); }
+          .lp-print { width: calc(var(--cta-h) - 0.5rem); height: calc(var(--cta-h) - 0.5rem); }
         }
       `}</style>
     </section>

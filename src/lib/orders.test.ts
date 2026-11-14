@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { businessIdsInBothRounds, getProductCustomers, getProductSummary, isCardCancelled, nameWithRound, roundLabel, type OrderItem } from './orders.ts';
+import { businessIdsInBothRounds, formatDelta, getProductCustomers, getProductSummary, productDelta, isCardCancelled, nameWithRound, roundLabel, type OrderItem } from './orders.ts';
 
 test('1·2차가 둘 다 있는 업체만 이름에 차수를 붙인다', () => {
   const split = businessIdsInBothRounds([
@@ -81,6 +81,26 @@ test('품목별 수량: 추가분은 첫 입력 이후 추가된 품목(new)만�
 
 test('품목별 수량: 추가된 품목이 없으면 추가분은 0이다', () => {
   assert.equal(getProductSummary([item({ quantity: 2 }), undecided({ id: 'u', dailyBusinessId: 'd2', changeStatus: 'new' })]).every((r) => r.added === 0), true);
+});
+
+test('품목별 수량: 이미 있던 줄의 수량을 고치면 처음 값과의 차이가 changed로 잡힌다(단위가 같을 때만)', () => {
+  const rows = getProductSummary([
+    item({ id: 'a', productName: '아귀간', unit: 'kg', quantity: 8, baseQuantity: 5, baseUnit: 'kg', changeStatus: 'modified' }),
+    item({ id: 'b', dailyBusinessId: 'd2', productName: '아귀간', unit: 'kg', quantity: 3, baseQuantity: 4, baseUnit: 'kg', changeStatus: 'modified' }),
+    item({ id: 'c', dailyBusinessId: 'd3', productName: '아귀간', unit: 'kg', quantity: 1, changeStatus: 'new' }),
+    item({ id: 'd', dailyBusinessId: 'd4', productName: '아귀간', unit: 'kg', quantity: 6 }), // 처음 값을 모르는 줄은 변경분 0
+    item({ id: 'e', dailyBusinessId: 'd5', productName: '아귀간', unit: 'kg', quantity: 9, baseQuantity: 2, baseUnit: '미', changeStatus: 'modified' }), // 단위를 바꾼 줄은 비교하지 않는다
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].total, 27);
+  assert.equal(rows[0].added, 1);
+  assert.equal(rows[0].changed, 2); // +3 − 1
+  assert.equal(productDelta(rows[0]), 3);
+});
+
+test('변경분 표기: 부호와 단위를 붙인다', () => {
+  assert.equal(formatDelta(3, 'kg'), '+3kg');
+  assert.equal(formatDelta(-1.5, '미'), '−1.5미');
 });
 
 test('품목별 고객 목록: 고객마다 이 품목의 줄(id·수량·포장 여부)을 돌려준다', () => {

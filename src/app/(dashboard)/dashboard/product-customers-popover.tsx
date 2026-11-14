@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Minus, Plus, X } from 'lucide-react';
-import type { ProductCustomer, ProductSummaryRow } from '@/lib/orders';
+import { formatDelta, productDelta, type ProductCustomer, type ProductSummaryRow } from '@/lib/orders';
 import { placePopover, type Rect4 } from '@/lib/popover-position';
 
 // 품목별 수량의 상품 칩을 누르면 그 옆에 뜨는 플로팅 카드: 이 상품을 주문한 고객사와 고객사별 수량.
@@ -97,7 +97,7 @@ export function ProductCustomersPopover({
             <p className="break-keep text-sm font-black leading-tight">{product.label}</p>
             <p className="mt-0.5 text-xs font-bold opacity-80">
               {customers.length}곳 · 총 {total}
-              {product.added > 0 && <span className="ml-1">(+{product.added} 추가)</span>}
+              {productDelta(product) !== 0 && <span className="ml-1">({formatDelta(productDelta(product), product.unit)} 변경)</span>}
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="닫기" className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/60 hover:bg-white">

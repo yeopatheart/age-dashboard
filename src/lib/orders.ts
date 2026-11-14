@@ -76,6 +76,9 @@ export interface OrderItem {
   unshippedQuantity: number;
   unshippedReason?: string;
   changeStatus: ChangeStatus;
+  // 처음 입력한 수량·단위(0060). 수량을 고친 변경분을 구하는 데 쓴다. 처음 값을 모르면(옛 줄·마이그레이션 전) 없다.
+  baseQuantity?: number;
+  baseUnit?: string;
 }
 
 export interface ProductSummaryRow {
@@ -91,6 +94,8 @@ export interface ProductSummaryRow {
   packed: number;
   // total 중에서 그날 첫 입력 이후 추가된 품목(change_status 'new')의 수량. 이미 있던 품목의 수량을 늘린 것은 이전 수량을 저장하지 않아 포함되지 않는다.
   added: number;
+  // total 중에서 이미 있던 품목(change_status 'new'가 아닌 줄)의 수량을 처음 입력 값에서 고친 순증감. 줄어들면 음수. 처음 값을 모르거나 단위를 바꾼 줄은 세지 않는다.
+  changed: number;
   // 수량 미정 줄(수량 0·단위 없음)을 모은 줄이면 미정이 있는 고객 수, 아니면 0. 이 줄은 total 0·unit ''이고 화면에서 "미정 N곳"으로 보인다.
   undecided: number;
 }
@@ -167,6 +172,20 @@ export function getProductCustomers(items: OrderItem[], product: Pick<ProductSum
   return [...byRow.values()].sort((a, b) => (rowOrder.get(a.dailyBusinessId) ?? 999) - (rowOrder.get(b.dailyBusinessId) ?? 999));
 }
 
+// 처음 입력한 수량에서 얼마나 고쳤는지(늘면 +, 줄면 −). 처음 값을 모르거나 단위가 바뀐 줄은 비교할 수 없어 0이다.
+export function quantityChangeOf(item: Pick<OrderItem, 'quantity' | 'unit' | 'baseQuantity' | 'baseUnit'>): number {
+  if (item.baseQuantity === undefined || item.baseUnit !== item.unit) return 0;
+  return roundQuantity(item.quantity - item.baseQuantity);
+}
+
+const roundQuantity = (n: number) => Math.round(n * 100) / 100;
+
+// 품목별 수량 칩의 변경분: 처음 입력 이후 추가된 수량 + 고친 수량의 순증감. 0이면 표시하지 않는다.
+export const productDelta = (row: Pick<ProductSummaryRow, 'added' | 'changed'>) => roundQuantity(row.added + row.changed);
+
+// "+3kg", "−1미"처럼 부호와 단위를 붙인다(단위 없이 숫자만 보이면 무엇이 늘었는지 알 수 없다).
+export const formatDelta = (delta: number, unit: string) => `${delta > 0 ? '+' : '−'}${Math.abs(delta)}${unit}`;
+
 // 수량 미정 줄도 품목별 수량에 "미정"으로 올린다: 수량은 모르지만 그 품목의 주문이 있다는 것을 보여야 하기 때문이다.
 // 미정 줄은 단위가 없어 키가 확정 줄과 달라서 자연히 별도 줄이 되고(합계는 0), 같은 품목의 확정 줄 바로 뒤에 놓는다.
 export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
@@ -191,6 +210,7 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
           mulbong: 0,
           packed: 0,
           added: 0,
+          changed: 0,
           undecided: 0,
         });
       }
@@ -204,6 +224,7 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
       if (item.isMulbong) existing.mulbong += item.quantity;
       if (item.isPacked) existing.packed += item.quantity;
       if (item.changeStatus === 'new') existing.added += shippable;
+      else existing.changed += quantityChangeOf(item);
     } else {
       map.set(key, {
         key,
@@ -217,6 +238,7 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
         mulbong: item.isMulbong ? item.quantity : 0,
         packed: item.isPacked ? item.quantity : 0,
         added: item.changeStatus === 'new' ? shippable : 0,
+        changed: item.changeStatus === 'new' ? 0 : quantityChangeOf(item),
         undecided: 0,
       });
     }

@@ -340,3 +340,15 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* 주문 목록(/dashboard)은 눈부심을 줄인 톤이다(2026-11-14, 부모님 피드백 "너무 밝다").
+   Tailwind v4 팔레트 변수를 이 화면 안에서만 낮춘다: 흰색은 연회색으로, 회색 면은 한 단계씩 어둡게, 큰 면(배경)은 회색 톤으로.
+   모달·팝업도 이 화면 안에서 열리므로 같이 낮아진다. 상품 칩 색은 칩마다 정해진 값이라 chipStyle에서 채도를 따로 낮춘다. */
+.main-content-soft {
+  --color-white: #e9ecf1;
+  --color-slate-50: #e0e4ea;
+  --color-slate-100: #d6dbe3;
+  --color-slate-200: #c8cfd9;
+  --color-slate-300: #b6bfcc;
+  background-color: #d3d8e0;
+}

@@ -129,6 +129,9 @@ type OrderItem = {
   needs_review: boolean;
   review_reason: string | null;
   ai_repaired: boolean; // AI가 형식을 벗어난 줄을 재구성한 줄(0055). needs_review와 달리 AI 보정만 가리킨다
+  // 처음 입력한 수량·단위(0060). 수량을 고친 변경분(quantity − base_quantity)을 칩에 보이는 데 쓴다. 처음 값을 모르는 옛 줄은 null
+  base_quantity: number | null;
+  base_unit: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -444,6 +447,8 @@ export type Database = {
           needs_review?: boolean;
           review_reason?: string | null;
           ai_repaired?: boolean;
+          base_quantity?: number | null;
+          base_unit?: string | null;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
