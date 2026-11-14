@@ -65,6 +65,7 @@ const SEP_DENSITIES = [
   { cell: 'p-[2px]', chip: 'min-h-[34px] py-0.5', name: 'py-1', no: 'min-h-[34px]' },
   { cell: 'p-[1px]', chip: 'min-h-[28px] py-0', name: 'py-0.5', no: 'min-h-[28px]' },
 ] as const;
+const NO_ITEMS: OrderItem[] = [];
 const DELTA_TITLE = '처음 입력 이후 바뀐 수량: 새로 추가된 수량과, 이미 있던 품목의 수량을 고친 만큼의 합(줄면 −)';
 const SUMMARY_BADGE_STYLE: React.CSSProperties = { padding: '1px 3px', fontSize: '0.9em' };
 function ProductSummaryPanel({
@@ -807,6 +808,19 @@ export function DashboardClient({
     state.map((i) => (i.id === change.id ? { ...i, ...(change.packed !== undefined ? { isPacked: change.packed } : {}), ...(change.quantity !== undefined ? { quantity: change.quantity } : {}) } : i)),
   );
 
+  // 카드별 주문 줄(입력 순서 = productSequence). 행을 그릴 때마다 전체 줄을 다시 훑고 정렬하지 않도록 주문 줄이 바뀔 때만 한 번 묶는다.
+  const itemsByDaily = useMemo(() => {
+    const map = new Map<string, OrderItem[]>();
+    for (const item of items) {
+      const list = map.get(item.dailyBusinessId);
+      if (list) list.push(item);
+      else map.set(item.dailyBusinessId, [item]);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.productSequence - b.productSequence);
+    return map;
+  }, [items]);
+  const itemsOf = (dailyBusinessId: string): OrderItem[] => itemsByDaily.get(dailyBusinessId) ?? NO_ITEMS;
+
   // 과거 날짜는 기본적으로 조회 전용 — 실수로 지난 기록을 고치지 않게 편집 수단을 숨긴다.
   // 설정에서 "과거 날짜 편집"을 켜면 오늘과 똑같이 편집할 수 있다.
   const isPast = orderDate !== today;
@@ -900,7 +914,7 @@ export function DashboardClient({
     return () => window.removeEventListener('resize', onResize);
   }, [separateOpen]);
   // 별도 주문 행·상품 수나 창 높이가 바뀌면 촘촘함 단계를 처음으로 되돌린다(줄어든 주문에서 계속 촘촘하게 남지 않도록). 팝업을 열 때도 처음부터(버튼에서 비운다).
-  const sepFitKey = `${separateRows.length}:${items.filter((i) => separateRows.some((r) => r.dailyBusinessId === i.dailyBusinessId)).length}:${viewportHeight}`;
+  const sepFitKey = `${separateRows.length}:${separateRows.reduce((sum, r) => sum + itemsOf(r.dailyBusinessId).length, 0)}:${viewportHeight}`;
   const sepDensity = sepFit.key === sepFitKey ? sepFit.level : 0;
   // 별도 주문 팝업이 떠 있는 동안 뒤의 화면(주문 목록을 감싼 컨테이너들)이 스크롤되지 않게 한다.
   // 이 컨테이너들은 overflow가 hidden이라 사용자는 스크롤할 수 없지만, 팝업 안 스크롤이 끝에서 뒤로 번지거나(스크롤 연쇄) 브라우저가
@@ -944,22 +958,25 @@ export function DashboardClient({
     void document.fonts?.ready.then(measure);
   });
   // 품목별 수량은 일반 주문과 별도 주문(택배·직배송 등)을 나눠 센다 — 기본 화면에는 일반 주문 상품만, 별도 주문 상품은 팝업에서 본다.
-  const separateDailyIds = new Set(separateRows.map((r) => r.dailyBusinessId));
-  const mainItems = items.filter((i) => !separateDailyIds.has(i.dailyBusinessId));
-  const separateItems = items.filter((i) => separateDailyIds.has(i.dailyBusinessId));
-  const columns = getProductSummary(mainItems);
-  const separateColumns = getProductSummary(separateItems);
+  // 주문 줄이나 별도 주문 카드 구성이 바뀔 때만 다시 센다(메뉴를 여닫는 등 무관한 다시 그리기에서는 다시 세지 않는다).
+  const separateKey = separateRows.map((r) => r.dailyBusinessId).join('|');
+  const { mainItems, separateItems, columns, separateColumns } = useMemo(() => {
+    const separateDailyIds = new Set(separateKey ? separateKey.split('|') : []);
+    const main = items.filter((i) => !separateDailyIds.has(i.dailyBusinessId));
+    const separate = items.filter((i) => separateDailyIds.has(i.dailyBusinessId));
+    return { mainItems: main, separateItems: separate, columns: getProductSummary(main), separateColumns: getProductSummary(separate) };
+  }, [items, separateKey]);
   // 별도 주문 팝업의 쪽 나누기: 팝업이 쓸 수 있는 높이(화면의 88% − 제목 줄 − 안쪽 여백)에 들어가는 만큼씩.
   const sepPages = packRows(separateRows.map((r) => sepHeights[r.dailyBusinessId] ?? 56), sepAvail, SEP_ROW_GAP);
   // 상품 열 수는 별도 주문 행 중 상품이 가장 많은 업체 기준(쪽을 넘겨도 열이 바뀌지 않게 모든 행에서 센다).
-  const sepSlotCount = Math.max(1, ...separateRows.map((r) => items.filter((i) => i.dailyBusinessId === r.dailyBusinessId).length));
+  const sepSlotCount = Math.max(1, ...separateRows.map((r) => itemsOf(r.dailyBusinessId).length));
   const sepGridTemplate = `44px 76px minmax(150px, 1.3fr) 64px repeat(${sepSlotCount}, minmax(104px, 1fr))`;
   const sepMinWidth = 44 + 76 + 150 + 64 + sepSlotCount * 104;
   const sepPageNo = Math.min(sepPage, sepPages.length - 1);
   const sepVisible = new Set(sepPages[sepPageNo].map((i) => separateRows[i].dailyBusinessId));
   // 터미널별 박스는 기본 주문표 기준이다 — 별도 주문 터미널은 "별도 주문" 팝업에서 따로 본다.
   // 주문이 모두 취소된 고객사의 박스는 터미널별 박스 수에 세지 않는다.
-  const cancelledCardSet = new Set(mainRows.filter((r) => isCardCancelled(items.filter((i) => i.dailyBusinessId === r.dailyBusinessId))).map((r) => r.dailyBusinessId));
+  const cancelledCardSet = new Set(mainRows.filter((r) => isCardCancelled(itemsOf(r.dailyBusinessId))).map((r) => r.dailyBusinessId));
   const terminalBoxTotals = getTerminalBoxTotals(mainRows.filter((r) => !cancelledCardSet.has(r.dailyBusinessId)));
 
   // 표의 상품 열은 더 이상 "오늘 등록된 품목 종류"(columns) 기준이 아니라 "업체 한 곳이
@@ -1118,7 +1135,7 @@ export function DashboardClient({
   // 열 개수는 "이 화면에 실제로 보이는 행" 중 상품이 가장 많은 업체 기준 + 1(추가 버튼 열)이다.
   // 모니터마다 다른 업체가 보이므로 전체 기준이 아니라 화면에 표시되는 행 기준으로 센다.
   const maxProductCount = displayedRows.reduce((max, row) => {
-    const count = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).length;
+    const count = itemsOf(row.dailyBusinessId).length;
     return Math.max(max, count);
   }, 0);
   const productSlotCount = Math.max(1, maxProductCount);
@@ -1147,11 +1164,31 @@ export function DashboardClient({
   })();
   const pillStepsAttr = pillSteps.map((p) => `${p.q},${p.f},${p.lh},${p.o}`).join('|');
 
+  // 웹폰트가 늦게 로드되면 글자 폭이 달라져 줄바꿈이 바뀐다. 로드가 끝나면 모든 팁을 한 번 다시 맞춘다.
+  const [fontEpoch, setFontEpoch] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    void document.fonts?.ready.then(() => {
+      if (!cancelled) setFontEpoch(1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // 팁마다 글자 크기 단계를 정한다: 기본 단계부터 시작해, 팁 안쪽 높이를 넘치면 한 단계씩 줄인다.
+  // 이 효과는 그릴 때마다 돌지만, 팁마다 "맞출 때의 조건"(내용·크기 단계·안쪽 높이·폭·글꼴 로드)을 기억해 두고 조건이 그대로인 팁은 건너뛴다.
+  // 예전에는 메뉴를 여닫거나 실시간 갱신이 올 때마다 모든 팁의 글자 크기를 다시 쓰고 높이를 다시 재서(쓰기·읽기가 번갈아 일어나 팁 수만큼 레이아웃을 다시 계산)
+  // 칠판처럼 팁이 많은 화면이 무거웠다(2026-11-14). 조건은 먼저 한꺼번에 읽고(쓰기 없음), 바뀐 팁만 다시 맞춘다.
   useLayoutEffect(() => {
     const root = scrollRef.current;
     if (!root) return;
+    const dirty: { el: HTMLElement; key: string }[] = [];
     for (const el of root.querySelectorAll<HTMLElement>('[data-pill]')) {
+      const key = `${el.innerHTML}|${el.dataset.sizes ?? ''}|${pillInnerHeight}|${el.clientWidth}|${fontEpoch}`;
+      if (el.dataset.fitKey !== key) dirty.push({ el, key });
+    }
+    for (const { el, key } of dirty) {
       const steps = (el.dataset.sizes ?? '').split('|').map((p) => p.split(','));
       let step = 0;
       const apply = (n: number) => {
@@ -1169,6 +1206,7 @@ export function DashboardClient({
       const firstItem = el.firstElementChild;
       // 같은 줄이면 옵션의 윗선이 첫 항목(품목명)의 아랫선보다 위에 있다(기준선 정렬이라 글자 크기가 달라도 겹친다). 둘째 줄이면 그 아래에서 시작한다.
       if (option && firstItem instanceof HTMLElement && option.offsetTop >= firstItem.offsetTop + firstItem.offsetHeight - 1) el.style.setProperty('--pshift', '0.6px');
+      el.dataset.fitKey = key;
     }
   });
 
@@ -1421,7 +1459,7 @@ export function DashboardClient({
       {customerPanel && panelRow && (
         <CustomerOrderPanel
           row={panelRow}
-          items={items.filter((i) => i.dailyBusinessId === panelRow.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence)}
+          items={itemsOf(panelRow.dailyBusinessId)}
           anchor={customerPanel.anchor}
           canDelete={canDelete}
           onClose={closeCustomerPanel}
@@ -1805,9 +1843,7 @@ export function DashboardClient({
 
                 // 상품은 주문 입력(등록)된 순서 그대로 왼쪽부터 배치한다 — 입력하는 사람이 순서를 의도해서
                 // 쓰므로 시스템이 다시 정렬하지 않는다(productSequence = 입력 순서).
-                const rowItems = items
-                  .filter((i) => i.dailyBusinessId === row.dailyBusinessId)
-                  .sort((a, b) => a.productSequence - b.productSequence);
+                const rowItems = itemsOf(row.dailyBusinessId);
 
                 return (
                   <SortableRow
@@ -2004,7 +2040,7 @@ export function DashboardClient({
               <DndContext id="separate-dnd" sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleSeparateDragEnd}>
               <SortableContext items={separateRows.filter((r) => sepVisible.has(r.dailyBusinessId)).map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
               {separateRows.map((row) => {
-                const rowItems = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence);
+                const rowItems = itemsOf(row.dailyBusinessId);
                 const visible = sepVisible.has(row.dailyBusinessId);
                 const cancelledCard = isCardCancelled(rowItems);
                 const density = SEP_DENSITIES[sepDensity];
