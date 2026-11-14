@@ -56,7 +56,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       loadAppSettings(supabase),
       supabase.from('daily_product_highlights').select('product_name, position').eq('order_date', orderDate).order('position'),
     ]);
-  if (highlightError) throw new Error(`강조 상품 조회 실패(마이그레이션 0023 적용 필요): ${highlightError.message}`);
+  // 강조 상품은 이름 색만 바꾸는 보조 표시다. 일시적으로 못 읽었다고 주문 목록 전체를 오류 화면으로 바꾸지 않고 강조만 빼고 보여 준다(다음 갱신에 돌아온다).
+  // 마이그레이션 0023이 없어서 생기는 오류는 서버 로그에 남겨 알아볼 수 있게 한다.
+  if (highlightError) console.error(`강조 상품 조회 실패(마이그레이션 0023 미적용이거나 일시 오류): ${highlightError.message}`);
 
   // 조회 오류(예: 아직 적용 안 된 마이그레이션의 컬럼)를 빈 화면으로 삼키면 "주문이 사라진 것"처럼 보인다.
   if (dailyError) throw new Error(`대시보드 조회 실패: ${dailyError.message}`);

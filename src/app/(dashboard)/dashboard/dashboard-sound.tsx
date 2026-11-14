@@ -243,7 +243,7 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
     <>
       {status === 'down' && (
         <div className="fixed top-0 inset-x-0 z-50 bg-red-600 text-white text-center font-bold py-2 text-base">
-          연결이 끊겼습니다 — 화면이 최신이 아닐 수 있습니다. 다시 연결되면 자동으로 갱신됩니다.
+          실시간 연결이 끊겼습니다 — 15초마다 화면을 새로 받고 있습니다. 계속되면 인터넷을 확인해 주세요.
         </div>
       )}
 

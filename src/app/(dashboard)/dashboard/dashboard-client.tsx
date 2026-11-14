@@ -1203,9 +1203,10 @@ export function DashboardClient({
       // 옵션이 둘째 줄로 내려간 칩은 첫 줄의 큰 수량과 둘째 줄의 작은 옵션의 글자 상자 차이 때문에 글자가 칩 가운데보다 0.5~0.7px 위에 놓인다
       // (옵션이 7px까지 작아지면서 세로 중앙 점검에서 위·아래 여백이 1.1px 어긋났다, 2026-11-14). 크기가 정해진 뒤에 그만큼만 내려 맞춘다.
       const option = el.querySelector<HTMLElement>('[data-pill-opt]');
-      const firstItem = el.firstElementChild;
-      // 같은 줄이면 옵션의 윗선이 첫 항목(품목명)의 아랫선보다 위에 있다(기준선 정렬이라 글자 크기가 달라도 겹친다). 둘째 줄이면 그 아래에서 시작한다.
-      if (option && firstItem instanceof HTMLElement && option.offsetTop >= firstItem.offsetTop + firstItem.offsetHeight - 1) el.style.setProperty('--pshift', '0.6px');
+      // 옵션 바로 앞 조각(수량·단위). 옵션이 그 아래 줄에 혼자 놓였을 때만 내린다. 같은 줄이면 옵션의 윗선이 앞 조각의 아랫선보다 위에 있다(기준선 정렬이라 글자 크기가 달라도 겹친다).
+      // 예전에는 첫 조각(품목명)과 비교해서, 품목명만 첫 줄에 있고 "수량 + 옵션"이 둘째 줄에 같이 놓인 칩(칸이 좁을 때)도 내려 0.5px 아래로 쏠렸다(2026-11-14, #161 뒤 점검에서 발견).
+      const before = option?.previousElementSibling;
+      if (option && before instanceof HTMLElement && option.offsetTop >= before.offsetTop + before.offsetHeight - 1) el.style.setProperty('--pshift', '0.6px');
       el.dataset.fitKey = key;
     }
   });
