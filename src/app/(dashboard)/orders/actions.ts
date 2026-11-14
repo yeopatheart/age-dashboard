@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { assignBusinessNumber, dailyKey, separateTerminalIds } from '@/lib/business-lookup';
 import { colorComboKey, pickUnusedColor } from '@/lib/color-palette';
 import { loadAppSettings } from '@/lib/settings-server';
+import { newOrderItemRow } from '@/lib/order-item-row';
 import { editableDateError } from '@/lib/order-date';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from '@/lib/kakao-parser';
@@ -574,33 +575,25 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
       for (const { product, aiRepaired } of products) {
         const { data: sequence, error: sequenceError } = await supabase.rpc('assign_product_sequence', { p_daily_business_id: dailyBusinessId });
         if (sequenceError || sequence === null) throw new Error(`상품 순번 발급 실패: ${sequenceError?.message ?? '응답 없음'}`);
-        rows.push({
-          daily_business_id: dailyBusinessId,
-          product_sequence: sequence,
-          product_name_raw: product.productName,
-          quantity: product.quantity,
-          unit: product.unit,
-          secondary_weight_kg: product.secondaryWeightKg,
-          size_request: product.sizeRequest,
-          size_spec: parseSizeSpec(product.sizeRequest, settings),
-          is_mulbong: product.isMulbong,
-          has_aerator: product.hasAerator,
-          mulbong_box_count: product.mulbongBoxCount,
-          has_ice_pack: product.hasIcePack,
-          from_stock: product.fromStock,
-          change_status: isFirstInputOfDay ? ('none' as const) : ('new' as const),
-          needs_review: product.needsReview,
-          review_reason: product.reviewReason ?? null,
-          ...(aiRepaired ? { ai_repaired: true } : {}), // true일 때만 쓴다(마이그레이션 0055 전에도 일반 줄 입력이 막히지 않게)
-          created_by: userId,
-        });
+        rows.push(
+          newOrderItemRow({
+            dailyBusinessId,
+            sequence,
+            product,
+            sizeSpec: parseSizeSpec(product.sizeRequest, settings),
+            aiRepaired,
+            isFirstInputOfDay,
+            userId,
+          }),
+        );
       }
       return rows;
     }),
   );
   const newRows = newRowGroups.flat();
   if (newRows.length > 0) {
-    const { error } = await supabase.from('order_items').insert(newRows);
+    // 줄마다 열 조합이 달라도 빠진 열은 NULL이 아니라 DB 기본값을 쓰게 한다(newOrderItemRow가 같은 열을 주지만 이중으로 막는다).
+    const { error } = await supabase.from('order_items').insert(newRows, { defaultToNull: false });
     if (error) throw new Error(`상품 저장 실패: ${error.message}`);
   }
   const results = await Promise.all([...updates, productRegistration]);
