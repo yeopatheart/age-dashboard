@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Eraser, Palette, PenLine, Undo2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { fetchBoardInk, subscribeBoardInk } from '@/lib/ink/board-ink-client';
+import { fetchBoardInk, fetchBoardInkStamp, subscribeBoardInk } from '@/lib/ink/board-ink-client';
 import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, redrawLive, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
 import { eraseStroke } from '@/lib/ink/erase';
 import { classifyStroke, REASON_LABEL } from '@/lib/ink/gesture';
@@ -176,17 +176,24 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
-    const load = async () => {
-      const strokes = await fetchBoardInk(supabase, date, monitor);
-      if (cancelled || strokes === null) return;
+    // 마지막으로 읽은 그림의 저장 시각. 안전 주기('poll')에서는 이 값이 그대로면 획 전체를 다시 받지 않는다.
+    let stamp: string | null | undefined;
+    const load = async (reason: 'signal' | 'poll' = 'signal') => {
+      if (reason === 'poll' && stamp !== undefined) {
+        const latest = await fetchBoardInkStamp(supabase, date, monitor);
+        if (cancelled || latest === undefined || latest === stamp) return;
+      }
+      const ink = await fetchBoardInk(supabase, date, monitor);
+      if (cancelled || ink === null) return;
+      stamp = ink.updatedAt;
       if (!viewOnly && committedRef.current) return;
-      const next = { strokes, history: [] as InkState['history'] };
+      const next = { strokes: ink.strokes, history: [] as InkState['history'] };
       stateRef.current = next;
       setState(next);
     };
     void load();
     if (!viewOnly) return () => { cancelled = true; };
-    const unsubscribe = subscribeBoardInk(supabase, date, () => void load());
+    const unsubscribe = subscribeBoardInk(supabase, date, (reason) => void load(reason));
     return () => {
       cancelled = true;
       unsubscribe();

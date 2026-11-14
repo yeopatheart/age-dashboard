@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Bell, BellRing } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
@@ -23,7 +23,7 @@ const PLAYED_TTL_MS = 8000; // 실시간 신호로 이미 알린 변경이 서�
 const RECENT_LIMIT = 12;
 const TITLE_BADGE = /^\(변경 \d+\) /; // 탭 제목 앞에 붙이는 "(변경 N)" 배지
 const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'keydown', 'touchend'] as const; // 브라우저가 "사용자 조작"으로 치는 입력
-const STALE_MS = 3 * 60_000; // 마지막 갱신이 이 시간보다 오래되면 낡은 화면으로 본다(안전 새로고침이 1분 간격이라 그보다 충분히 길게)
+const STALE_MS = 5 * 60_000; // 마지막 갱신이 이 시간보다 오래되면 낡은 화면으로 본다(실시간이 붙어 있을 때 안전 새로고침이 3분 간격이라 그보다 충분히 길게)
 
 interface RecentEvent {
   at: number;
@@ -37,7 +37,9 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
   const [settings] = useSoundSettings();
   const soundOn = searchParams.get('sound') !== 'off';
   const onItemChangeRef = useRef<(change: ItemChange) => void>(() => {});
-  const { status, lastRefreshAt } = useLiveRefresh(true, (change) => onItemChangeRef.current(change));
+  // 지금 보는 날짜의 카드·줄만 화면을 새로 받게 한다(다른 날짜의 변경 신호는 건너뛴다).
+  const scope = useMemo(() => ({ orderDate, dailyIds: new Set(rows.map((r) => r.dailyBusinessId)), itemIds: new Set(items.map((i) => i.id)) }), [orderDate, rows, items]);
+  const { status, lastRefreshAt } = useLiveRefresh(true, (change) => onItemChangeRef.current(change), scope);
   // "마지막 갱신"이 오래되면(타이머가 멈춘 TV 등) 칩을 붉게 바꿔 낡은 화면임을 알린다. 현재 시각은 30초마다만 갱신한다.
   const [now, setNow] = useState(0);
   useEffect(() => {
