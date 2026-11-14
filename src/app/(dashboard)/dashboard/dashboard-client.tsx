@@ -3,7 +3,7 @@ import { useState, useRef, useLayoutEffect, useCallback, useMemo, useOptimistic,
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, Presentation, TriangleAlert, Truck } from 'lucide-react';
+import { Check, GripVertical, Plus, Pencil, Trash2, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PackageX, PenLine, TriangleAlert, Truck } from 'lucide-react';
 import { businessIdsInBothRounds, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
@@ -13,7 +13,10 @@ import { DashboardMobile } from './dashboard-mobile';
 import { DashboardSound } from './dashboard-sound';
 import { InkLayer, type InkItem } from './ink-layer';
 import { ProductCustomersPopover } from './product-customers-popover';
+import { CustomerOrderPanel } from './customer-order-panel';
 import { fitRowHeight } from '@/lib/row-fit';
+import { useTouchDesktop } from '@/lib/use-touch-desktop';
+import { useHydrated } from '@/lib/use-hydrated';
 import { useToast, useUndoToast } from '@/components/toast';
 import {
   setProductHighlight,
@@ -233,26 +236,32 @@ function SortableRow({
 // 남는 폭은 표 오른쪽에 빈 자리로 남고, 모니터 2의 품목별 수량 패널은 표 바로 옆에 붙는다.
 const PRODUCT_COLUMN_MAX = 200;
 const NAME_COLUMN_DEFAULT = 144;
+// 터미널 열 폭: 가장 긴 터미널 이름 칩(굵은 11px)에 맞춘다. 수정·삭제 버튼은 고객명을 눌러 여는 패널로 옮겨서(2026-11-14) 버튼 자리는 잡지 않는다.
+const TERMINAL_COLUMN_DEFAULT = 64;
+const TERMINAL_COLUMN_MIN = 56; // 표 머리 "터미널"이 들어가는 폭
+const TERMINAL_COLUMN_MAX = 120;
 const NAME_COLUMN_MIN = 72;
 const NAME_COLUMN_MAX = 220;
 const ROUND_BADGE_WIDTH = 28; // RoundBadge("1차") 폭 + 오른쪽 간격
 // 박스 열 폭. 박스 수 옆에 "합포장" 표시와 "박스 재확인" 경고 아이콘이 함께 한 줄로 들어가는 폭이다.
 const BOX_COLUMN = 88;
-function productGridTemplate(slotCount: number, flexible = false, nameColumn = NAME_COLUMN_DEFAULT) {
-  const fixed = `40px 80px ${nameColumn}px ${BOX_COLUMN}px`;
+const noopId = (id: string) => void id;
+const noopActive = (active: boolean) => void active;
+function productGridTemplate(slotCount: number, flexible = false, nameColumn = NAME_COLUMN_DEFAULT, terminalColumn = TERMINAL_COLUMN_DEFAULT) {
+  const fixed = `40px ${terminalColumn}px ${nameColumn}px ${BOX_COLUMN}px`;
   return `${fixed} repeat(${slotCount}, ${flexible ? `minmax(0, ${PRODUCT_COLUMN_MAX}px)` : 'minmax(130px, 1fr)'})`;
 }
 // 위 열 정의의 최소 폭 합. 표 전체 폭을 이 값 이상으로 잡아야 옆으로 스크롤해도 헤더·행 배경이 끝까지 이어진다.
-const productGridFixedWidth = (nameColumn: number) => 40 + 80 + nameColumn + BOX_COLUMN;
-function productGridMinWidth(slotCount: number, nameColumn: number) {
-  return productGridFixedWidth(nameColumn) + slotCount * 130;
+const productGridFixedWidth = (nameColumn: number, terminalColumn: number) => 40 + terminalColumn + nameColumn + BOX_COLUMN;
+function productGridMinWidth(slotCount: number, nameColumn: number, terminalColumn: number) {
+  return productGridFixedWidth(nameColumn, terminalColumn) + slotCount * 130;
 }
 
 // 전체보기 위쪽 "품목별 수량" 카드를 접은 상태. 이 브라우저(PC·TV)마다 따로 기억한다 — 서버에는 저장하지 않는다.
 const SUMMARY_COLLAPSED_KEY = 'dash-summary-collapsed';
-// 칠판(보기 전용) 기기 스위치의 저장 키(이 브라우저에만 저장). 켜면 카드 탭·수정·삭제가 막히고 펜 플로팅 버튼이 나타난다. 툴바의 "칠판" 버튼이 켜고 끈다.
-const BOARD_VIEW_ONLY_KEY = 'board-view-only';
 // 툴바 터미널 칩의 [글자 px, 좌우 여백 px] 단계. 첫 단계가 기본이고 한 줄에 안 들어갈 때만 다음 단계로 줄인다.
+// PC 등 펜이 없는 기기에서 칠판의 펜 그림을 숨겼는지(이 브라우저에만 저장). 기본은 보인다.
+const INK_HIDDEN_KEY = 'board-ink-hidden';
 const TOOLBAR_CHIP_STEPS: [number, number][] = [[12, 8], [11, 6], [10, 5], [9, 4]];
 
 // 오늘 강조한 상품의 상품명 글자색. 첫 번째는 빨강이고, 두 개 이상 고르면 고른 순서대로 서로 다른 색을 쓴다.
@@ -773,11 +782,14 @@ export function DashboardClient({
   // 수정 권한이 없는 계정도 조회 전용이다. 삭제·취소는 별도 권한(dashboard:delete)이다.
   const can = useCan();
   const canDelete = can('dashboard:delete');
-  // 칠판(보기 전용) 기기: 스마트 칠판은 마우스처럼 정교하지 않아 카드를 만질 때마다 포장 체크가 바뀌거나 수정 버튼이 눌렸다(2026-11-14 현장).
-  // 포장 체크·수정은 휴대폰이나 보기 전용을 끈 PC에서 한다. 실시간 알림(`board-mode`)과는 따로 둔다 — 형이 입력하는 PC에서도 소리 알림을
-  // 켜고 쓰기 때문이다(2026-11-07 현장 확인). 알림 버튼의 설정 패널에서 기기별로 켠다. 휴대폰 화면에는 알림 컨트롤이 없어 켤 수 없다.
-  const [boardViewOnly, setBoardViewOnly] = useLocalFlag(BOARD_VIEW_ONLY_KEY);
-  const readOnly = boardViewOnly || (isPast && !allowPast) || !can('dashboard:edit');
+  // 칠판 모드 = 플로팅 버튼의 펜이 켜진 동안(별도 스위치 없음, 2026-11-14). 스마트 칠판은 마우스처럼 정교하지 않아 손이 닿을 때마다 포장 체크가 바뀌었으므로
+  // 펜이 켜져 있는 동안은 카드 탭을 막고, 펜을 끄면 일반 모드(카드 탭 = 포장 완료)로 돌아간다. 실시간 알림(`board-mode`)과는 따로 둔다.
+  // 펜 버튼은 터치 입력이 있는 데스크톱 기기(스마트 칠판)에만 보인다. 주소에 &pen=1이면 강제로 보이고 &pen=0이면 숨긴다(기기 판별이 틀렸을 때 쓰는 우회).
+  const [penActive, setPenActive] = useState(false);
+  const penAvailable = useTouchDesktop(searchParams.get('pen'));
+  const [inkHidden, setInkHidden] = useLocalFlag(INK_HIDDEN_KEY);
+  const hydrated = useHydrated(); // 펜 그림 층은 렌더 중 window를 읽으므로 서버에서는 그리지 않는다
+  const readOnly = penActive || (isPast && !allowPast) || !can('dashboard:edit');
   const [toastNode, showToast] = useToast();
   const [undoNode, showUndo] = useUndoToast();
 
@@ -852,6 +864,8 @@ export function DashboardClient({
 
   const effectiveMonitorMode = isMobile ? 'all' : monitorMode;
   const isSplitMode = effectiveMonitorMode !== 'all';
+  // 이 기기가 칠판 펜으로 그릴 수 있는지. 아니면(PC 등) 같은 그림을 읽기 전용으로 본다.
+  const inkWriter = penAvailable && isSplitMode && can('dashboard:edit') && !(isPast && !allowPast);
   // 표 본문에 쓸 수 있는 높이(스크롤 영역 − 헤더)를 측정해서 행 높이 단계와 줄 수를 정한다.
   // 두 모니터가 같은 높이를 쓰므로 모니터 2는 모니터 1이 가져간 줄 수(ownCapacity) 다음부터 시작한다.
   const [availHeight, setAvailHeight] = useState(0);
@@ -873,6 +887,21 @@ export function DashboardClient({
     ro.observe(headerEl);
     return () => ro.disconnect();
   }, []);
+
+  // 터미널 열 폭: 가장 긴 터미널 이름 칩을 한 줄로 그릴 수 있는 폭. 칩 좌우 여백(px-2 = 16) + 칩 테두리 2 + 칸 좌우 여백(px-2 = 16) + 오른쪽 경계선·반올림 여유.
+  const [terminalColumn, setTerminalColumn] = useState(TERMINAL_COLUMN_DEFAULT);
+  const terminalSignature = [...new Set(rows.map((r) => r.terminal || '-'))].join('\n');
+  useLayoutEffect(() => {
+    const measure = () => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (!ctx) return;
+      ctx.font = `700 11px ${getComputedStyle(document.body).fontFamily}`;
+      const widest = terminalSignature.split('\n').reduce((max, name) => Math.max(max, ctx.measureText(name).width), 0);
+      setTerminalColumn(Math.min(TERMINAL_COLUMN_MAX, Math.max(TERMINAL_COLUMN_MIN, Math.ceil(widest) + 38)));
+    };
+    measure();
+    void document.fonts?.ready.then(measure);
+  }, [terminalSignature]);
 
   // 고객명 열 폭: 가장 긴 고객명(굵은 12px)을 한 줄로 그릴 수 있는 폭. 1·2차 배지가 붙는 고객은 배지 폭만큼 더한다.
   // 완료 배지는 상태에 따라 붙었다 떨어지므로 열 폭에 넣지 않는다(폭이 흔들리지 않게). 넘치면 2줄로 접힌다. "박스 재확인" 경고는 고객명 칸이 아니라 박스 칸에 붙는다.
@@ -974,9 +1003,9 @@ export function DashboardClient({
     return Math.max(max, count);
   }, 0);
   const productSlotCount = Math.max(1, maxProductCount);
-  const gridTemplate = productGridTemplate(productSlotCount, isSplitMode, nameColumn);
+  const gridTemplate = productGridTemplate(productSlotCount, isSplitMode, nameColumn, terminalColumn);
   // 모니터 1/2는 열 폭이 화면 폭으로 정해진다. 상품이 많아 열이 좁아지면 글자도 그만큼 줄인다.
-  const colWidth = isSplitMode && availWidth > 0 ? (availWidth - productGridFixedWidth(nameColumn)) / productSlotCount : Infinity;
+  const colWidth = isSplitMode && availWidth > 0 ? (availWidth - productGridFixedWidth(nameColumn, terminalColumn)) / productSlotCount : Infinity;
   const widthShrink = colWidth >= 120 ? 0 : colWidth >= 100 ? 1 : colWidth >= 88 ? 2 : 3;
   // 글자 크기 단계: 가장 큰 크기부터 1px씩 줄여 가며, 팁 안쪽 높이에 들어가는 가장 큰 크기를 팁마다 고른다(아래 효과).
   // 한 줄에 들어가면 한 줄로, 안 들어가면 두 줄이 팁 안에 들어가는 크기까지 줄인다. 괄호 표기(사이즈·물봉 등)가 붙은 팁도
@@ -1160,6 +1189,12 @@ export function DashboardClient({
     return { backgroundColor: c.fill, borderColor: c.border, color: c.text };
   };
   // 상품 칩을 누르면 그 옆에 이 상품을 주문한 고객사 목록(플로팅)을 연다. 목록은 매번 최신 items로 계산한다.
+  const [customerPanel, setCustomerPanel] = useState<{ dailyBusinessId: string; anchor: { left: number; top: number; right: number; bottom: number } } | null>(null);
+  const openCustomerPanel = (dailyBusinessId: string, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    setCustomerPanel({ dailyBusinessId, anchor: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } });
+  };
+  const closeCustomerPanel = useCallback(() => setCustomerPanel(null), []);
   const [picked, setPicked] = useState<{ scope: 'main' | 'separate'; productKey: string; anchor: { left: number; top: number; right: number; bottom: number } } | null>(null);
   const pickProduct = (scope: 'main' | 'separate', product: ProductSummaryRow, rect: DOMRect) => {
     setPicked({ scope, productKey: product.key, anchor: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } });
@@ -1223,6 +1258,13 @@ export function DashboardClient({
   const productPanel = <ProductSummaryPanel columns={columns} chipStyle={chipStyle} availHeight={availHeight} onPick={(p, r) => pickProduct('main', p, r)} />;
 
   // 모달·확인창은 PC와 휴대폰 화면이 같이 쓴다.
+  // 고객명을 누르면 그 옆에 이 고객의 주문 편집 패널(상품 추가·수정·미출고·취소·삭제, 주문 수정·삭제)을 연다. 행·상품은 매번 최신 값으로 다시 찾는다.
+  const panelRow = customerPanel ? allRows.find((r) => r.dailyBusinessId === customerPanel.dailyBusinessId) : undefined;
+  // 모달을 여는 동작은 패널을 먼저 닫는다(모달이 패널 뒤로 가려지지 않게). 취소는 바로 실행되므로 패널을 열어 둔 채 결과를 보여 준다.
+  const fromPanel = (fn: () => void) => () => {
+    setCustomerPanel(null);
+    fn();
+  };
   const pickedCustomers = picked && pickedProduct
     ? getProductCustomers(picked.scope === 'main' ? mainItems : separateItems, pickedProduct, new Map((picked.scope === 'main' ? mainRows : separateRows).map((r, index) => [r.dailyBusinessId, index])))
     : [];
@@ -1230,6 +1272,22 @@ export function DashboardClient({
     <>
       {toastNode}
       {undoNode}
+      {customerPanel && panelRow && (
+        <CustomerOrderPanel
+          row={panelRow}
+          items={items.filter((i) => i.dailyBusinessId === panelRow.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence)}
+          anchor={customerPanel.anchor}
+          canDelete={canDelete}
+          onClose={closeCustomerPanel}
+          onAddItem={fromPanel(() => setAddItemModal({ row: panelRow }))}
+          onEditOrder={fromPanel(() => setEditOrderModal(panelRow))}
+          onDeleteOrder={fromPanel(() => setConfirmDelete({ type: 'order', dailyBusinessId: panelRow.dailyBusinessId }))}
+          onEditItem={(item) => fromPanel(() => setEditItemModal(item))()}
+          onUnshipped={(item) => fromPanel(() => setUnshippedModal(item))()}
+          onCancelItem={(item) => void handleCancelItem(item)}
+          onDeleteItem={(item) => fromPanel(() => setConfirmDelete({ type: 'item', itemId: item.id }))()}
+        />
+      )}
       {picked && pickedProduct && <ProductCustomersPopover product={pickedProduct} customers={pickedCustomers} anchor={picked.anchor} chipStyle={chipStyle(pickedProduct.productName)} onClose={closePicked} />}
       {addOrderModal && (
         <OrderFormModal terminals={allTerminals} businesses={businessDirectory} registered={allRows.map((r) => ({ businessId: r.businessId, round: r.round, terminal: r.terminal }))} onSave={handleSaveOrder} onClose={() => setAddOrderModal(false)} />
@@ -1473,17 +1531,18 @@ export function DashboardClient({
               </>
             )}
           </div>
-          {/* 칠판 모드: 켜면 이 기기는 보기 전용이 되고(카드 탭·수정·삭제 막힘) 펜 플로팅 버튼이 나타난다. 칠판 모양 아이콘만 두고(글자는 뺐다, 2026-11-14),
-              켜지면 남색으로 채워서 강조 상품 버튼(형광펜 아이콘·빨강·개수)과 구분한다. 스마트 칠판에서만 켠다(이 기기에만 저장). */}
-          <button
-            onClick={() => setBoardViewOnly(!boardViewOnly)}
-            className={`w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ${boardViewOnly ? 'bg-[#003057] border-[#003057] text-white hover:opacity-90' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-100'}`}
-            title={boardViewOnly ? '칠판 모드 켜짐 — 보기 전용입니다. 눌러서 끄기' : '칠판 모드 켜기 — 스마트 칠판용(보기 전용 + 펜)'}
-            aria-label="칠판 모드"
-            aria-pressed={boardViewOnly}
-          >
-            <Presentation className="w-4 h-4" />
-          </button>
+          {/* 칠판 펜 그림 보기/숨기기: 펜을 쓰지 않는 기기(PC)에서만. 그림이 표를 가릴 때 끌 수 있다. */}
+          {isSplitMode && !inkWriter && (
+            <button
+              onClick={() => setInkHidden(!inkHidden)}
+              className={`w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ${inkHidden ? 'border-slate-200 text-slate-400 bg-white hover:bg-slate-100' : 'bg-[#003057] border-[#003057] text-white hover:opacity-90'}`}
+              title={inkHidden ? '칠판 펜 그림 보기' : '칠판 펜 그림 숨기기'}
+              aria-label={inkHidden ? '칠판 펜 그림 보기' : '칠판 펜 그림 숨기기'}
+              aria-pressed={!inkHidden}
+            >
+              <PenLine className="w-4 h-4" />
+            </button>
+          )}
           {/* 주문 추가와 엑셀 다운로드는 버튼 하나에서 고른다(보기 전용이면 다운로드만 나온다). */}
           <div className="relative">
             <button
@@ -1538,7 +1597,7 @@ export function DashboardClient({
       <div
         className="flex-1 min-w-0 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden relative"
         // 모니터 1·2는 표 폭이 [고정 열 + 상품 열 수 × 최대 폭 + 테두리]를 넘지 않게 한다(열 폭 상한과 같은 기준).
-        style={isSplitMode ? { maxWidth: productGridFixedWidth(nameColumn) + productSlotCount * PRODUCT_COLUMN_MAX + 2 } : undefined}
+        style={isSplitMode ? { maxWidth: productGridFixedWidth(nameColumn, terminalColumn) + productSlotCount * PRODUCT_COLUMN_MAX + 2 } : undefined}
       >
         {/* 전체 주문이 0건일 땐 어느 모니터를 보든 이유가 같으므로(범위 문제가 아니라 주문
             자체가 없는 것) 병합보기와 같은 일반 문구를 쓴다. 전체엔 주문이 있는데 이 모니터
@@ -1562,7 +1621,7 @@ export function DashboardClient({
           </div>
         )}
         <div ref={scrollRef} className={`flex-1 min-h-0 overflow-x-auto ${isSplitMode ? 'overflow-y-hidden' : 'overflow-y-auto'}`}>
-          <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`} style={isSplitMode ? undefined : { minWidth: productGridMinWidth(productSlotCount, nameColumn) }}>
+          <div className={`flex flex-col ${isSplitMode ? 'h-full' : ''}`} style={isSplitMode ? undefined : { minWidth: productGridMinWidth(productSlotCount, nameColumn, terminalColumn) }}>
             {/* 헤더 */}
             <div
               ref={headerRef}
@@ -1627,36 +1686,28 @@ export function DashboardClient({
                         row.businessNumber
                       )}
                     </div>
-                    {/* 줄에 마우스를 올리면(또는 키보드로 포커스하면) 터미널 칩이 주문 수정·삭제 버튼으로 바뀐다 — 번호 칸이 끌기 아이콘으로 바뀌는 것과 같은 방식.
-                        고객명 칸에는 아무것도 겹치지 않는다(이름은 절대 가려지면 안 된다, 2026-11-14). 칠판(보기 전용)·수정 권한 없음은 칩만 보인다. */}
+                    {/* 터미널 칸은 칩만 보인다. 주문 수정·삭제는 고객명을 눌러 여는 패널에 있다(고객명 칸에는 아무것도 겹치지 않는다, 2026-11-14). */}
                     <div className="relative border-r border-slate-100 px-2 flex items-center justify-center">
-                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${readOnly ? '' : 'group-hover/row:invisible group-focus-within/row:invisible'} ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>
+                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>
                         {row.terminal || '-'}
                       </span>
-                      {!readOnly && (
-                        <div className="absolute inset-0 flex items-center justify-center gap-1.5 opacity-0 pointer-events-none group-hover/row:opacity-100 group-hover/row:pointer-events-auto group-focus-within/row:opacity-100 group-focus-within/row:pointer-events-auto transition-opacity">
-                          <button
-                            onClick={() => setEditOrderModal(row)}
-                            className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-600 flex items-center justify-center flex-shrink-0"
-                            title="주문 수정"
-                            aria-label={`${row.businessName} 주문 수정`}
-                          >
-                            <Pencil className="w-3 h-3 text-slate-500 hover:text-white" />
-                          </button>
-                          {canDelete && (
-                            <button
-                              onClick={() => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
-                              className="w-6 h-6 rounded bg-rose-100 hover:bg-rose-500 flex items-center justify-center flex-shrink-0"
-                              title="주문 삭제"
-                              aria-label={`${row.businessName} 주문 삭제`}
-                            >
-                              <Trash2 className="w-3 h-3 text-rose-500 hover:text-white" />
-                            </button>
-                          )}
-                        </div>
-                      )}
                     </div>
-                    <div className={`relative border-r border-slate-100 px-2 flex items-center overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : ''}`}>
+                    <div
+                      className={`relative border-r border-slate-100 px-2 flex items-center overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : ''} ${readOnly ? '' : 'cursor-pointer hover:bg-slate-100/70'}`}
+                      {...(readOnly
+                        ? {}
+                        : {
+                            role: 'button',
+                            tabIndex: 0,
+                            title: '누르면 이 고객의 상품 추가·수정·미출고·취소·삭제',
+                            onClick: (e: React.MouseEvent<HTMLDivElement>) => openCustomerPanel(row.dailyBusinessId, e.currentTarget),
+                            onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+                              if (e.key !== 'Enter' && e.key !== ' ') return;
+                              e.preventDefault();
+                              openCustomerPanel(row.dailyBusinessId, e.currentTarget);
+                            },
+                          })}
+                    >
                       {/* 업체명은 현장에서 정확히 보여야 하므로 말줄임 없이 전체 폭을 쓴다(최대 2줄, 행 높이 고정). */}
                       <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
@@ -1736,32 +1787,6 @@ export function DashboardClient({
                               )}
                               {suffix && <span data-pill-opt className="font-semibold text-sky-600" style={{ fontSize: 'var(--po)' }}>{suffix.trim()}</span>}
                             </div>
-                            <div className={`absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 ${readOnly ? 'hidden' : ''} group-hover:opacity-100 transition-opacity z-20`}>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setEditItemModal(item); }}
-                                className="w-4 h-4 rounded bg-slate-600 text-white flex items-center justify-center hover:bg-slate-800 transition-colors"
-                                title="수정"
-                              ><Pencil className="w-2.5 h-2.5" /></button>
-                              {item.changeStatus !== 'cancelled' && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); setUnshippedModal(item); }}
-                                  className="w-4 h-4 rounded bg-indigo-500 text-white flex items-center justify-center hover:bg-indigo-700 transition-colors"
-                                  title="미출고 처리 (주문은 유효, 출고만 못 함)"
-                                ><PackageX className="w-2.5 h-2.5" /></button>
-                              )}
-                              {canDelete && item.changeStatus !== 'cancelled' && (
-                                <button
-                                  onClick={async (e) => { e.stopPropagation(); await handleCancelItem(item); }}
-                                  className="w-4 h-4 rounded bg-amber-400 text-white flex items-center justify-center hover:bg-amber-500 transition-colors"
-                                  title="주문 취소 (주문 자체가 없어짐)"
-                                ><X className="w-2.5 h-2.5" /></button>
-                              )}
-                              {canDelete && <button
-                                onClick={(e) => { e.stopPropagation(); setConfirmDelete({ type: 'item', itemId: item.id }); }}
-                                className="w-4 h-4 rounded bg-rose-400 text-white flex items-center justify-center hover:bg-rose-600 transition-colors"
-                                title="삭제"
-                              ><Trash2 className="w-2.5 h-2.5" /></button>}
-                            </div>
                           </div>
                         </div>
                       );
@@ -1786,9 +1811,12 @@ export function DashboardClient({
         </div>
       </div>
         {effectiveMonitorMode === '2' && productPanel}
-        {/* 칠판 펜: 칠판 모드를 켜고(보기 전용) 수정 권한이 있고 오늘(또는 과거 편집 허용)인 모니터 1·2에서만. 전체보기는 스크롤로 그림이 어긋나서 제외한다. */}
-        {boardViewOnly && isSplitMode && can('dashboard:edit') && !(isPast && !allowPast) && (
-          <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} />
+        {/* 칠판 펜: 터치 기기(스마트 칠판)이고 수정 권한이 있고 오늘(또는 과거 편집 허용)인 모니터 1·2에서만 그릴 수 있다. 전체보기는 스크롤로 그림이 어긋나서 제외한다.
+            그릴 수 없는 기기(PC 등)는 같은 그림을 읽기 전용으로 겹쳐 본다(서버에 저장된 그림, 툴바 버튼으로 숨길 수 있다). */}
+        {inkWriter ? (
+          <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
+        ) : (
+          hydrated && isSplitMode && !inkHidden && <InkLayer key={`view|${orderDate}|${effectiveMonitorMode}`} viewOnly date={orderDate} monitor={effectiveMonitorMode} dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
         )}
       </div>
 

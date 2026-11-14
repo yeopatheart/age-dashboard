@@ -498,6 +498,10 @@ export type Database = {
           created_at?: string;
         }
       >;
+      board_ink: TableDef<
+        { order_date: string; monitor: string; strokes: unknown; updated_at: string; updated_by: string | null },
+        { order_date: string; monitor: string; strokes: unknown; updated_at?: string; updated_by?: string | null }
+      >;
       dispatch_log: TableDef<
         DispatchLog,
         Pick<DispatchLog, "order_date" | "kind" | "key" | "method"> & { id?: string; content_hash?: string | null; sent_by?: string | null; sent_at?: string }

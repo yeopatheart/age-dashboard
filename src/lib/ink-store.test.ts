@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { densify, eraseStroke, splitByMask } from './ink/erase.ts';
 import { HISTORY_LIMIT, popHistory, pushHistory, type HistoryEntry } from './ink/history.ts';
-import { inkKey, MAX_POINTS, MAX_STROKES, parseInk, pruneInk, resolvePoints, serializeInk, thinForStorage, toAnchoredStroke, toFreeStroke, type InkStroke } from './ink/store.ts';
+import { inkCutoffDate, MAX_POINTS, MAX_STROKES, parseInkStrokes, resolvePoints, thinForStorage, toAnchoredStroke, toFreeStroke, type InkStroke } from './ink/store.ts';
 import type { Pt } from './ink/canvas.ts';
 
 const base = { id: 's1', color: '#dc2626', width: 4 };
@@ -72,37 +72,34 @@ test('an anchored stroke follows its chip when the chip moves or resizes', () =>
 test('an anchored stroke whose chip is not on screen is not drawn but is kept', () => {
   const stroke = toAnchoredStroke(base, pts, 'item-1', { left: 0, top: 0, width: 10, height: 10 });
   assert.equal(resolvePoints(stroke, { width: 100, height: 100 }, null), null);
-  assert.equal(parseInk(serializeInk([stroke])).length, 1);
+  assert.equal(parseInkStrokes([stroke]).length, 1);
 });
 
-test('strokes survive a save and load round trip', () => {
+test('strokes survive a JSON round trip (what the server stores)', () => {
   const strokes = [toFreeStroke(base, pts, { width: 1000, height: 500 }), toAnchoredStroke({ ...base, id: 's2' }, pts, 'item-9', { left: 10, top: 10, width: 100, height: 30 })];
-  assert.deepEqual(parseInk(serializeInk(strokes)), strokes);
+  assert.deepEqual(parseInkStrokes(JSON.parse(JSON.stringify(strokes))), strokes);
 });
 
 test('broken or hostile saved data is dropped instead of crashing', () => {
-  assert.deepEqual(parseInk(null), []);
-  assert.deepEqual(parseInk('not json'), []);
-  assert.deepEqual(parseInk('{"v":2,"strokes":[]}'), []);
+  assert.deepEqual(parseInkStrokes(null), []);
+  assert.deepEqual(parseInkStrokes('not a list'), []);
+  assert.deepEqual(parseInkStrokes({ strokes: [] }), []);
   const good: InkStroke = { id: 'a', color: '#112233', width: 3, pts: [0, 0, 1, 1] };
-  const raw = JSON.stringify({
-    v: 1,
-    strokes: [
-      good,
-      { id: 'b', color: 'red', width: 3, pts: [0, 0, 1, 1] }, // 색 형식 오류
-      { id: 'c', color: '#112233', width: 999, pts: [0, 0, 1, 1] }, // 굵기 범위 밖
-      { id: 'd', color: '#112233', width: 3, pts: [0, 0, 1] }, // 점이 홀수
-      { id: 'e', color: '#112233', width: 3, pts: [0, 0, 'x', 1] }, // 숫자가 아님
-      { id: 'f', color: '#112233', width: 3, pts: [0, 0, 1, 1], anchor: 5 }, // 붙은 상품 id가 글자가 아님
-      null,
-    ],
-  });
-  assert.deepEqual(parseInk(raw), [good]);
+  const list = [
+    good,
+    { id: 'b', color: 'red', width: 3, pts: [0, 0, 1, 1] }, // 색 형식 오류
+    { id: 'c', color: '#112233', width: 999, pts: [0, 0, 1, 1] }, // 굵기 범위 밖
+    { id: 'd', color: '#112233', width: 3, pts: [0, 0, 1] }, // 점이 홀수
+    { id: 'e', color: '#112233', width: 3, pts: [0, 0, 'x', 1] }, // 숫자가 아님
+    { id: 'f', color: '#112233', width: 3, pts: [0, 0, 1, 1], anchor: 5 }, // 붙은 상품 id가 글자가 아님
+    null,
+  ];
+  assert.deepEqual(parseInkStrokes(list), [good]);
 });
 
 test('the number of saved strokes and points is capped', () => {
   const many: InkStroke[] = Array.from({ length: MAX_STROKES + 20 }, (_, i) => ({ id: `s${i}`, color: '#112233', width: 3, pts: [0, 0, 1, 1] }));
-  const loaded = parseInk(serializeInk(many));
+  const loaded = parseInkStrokes(many);
   assert.equal(loaded.length, MAX_STROKES);
   assert.equal(loaded[loaded.length - 1].id, `s${MAX_STROKES + 19}`);
   const long: Pt[] = Array.from({ length: 5000 }, (_, i) => ({ x: i * 4, y: (i % 7) * 4 }));
@@ -111,20 +108,8 @@ test('the number of saved strokes and points is capped', () => {
   assert.deepEqual([thinned[0], thinned[thinned.length - 1]], [long[0], long[long.length - 1]]);
 });
 
-test('old dates are pruned and only the kept dates remain', () => {
-  const store = new Map<string, string>([
-    [inkKey('2026-11-10', '1'), 'x'],
-    [inkKey('2026-11-13', '2'), 'x'],
-    [inkKey('2026-11-14', '1'), 'x'],
-    ['board-view-only', '1'],
-  ]);
-  const storage = {
-    get length() {
-      return store.size;
-    },
-    key: (i: number) => [...store.keys()][i] ?? null,
-    removeItem: (k: string) => void store.delete(k),
-  };
-  pruneInk(storage, ['2026-11-13', '2026-11-14']);
-  assert.deepEqual([...store.keys()].sort(), [inkKey('2026-11-13', '2'), inkKey('2026-11-14', '1'), 'board-view-only'].sort());
+test('the server keeps today and the two days before it', () => {
+  assert.equal(inkCutoffDate('2026-11-14'), '2026-11-12');
+  assert.equal(inkCutoffDate('2026-03-01'), '2026-02-27');
+  assert.equal(inkCutoffDate('2027-01-01'), '2026-12-30');
 });

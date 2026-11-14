@@ -1,12 +1,15 @@
 'use client';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Eraser, Palette, PenLine, Undo2 } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { fetchBoardInk, subscribeBoardInk } from '@/lib/ink/board-ink-client';
 import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
 import { eraseStroke } from '@/lib/ink/erase';
 import { classifyStroke, REASON_LABEL } from '@/lib/ink/gesture';
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
 import { cardPosition, clampToViewport, stackPositions } from '@/lib/ink/menu-layout';
-import { inkKey, parseInk, pruneInk, resolvePoints, serializeInk, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, type Box, type InkStroke } from '@/lib/ink/store';
+import { resolvePoints, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, type Box, type InkStroke } from '@/lib/ink/store';
+import { saveBoardInk } from './actions';
 
 // 칠판 펜 기능의 그림 층: 주문표 위에 얹는 캔버스 + 플로팅 버튼 + 세로로 쌓이는 메뉴.
 // 확정 설계는 docs/decisions/2026-11-14-board-pen-feature.md. 요약:
@@ -18,8 +21,8 @@ import { inkKey, parseInk, pruneInk, resolvePoints, serializeInk, STORE_MIN_STEP
 //   전체 지우기는 그림만 지우고 포장 상태는 유지한다.
 
 const PALM_PX = 24; // 진단: 손가락·펜 1×1px, 손바닥 52×62px
-const FAB = 56;
-const STACK_PITCH = 64; // 세로 메뉴의 버튼 간격(버튼 56px + 여백 8px)
+const FAB = 45; // 플로팅 버튼 지름(예전 56px의 80%, 2026-11-14 — 내용을 덜 가리게)
+const STACK_PITCH = 53; // 세로 메뉴의 버튼 간격(버튼 45px + 여백 8px)
 const EDGE_MARGIN = 36;
 const LONG_PRESS_MS = 500; // 플로팅 버튼을 이 시간 누르고 있으면 메뉴
 const HOLD_MS = 1000; // 지우개를 이 시간 누르고 있으면 전체 지우기
@@ -36,6 +39,7 @@ const ERASER_RANGE = { min: 8, max: 120 };
 const PREFS_KEY = 'board-ink-prefs';
 const POS_KEY = 'board-ink-pos';
 const NOTE_MS = 6000;
+const SAVE_DELAY_MS = 500; // 그린 뒤 이 시간 안의 변경은 한 번의 저장으로 묶는다
 
 type Tool = 'pen' | 'eraser';
 interface Prefs {
@@ -99,33 +103,6 @@ function loadPos(): Pt {
   return defaultPos();
 }
 
-function loadStrokes(date: string, monitor: string): InkStroke[] {
-  try {
-    return parseInk(localStorage.getItem(inkKey(date, monitor)));
-  } catch {
-    return [];
-  }
-}
-
-function saveStrokes(date: string, monitor: string, strokes: InkStroke[]) {
-  try {
-    localStorage.setItem(inkKey(date, monitor), serializeInk(strokes));
-  } catch {
-    // 저장이 막혀 있으면(시크릿 모드, 용량 초과) 이 화면에서만 유지된다
-  }
-}
-
-// 이 날짜 앞뒤 이틀 밖의 오래된 그림은 지운다.
-function pruneOldInk(date: string) {
-  try {
-    const base = new Date(`${date}T00:00:00Z`);
-    const keep = [-2, -1, 0, 1, 2].map((d) => new Date(base.getTime() + d * 86_400_000).toISOString().slice(0, 10));
-    pruneInk(localStorage, keep);
-  } catch {
-    // 무시
-  }
-}
-
 // 그림 층(캔버스) 기준으로 잰 화면 위 상품 칸들의 위치. 칸은 `data-chip="상품 id"`로 찾는다.
 function chipBoxes(canvas: HTMLCanvasElement): Map<string, Box> {
   const layer = canvas.getBoundingClientRect();
@@ -145,12 +122,16 @@ interface Props {
   items: InkItem[];
   onPack: (itemId: string) => void;
   onUnpack: (itemId: string) => void;
+  // 펜(또는 지우개)이 켜지고 꺼질 때 알린다. 켜져 있는 동안이 "칠판 모드"(카드 탭이 막힌다)이고 꺼지면 일반 모드다.
+  onActiveChange: (active: boolean) => void;
+  // true면 그림만 보여 준다(PC): 버튼·입력 없이 캔버스가 터치·마우스를 그대로 통과시키고, 서버의 그림이 바뀌면 다시 읽어 그린다.
+  viewOnly?: boolean;
 }
 
-export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props) {
+export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActiveChange, viewOnly = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<InkState>(() => ({ strokes: loadStrokes(date, monitor), history: [] }));
+  const [state, setState] = useState<InkState>(() => ({ strokes: [], history: [] }));
   const stateRef = useRef(state);
   const [tool, setTool] = useState<Tool | null>(null); // 그리는 중인 도구(없으면 터치가 그대로 통과한다)
   const [menuOpen, setMenuOpen] = useState(false); // 길게 눌러 연 메뉴(펜 설정·지우개·되돌리기)
@@ -180,17 +161,74 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
     itemsRef.current = items;
   });
 
-  // 같은 날짜 앞뒤 이틀 밖의 오래된 그림을 한 번 지운다.
+  // 펜이 켜져 있는 동안만 칠판 모드다. 이 컴포넌트가 사라질 때(모니터·날짜 전환)도 꺼진 것으로 알린다.
+  const penOn = tool !== null;
   useEffect(() => {
-    pruneOldInk(date);
-  }, [date]);
+    onActiveChange(penOn);
+    return () => onActiveChange(false);
+  }, [penOn, onActiveChange]);
+
+  // 그림은 서버가 원본이다(날짜·모니터당 한 행). 처음 한 번 읽고, 보기 전용(PC)은 서버 그림이 바뀌었다는 신호가 올 때마다 다시 읽는다.
+  // 그리는 쪽은 이미 그리기 시작했으면(자기 그림이 더 최신이다) 읽은 것으로 덮지 않는다.
+  const committedRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    const load = async () => {
+      const strokes = await fetchBoardInk(supabase, date, monitor);
+      if (cancelled || strokes === null) return;
+      if (!viewOnly && committedRef.current) return;
+      const next = { strokes, history: [] as InkState['history'] };
+      stateRef.current = next;
+      setState(next);
+    };
+    void load();
+    if (!viewOnly) return () => { cancelled = true; };
+    const unsubscribe = subscribeBoardInk(supabase, date, () => void load());
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [date, monitor, viewOnly]);
+
+  // 저장: 그리거나 지울 때마다 0.5초 안의 변경을 묶어 최신 전체를 서버에 보낸다. 시험 모드(&ink=dry)는 서버에 저장하지 않는다.
+  // 실패하면 화면에 "저장 안 됨"을 띄우고(눌러서 다시 시도), 다음 변경 때도 다시 보낸다. 화면을 떠날 때(모니터·날짜 전환) 남은 변경은 바로 보낸다.
+  const dirtyRef = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const flushSave = async () => {
+    clearTimeout(saveTimer.current);
+    if (!dirtyRef.current) return;
+    dirtyRef.current = false;
+    const { error } = await saveBoardInk(date, monitor, stateRef.current.strokes);
+    if (error) {
+      dirtyRef.current = true;
+      setSaveError(error);
+    } else {
+      setSaveError(null);
+    }
+  };
+  const scheduleSave = () => {
+    if (dry) return;
+    dirtyRef.current = true;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => void flushSave(), SAVE_DELAY_MS);
+  };
+  useEffect(
+    () => () => {
+      clearTimeout(saveTimer.current);
+      if (dirtyRef.current) void saveBoardInk(date, monitor, stateRef.current.strokes);
+    },
+    [date, monitor],
+  );
 
   const newId = () => `${Date.now().toString(36)}${(idCounter.current++).toString(36)}`;
 
   const commit = (next: InkState) => {
     stateRef.current = next;
     setState(next);
-    saveStrokes(date, monitor, next.strokes);
+    committedRef.current = true;
+    scheduleSave();
   };
 
   const redraw = () => {
@@ -488,6 +526,10 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
   };
 
   const openPenSettings = () => {
+    if (tool === 'pen' && card === 'pen') {
+      setCard(null); // 설정 카드가 열려 있을 때 다시 누르면 닫는다(펜은 켜 둔 채)
+      return;
+    }
     setTool('pen');
     setCard('pen');
   };
@@ -578,8 +620,11 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
   const selectedPos = card === 'pen' ? penPos : card === 'eraser' ? eraserPos : null;
   const cardPos = selectedPos ? cardPosition(pos, selectedPos.y, { width: CARD_W, height: card === 'pen' ? 188 : 132 }, FAB, viewport) : { x: 0, y: 0 };
   const canUndo = state.history.length > 0;
-  const menuButton = (active: boolean) => `fixed z-40 flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-full border-2 shadow-lg transition-colors ${active ? 'border-[#003057] bg-[#003057] text-white' : 'border-slate-300 bg-white text-slate-700'}`;
+  const menuButton = (active: boolean) => `fixed z-40 flex h-[45px] w-[45px] flex-col items-center justify-center gap-px rounded-full border-2 shadow-lg transition-colors ${active ? 'border-[#003057] bg-[#003057] text-white' : 'border-slate-300 bg-white text-slate-700'}`;
   const FabIcon = tool === 'eraser' ? Eraser : PenLine;
+
+  // PC: 그림만 보여 준다. 캔버스는 입력을 받지 않아 아래의 표가 그대로 눌린다.
+  if (viewOnly) return <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 z-30 h-full w-full" aria-hidden="true" />;
 
   return (
     <>
@@ -596,9 +641,14 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
       {/* 펜이 꺼져 있을 때 메뉴가 열려 있으면, 화면의 다른 곳을 누르는 것으로 메뉴를 닫는다. 펜이 켜져 있으면 그리기 시작이 메뉴를 닫는다. */}
       {menuOpen && !tool && <div className="fixed inset-0 z-30" onPointerDown={closeMenu} />}
       <div ref={previewRef} className="pointer-events-none absolute left-0 top-0 z-30 hidden rounded-full border-2 border-slate-500 bg-white/40" />
+      {saveError && (
+        <button type="button" onClick={() => void flushSave()} className="absolute left-1/2 top-2 z-30 max-w-md -translate-x-1/2 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold leading-snug text-white shadow-lg" title="눌러서 다시 저장">
+          그림이 저장되지 않았습니다 — 눌러서 다시 시도 ({saveError})
+        </button>
+      )}
       {dry && (
         <div className="pointer-events-none absolute left-1/2 top-2 z-30 -translate-x-1/2 rounded-lg bg-amber-500 px-3 py-1 text-xs font-bold text-white shadow">
-          시험 모드 — 인식 결과만 보이고 포장 상태는 바뀌지 않습니다
+          시험 모드 — 인식 결과만 보이고 포장 상태는 바뀌지 않으며 그림도 저장되지 않습니다
         </div>
       )}
       {note && (
@@ -610,8 +660,8 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
       {menuOpen && penPos && eraserPos && undoPos && (
         <>
           <button type="button" aria-label="펜 설정(색·굵기)" aria-pressed={card === 'pen'} title="펜 설정 — 색과 굵기" onClick={openPenSettings} className={menuButton(card === 'pen')} style={{ left: penPos.x - FAB / 2, top: penPos.y - FAB / 2 }}>
-            <Palette className="h-5 w-5" />
-            <span className="text-[10px] font-bold leading-none">펜 설정</span>
+            <Palette className="h-4 w-4" />
+            <span className="text-[9px] font-bold leading-none">펜 설정</span>
           </button>
           <button
             type="button"
@@ -626,15 +676,15 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
             className={menuButton(tool === 'eraser')}
             style={{ left: eraserPos.x - FAB / 2, top: eraserPos.y - FAB / 2, touchAction: 'none' }}
           >
-            <Eraser className="h-5 w-5" />
-            <span className="text-[10px] font-bold leading-none">지우개</span>
+            <Eraser className="h-4 w-4" />
+            <span className="text-[9px] font-bold leading-none">지우개</span>
             <svg className="pointer-events-none absolute inset-0 -rotate-90" viewBox="0 0 56 56" aria-hidden="true">
               <circle cx="28" cy="28" r="25" fill="none" stroke="#dc2626" strokeWidth="4" strokeLinecap="round" strokeDasharray="157" style={{ strokeDashoffset: holding ? 0 : 157, transition: holding ? `stroke-dashoffset ${HOLD_MS}ms linear` : 'none' }} />
             </svg>
           </button>
           <button type="button" aria-label="되돌리기" title="되돌리기" disabled={!canUndo} onClick={undo} className={`${menuButton(false)} disabled:opacity-40`} style={{ left: undoPos.x - FAB / 2, top: undoPos.y - FAB / 2 }}>
-            <Undo2 className="h-5 w-5" />
-            <span className="text-[10px] font-bold leading-none">되돌리기</span>
+            <Undo2 className="h-4 w-4" />
+            <span className="text-[9px] font-bold leading-none">되돌리기</span>
           </button>
         </>
       )}
@@ -678,10 +728,10 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack }: Props)
           dragRef.current = null;
         }}
         onContextMenu={(e) => e.preventDefault()}
-        className={`fixed z-40 flex h-14 w-14 items-center justify-center rounded-full border-2 shadow-xl ${tool ? 'border-[#003057] bg-[#003057] text-white' : 'border-[#003057] bg-white text-[#003057]'} ${menuOpen ? 'ring-4 ring-sky-300' : ''}`}
+        className={`fixed z-40 flex h-[45px] w-[45px] items-center justify-center rounded-full border-2 shadow-xl ${tool ? 'border-[#003057] bg-[#003057] text-white' : 'border-[#003057] bg-white text-[#003057]'} ${menuOpen ? 'ring-4 ring-sky-300' : ''}`}
         style={{ left: pos.x - FAB / 2, top: pos.y - FAB / 2, touchAction: 'none' }}
       >
-        <FabIcon className="h-7 w-7" />
+        <FabIcon className="h-[22px] w-[22px]" />
       </button>
     </>
   );
