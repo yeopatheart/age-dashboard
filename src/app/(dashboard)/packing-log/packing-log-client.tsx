@@ -17,8 +17,9 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { BarChart3, CircleDashed, ClipboardList, GripVertical, Package, PackageCheck, Plus, Printer, PrinterCheck, PrinterX, Trash2, X } from 'lucide-react';
+import { BarChart3, CircleDashed, ClipboardList, Package, PackageCheck, Printer, PrinterCheck, PrinterX, Trash2, X } from 'lucide-react';
 import type { RecommendationView, StoredPlan } from '@/lib/packing/server';
+import { summarizeBoxNeeds } from '@/lib/packing/box-needs';
 import { emptyBoxMessage, firstEmptyBoxIndex, removalShiftsPrintedLabels } from '@/lib/packing/box-rules';
 import { EXCLUDED_REASON_LABEL, type ExcludedItem } from '@/lib/packing/excluded-items';
 import { submitPacking, assignItemsToBoxes, deletePackingRecord } from './actions';
@@ -113,6 +114,26 @@ const layoutKey = (boxes: DraftBox[]) =>
     .map((b) => `${b.boxId}:${b.items.map((i) => `${i.orderItemId}=${fmt(i.quantity)}`).sort().join(',')}`)
     .sort()
     .join('|');
+// 상품(또는 그 일부 수량)을 박스에 담는다. fromUid가 있으면 그 박스에서는 뺀다. 같은 상품이 이미 있으면 수량을 합친다.
+function applyAssign(d: Draft, itemId: string, toUid: string, qty: number, fromUid?: string): Draft {
+  const boxesNext = d.boxes.map((b) => {
+    let items = b.items;
+    if (fromUid && b.uid === fromUid) items = items.filter((i) => i.orderItemId !== itemId);
+    if (b.uid === toUid) {
+      const found = items.find((i) => i.orderItemId === itemId);
+      items = found
+        ? items.map((i) => (i.orderItemId === itemId ? { ...i, quantity: i.quantity + qty } : i))
+        : [...items, { orderItemId: itemId, quantity: qty }];
+    }
+    return items === b.items ? b : { ...b, items };
+  });
+  return { ...d, boxes: boxesNext, moveQty: { ...d.moveQty, [itemId]: '' }, source: 'manual' };
+}
+// 지금 눌러 둔 상품: 아직 담지 않은 상품(fromUid 없음)이거나 박스에 담긴 상품(그 박스의 uid).
+interface Picked {
+  itemId: string;
+  fromUid: string | null;
+}
 let uidCounter = 0;
 const newUid = () => `box-${Date.now()}-${uidCounter++}`;
 
@@ -143,6 +164,7 @@ export function PackingLogClient({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [picked, setPicked] = useState<Picked | null>(null); // 눌러 둔 상품(옮길 박스를 고르는 중)
   // 미제출 업체에서 지금 보고 있는 추천 후보(0부터). 수정 중이 아닐 때만 쓴다.
   const [ranks, setRanks] = useState<Record<string, number>>({});
 
@@ -239,21 +261,7 @@ export function PackingLogClient({
             : '';
 
   // ─── 담기/옮기기/빼기 ─────────────────────────────────────────────────────
-  const assign = (itemId: string, toUid: string, qty: number, fromUid?: string) =>
-    updateDraft((d) => {
-      const boxesNext = d.boxes.map((b) => {
-        let items = b.items;
-        if (fromUid && b.uid === fromUid) items = items.filter((i) => i.orderItemId !== itemId);
-        if (b.uid === toUid) {
-          const found = items.find((i) => i.orderItemId === itemId);
-          items = found
-            ? items.map((i) => (i.orderItemId === itemId ? { ...i, quantity: i.quantity + qty } : i))
-            : [...items, { orderItemId: itemId, quantity: qty }];
-        }
-        return items === b.items ? b : { ...b, items };
-      });
-      return { ...d, boxes: boxesNext, moveQty: { ...d.moveQty, [itemId]: '' }, source: 'manual' };
-    });
+  const assign = (itemId: string, toUid: string, qty: number, fromUid?: string) => updateDraft((d) => applyAssign(d, itemId, toUid, qty, fromUid));
   const unassign = (itemId: string, fromUid: string) =>
     updateDraft((d) => ({
       ...d,
@@ -265,6 +273,12 @@ export function PackingLogClient({
       ...d,
       boxes: [...d.boxes, { uid: newUid(), boxId: type.id, name: type.name, dims: dimsOf(type), isMulbong: type.is_mulbong_box, items: [] }],
     }));
+  // 눌러 둔 상품을 새 박스(고른 종류)에 담는다.
+  const moveToNewBox = (itemId: string, type: BoxType, qty: number, fromUid?: string) =>
+    updateDraft((d) => {
+      const box: DraftBox = { uid: newUid(), boxId: type.id, name: type.name, dims: dimsOf(type), isMulbong: type.is_mulbong_box, items: [] };
+      return applyAssign({ ...d, boxes: [...d.boxes, box] }, itemId, box.uid, qty, fromUid);
+    });
   const removeBox = (uid: string) => {
     if (draft && selected) {
       const at = draft.boxes.findIndex((b) => b.uid === uid);
@@ -281,6 +295,40 @@ export function PackingLogClient({
     const remaining = remainingOf(d, item);
     const typed = parseFloat(d.moveQty[item.id] ?? '');
     return Number.isFinite(typed) && typed > 0 ? Math.min(typed, remaining) : remaining;
+  };
+
+  // 눌러 둔 상품이 아직 그 자리에 있을 때만 유효하다(옮기거나 업체를 바꾸면 자동으로 풀린다).
+  const pickedItem = picked && selected ? selected.items.find((i) => i.id === picked.itemId) ?? null : null;
+  const pickedValid =
+    !!pickedItem &&
+    !!draft &&
+    (picked!.fromUid === null
+      ? remainingOf(draft, pickedItem) > EPS
+      : !!draft.boxes.find((b) => b.uid === picked!.fromUid)?.items.some((i) => i.orderItemId === pickedItem.id));
+  const activePick = pickedValid ? picked : null;
+  const togglePick = (itemId: string, fromUid: string | null) => setPicked((cur) => (cur && cur.itemId === itemId && cur.fromUid === fromUid ? null : { itemId, fromUid }));
+  const pickedQty = (): number => {
+    if (!activePick || !pickedItem || !draft) return 0;
+    return activePick.fromUid
+      ? draft.boxes.find((b) => b.uid === activePick.fromUid)?.items.find((i) => i.orderItemId === pickedItem.id)?.quantity ?? 0
+      : parseMove(draft, pickedItem);
+  };
+  const movePickedTo = (toUid: string) => {
+    if (!activePick || !pickedItem || activePick.fromUid === toUid) return;
+    const qty = pickedQty();
+    if (qty > EPS) assign(pickedItem.id, toUid, qty, activePick.fromUid ?? undefined);
+    setPicked(null);
+  };
+  const movePickedToNewBox = (typeId: string) => {
+    const type = boxTypeById.get(typeId);
+    if (!activePick || !pickedItem || !type) return;
+    const qty = pickedQty();
+    if (qty > EPS) moveToNewBox(pickedItem.id, type, qty, activePick.fromUid ?? undefined);
+    setPicked(null);
+  };
+  const removePicked = () => {
+    if (activePick?.fromUid && pickedItem) unassign(pickedItem.id, activePick.fromUid);
+    setPicked(null);
   };
 
   const onDragStart = (e: DragStartEvent) => {
@@ -341,7 +389,15 @@ export function PackingLogClient({
       delete next[selected.id]; // 제출한 내용으로 다시 불러오게 한다
       return next;
     });
-    setNotice(`${selected.businessName}${selected.roundLabel ? ` (${selected.roundLabel})` : ''} 박스 할당을 제출했습니다.`);
+    // 다음 미제출 업체로 바로 넘어간다(목록에서 현재 업체 뒤쪽을 먼저, 없으면 처음부터). 없으면 그 업체에 머문다.
+    const at = rows.findIndex((r) => r.id === selected.id);
+    const next = [...rows.slice(at + 1), ...rows.slice(0, Math.max(at, 0))].find((r) => !r.submitted && r.id !== selected.id);
+    if (next) {
+      setSelectedId(next.id);
+      setConfirmDelete(false);
+    }
+    setPicked(null);
+    setNotice(`${selected.businessName}${selected.roundLabel ? ` (${selected.roundLabel})` : ''} 박스 할당을 제출했습니다.${next ? '' : ' 남은 업체가 없습니다.'}`);
   };
   const handleDeleteRecord = async () => {
     if (!selected) return;
@@ -390,6 +446,15 @@ export function PackingLogClient({
   };
   const canAutoAssign = !!draft && draft.boxes.length > 0 && !hasDeletedBox && (selected?.items.length ?? 0) > 0;
 
+  // 오늘 필요한 박스(종류별 개수): 제출한 업체는 제출한 구성, 미제출 업체는 지금 화면의 구성(작성 중이면 그것, 아니면 보고 있는 추천)으로 센다.
+  const needs = summarizeBoxNeeds(
+    rows.map((r) => ({
+      submittedNames: r.submitted ? r.submitted.boxes.map((b) => b.boxName) : null,
+      plannedNames: r.submitted ? [] : (drafts[r.id]?.boxes ?? baseBoxes(r, rankOf(r))).map((b) => b.name),
+    })),
+    boxes.map((b) => b.name),
+  );
+
   const go = (date: string) => router.push(`/packing-log?date=${date}`);
 
   const visibleRows = onlyPending ? rows.filter((r) => !r.submitted) : rows;
@@ -416,6 +481,21 @@ export function PackingLogClient({
         </div>
       </div>
 
+      {rows.length > 0 && (
+        <div className="pk-needs" aria-label="오늘 필요한 박스">
+          <span className="pk-needs-title"><Package size={15} aria-hidden /> 오늘 필요한 박스</span>
+          {needs.lines.length === 0 && <span className="ak-muted">아직 박스가 정해진 업체가 없습니다.</span>}
+          {needs.lines.map((l) => (
+            <span key={l.name} className="pk-need" title={`${l.name}: 제출 ${l.submitted}개${l.planned > 0 ? ` + 미제출 업체 예상 ${l.planned}개` : ''}`}>
+              {l.name} <b>{l.submitted + l.planned}</b>
+              {l.planned > 0 && <em>{l.submitted > 0 ? `제출 ${l.submitted}` : '예상'}</em>}
+            </span>
+          ))}
+          <span className="ak-spacer" />
+          <span className="pk-needs-sum">합계 <b>{needs.submittedTotal + needs.plannedTotal}</b>개{needs.plannedTotal > 0 && <> (제출 {needs.submittedTotal} + 예상 {needs.plannedTotal})</>} · {needs.rows}곳 중 {needs.submittedRows}곳 제출</span>
+        </div>
+      )}
+
       {rows.length === 0 ? (
         <p className="ak-empty">이 날짜에 주문이 없습니다.</p>
       ) : (
@@ -423,7 +503,7 @@ export function PackingLogClient({
           <aside className="pk-list">
             {visibleRows.length === 0 && <p className="ak-empty" style={{ padding: '1.5rem 0.5rem' }}>모두 제출했습니다.</p>}
             {visibleRows.map((r) => (
-              <button key={r.id} className={`pk-biz ${r.id === selectedId ? 'pk-biz-on' : ''}`} onClick={() => { setSelectedId(r.id); setError(null); setNotice(null); setConfirmDelete(false); }}>
+              <button key={r.id} className={`pk-biz ${r.id === selectedId ? 'pk-biz-on' : ''} ${r.submitted && r.id !== selectedId ? 'pk-biz-done' : ''}`} onClick={() => { setSelectedId(r.id); setError(null); setNotice(null); setConfirmDelete(false); setPicked(null); }}>
                 <span className="pk-biz-top">
                   <span className="pk-biz-name">{r.businessName}{r.roundLabel && ` (${r.roundLabel})`}</span>
                   {isModified(r) && <span className="pk-editing" title="수정한 내용이 아직 제출되지 않았습니다">수정 중</span>}
@@ -504,42 +584,57 @@ export function PackingLogClient({
                           {i + 1}순위 {planLabel(plan)}
                         </button>
                       ))}
-                      <span className="ak-muted pk-rec-hint">다르게 포장했다면 상품을 다른 박스로 끌어다 놓거나 박스를 바꿔주세요.</span>
+                      <span className="ak-muted pk-rec-hint">다르게 포장했다면 상품을 눌러 다른 박스로 옮기거나 박스를 바꿔주세요.</span>
                     </>
                   ) : (
-                    <span className="pk-rec-label">이 업체는 박스 추천이 없습니다. 박스를 추가하고 상품을 끌어다 놓아주세요.</span>
+                    <span className="pk-rec-label">이 업체는 박스 추천이 없습니다. 박스를 추가하고 상품을 눌러 담아주세요.</span>
                   )}
                 </div>
 
                 {readOnly ? (
                   <div className="pk-view">
-                    <div className="pk-slots">
+                    <div className="pk-rows">
                       {draft.boxes.length === 0 && <p className="pk-hint">담긴 박스가 없습니다.</p>}
                       {draft.boxes.map((box, idx) => (
-                        <BoxSlot key={box.uid} box={box} index={idx + 1} items={selected.items} readOnly />
+                        <BoxRow key={box.uid} box={box} index={idx + 1} items={selected.items} readOnly />
                       ))}
                     </div>
                   </div>
                 ) : (
-                  <div className={`pk-board ${unplaced.length === 0 ? 'pk-board-solo' : ''}`}>
-                    {unplaced.length > 0 && <Pool items={unplaced} draft={draft} onMoveQty={(id, v) => updateDraft((d) => ({ ...d, moveQty: { ...d.moveQty, [id]: v } }))} onWeight={(id, v) => updateDraft((d) => ({ ...d, weights: { ...d.weights, [id]: v } }))} remainingOf={(i) => remainingOf(draft, i)} total={selected.items.length} onPlace={(item, uid) => { const qty = parseMove(draft, item); if (qty > EPS) assign(item.id, uid, qty); }} />}
-
-                    <div className="pk-boxes">
-                      <div className="pk-palette">
-                        <span className="pk-palette-label"><Package size={14} /> 박스 추가</span>
-                        {activeBoxes.length === 0 && <span className="ak-muted">사용 중인 박스가 없습니다 (박스 관리)</span>}
-                        {activeBoxes.map((b) => (
-                          <button key={b.id} className="pk-add-box" onClick={() => addBox(b)} title={dimsOf(b) ? `${dimsOf(b)} cm` : undefined}>
-                            <Plus size={13} /> {b.name}{b.is_mulbong_box && <em>물봉</em>}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="pk-slots">
-                        {draft.boxes.length === 0 && <p className="pk-hint">박스를 추가한 뒤, 상품 목록의 상품을 박스로 끌어다 놓으세요.</p>}
-                        {draft.boxes.map((box, idx) => (
-                          <BoxSlot key={box.uid} box={box} index={idx + 1} items={selected.items} boxTypes={boxes} onChangeType={(boxId) => changeBoxType(box.uid, boxId)} onRemove={() => removeBox(box.uid)} onUnassign={(id) => unassign(id, box.uid)} />
-                        ))}
-                      </div>
+                  <div className="pk-board">
+                    {unplaced.length > 0 && (
+                      <Pool items={unplaced} remainingOf={(i) => remainingOf(draft, i)} total={selected.items.length} picked={activePick} onPick={(id) => togglePick(id, null)} />
+                    )}
+                    <MoveBar
+                      item={pickedItem && activePick ? pickedItem : null}
+                      fromUid={activePick?.fromUid ?? null}
+                      boxes={draft.boxes}
+                      boxTypes={activeBoxes}
+                      remaining={pickedItem && activePick && !activePick.fromUid ? remainingOf(draft, pickedItem) : 0}
+                      moveQty={pickedItem ? draft.moveQty[pickedItem.id] ?? '' : ''}
+                      weight={pickedItem ? draft.weights[pickedItem.id] ?? '' : ''}
+                      onMoveQty={(v) => pickedItem && updateDraft((d) => ({ ...d, moveQty: { ...d.moveQty, [pickedItem.id]: v } }))}
+                      onWeight={(v) => pickedItem && updateDraft((d) => ({ ...d, weights: { ...d.weights, [pickedItem.id]: v } }))}
+                      onMoveTo={movePickedTo}
+                      onNewBox={movePickedToNewBox}
+                      onRemove={removePicked}
+                      onClose={() => setPicked(null)}
+                    />
+                    <div className="pk-rows">
+                      {draft.boxes.length === 0 && <p className="pk-hint">아래에서 박스를 추가한 뒤, 상품을 눌러 박스에 담으세요.</p>}
+                      {draft.boxes.map((box, idx) => (
+                        <BoxRow key={box.uid} box={box} index={idx + 1} items={selected.items} boxTypes={boxes} picked={activePick} onPick={(id) => togglePick(id, box.uid)} onChangeType={(boxId) => changeBoxType(box.uid, boxId)} onRemove={() => removeBox(box.uid)} />
+                      ))}
+                    </div>
+                    <div className="pk-addrow">
+                      <label className="pk-add">
+                        <Package size={14} aria-hidden />
+                        <select className="ak-select" value="" aria-label="박스 추가" onChange={(e) => { const t = boxTypeById.get(e.target.value); if (t) addBox(t); }}>
+                          <option value="">+ 박스 추가…</option>
+                          {activeBoxes.map((b) => <option key={b.id} value={b.id}>{b.name}{b.is_mulbong_box ? ' (물봉)' : ''}{dimsOf(b) ? ` · ${dimsOf(b)}cm` : ''}</option>)}
+                        </select>
+                      </label>
+                      {activeBoxes.length === 0 && <span className="ak-muted">사용 중인 박스가 없습니다 (박스 관리)</span>}
                     </div>
                   </div>
                 )}
@@ -561,8 +656,8 @@ export function PackingLogClient({
                         : selected.submitted
                           ? `수정한 내용으로 다시 제출 (박스 ${draft.boxes.length}개)`
                           : modified || !selected.recommendation
-                            ? `이대로 제출할게요 (박스 ${draft.boxes.length}개)`
-                            : '맞아요. 제출할게요.'}
+                            ? `이대로 제출하고 다음 업체 (박스 ${draft.boxes.length}개)`
+                            : '맞아요. 제출하고 다음 업체'}
                     </button>
                   )}
                 </div>
@@ -622,49 +717,64 @@ export function PackingLogClient({
         .pk-work { container-type: inline-size; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; min-width: 0; }
         .pk-work-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
         .pk-title { font-size: var(--fs-lg); font-weight: 800; color: var(--primary); }
-        .pk-board { display: grid; grid-template-columns: 19rem minmax(0, 1fr); gap: 1rem; padding: 1rem 1.1rem; min-height: 22rem; }
-        .pk-pool { background: #f8fafc; border: 2px dashed #e2e8f0; border-radius: 12px; padding: 0.7rem; display: flex; flex-direction: column; gap: 0.5rem; }
-        .pk-pool-over { border-color: var(--primary); background: var(--primary-light); }
-        .pk-pool-title { font-size: var(--fs-xs); font-weight: 800; color: var(--muted-foreground); }
-        .pk-chip { display: flex; align-items: center; gap: 0.35rem; background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.35rem 0.5rem; font-size: var(--fs-sm); }
-        .pk-chip-ghost { box-shadow: var(--shadow-md); border-color: var(--primary); padding: 0.45rem 0.8rem; }
-        .pk-grip { display: flex; align-items: center; gap: 0.3rem; flex: 1; min-width: 0; cursor: grab; touch-action: none; user-select: none; }
-        .pk-grip:active { cursor: grabbing; }
-        .pk-name { font-weight: 700; word-break: keep-all; }
-        .pk-qty { color: var(--muted-foreground); white-space: nowrap; }
-        .pk-place { height: var(--ctl-h); border: 1px solid var(--border); border-radius: 999px; padding: 0 0.6rem; font-size: var(--fs-xs); font-weight: 700; background: #fff; }
-        .pk-mini { width: 3.4rem; height: 1.7rem; border: 1px solid var(--border); border-radius: 8px; text-align: center; font-size: var(--fs-xs); background: #fff; }
-        .pk-slot-meta .pk-mulbong { font-size: var(--fs-xs); padding: 0.05rem 0.5rem; }
         .pk-aerator { font-size: var(--fs-xs); font-weight: 800; color: #0f766e; background: #f0fdfa; border: 1px solid #5eead4; border-radius: 999px; padding: 0 0.35rem; }
         .pk-mulbong { font-size: var(--fs-xs); font-weight: 800; color: #1d4ed8; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 999px; padding: 0 0.35rem; }
-        .pk-pool-row { display: flex; flex-direction: column; gap: 0.25rem; }
-        .pk-pool-opts { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-xs); color: var(--muted-foreground); padding-left: 1.2rem; flex-wrap: wrap; }
-        .pk-boxes { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
-        .pk-palette { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
-        .pk-palette-label { display: inline-flex; align-items: center; gap: 0.3rem; font-size: var(--fs-xs); font-weight: 800; color: var(--muted-foreground); margin-right: 0.2rem; }
-        .pk-add-box { display: inline-flex; align-items: center; gap: 0.3rem; height: 2rem; padding: 0 0.8rem; border-radius: 999px; border: 1px solid var(--border); background: #fff; font-size: var(--fs-sm); font-weight: 700; cursor: pointer; }
-        .pk-add-box:hover { background: var(--muted); }
-        .pk-add-box em { font-style: normal; font-size: var(--fs-xs); color: #1d4ed8; }
-        .pk-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.75rem; align-items: start; }
-        .pk-hint { grid-column: 1 / -1; color: var(--muted-foreground); font-size: var(--fs-md); padding: 2rem 0; text-align: center; border: 2px dashed #e2e8f0; border-radius: 12px; }
-        .pk-slot { border: 2px solid #cbd5e1; border-radius: 14px; background: #fff; min-height: 9rem; display: flex; flex-direction: column; }
-        .pk-slot-over { border-color: var(--primary); background: var(--primary-light); }
-        .pk-slot-head { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.6rem 0.7rem; background: #f1f5f9; border-radius: 12px 12px 0 0; font-size: var(--fs-sm); }
-        .pk-slot-row { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
-        .pk-slot-no { flex: none; font-size: var(--fs-num); font-weight: 900; line-height: 1; white-space: nowrap; color: var(--primary); }
-        .pk-slot-select { flex: 1 1 0; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
-        .pk-slot-name { flex: 1 1 0; min-width: 0; font-size: var(--fs-lg); font-weight: 800; overflow-wrap: anywhere; }
-        .pk-slot-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem 0.5rem; }
-        .pk-slot-meta > * { white-space: nowrap; }
-        .pk-slot-dims { color: var(--muted-foreground); font-size: var(--fs-xs); }
-        .pk-board-solo { grid-template-columns: minmax(0, 1fr); }
-        .pk-slot-body { padding: 0.5rem; display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
-        .pk-slot-empty { margin: auto; color: #94a3b8; font-size: var(--fs-sm); }
         .pk-x { border: none; background: transparent; color: var(--muted-foreground); cursor: pointer; padding: 0.15rem; border-radius: 6px; display: inline-flex; }
         .pk-x:hover { background: #e2e8f0; color: var(--danger); }
         .pk-warn { font-size: var(--fs-xs); font-weight: 800; color: #b45309; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 999px; padding: 0 0.35rem; }
         .pk-foot { display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 1.1rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
         .pk-submit { height: 2.5rem; padding: 0 1.4rem; font-size: var(--fs-md); }
+        /* 박스 할당 보드(2026-11-14 개편): 박스를 한 줄씩 나열해 박스가 7개여도 한 화면에 들어오게 하고, 상품은 눌러서 박스 번호 한 번으로 옮긴다. */
+        .pk-needs { display: flex; align-items: center; gap: 0.4rem 0.6rem; flex-wrap: wrap; padding: 0.45rem 0.9rem; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); font-size: var(--fs-sm); }
+        .pk-needs-title { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 800; color: var(--primary); }
+        .pk-need { display: inline-flex; align-items: baseline; gap: 0.3rem; border: 1px solid var(--border); background: var(--primary-light); border-radius: 999px; padding: 0.1rem 0.65rem; font-weight: 700; white-space: nowrap; }
+        .pk-need b { font-size: var(--fs-md); font-weight: 900; color: var(--primary); }
+        .pk-need em { font-style: normal; font-size: var(--fs-xs); color: var(--muted-foreground); }
+        .pk-needs-sum { color: var(--muted-foreground); font-weight: 600; white-space: nowrap; }
+        .pk-needs-sum b { color: var(--foreground); font-weight: 900; }
+        .pk-biz-done { opacity: 0.6; }
+        .pk-board { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.65rem 1rem; }
+        .pk-pool { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; background: #f8fafc; border: 2px dashed #e2e8f0; border-radius: 12px; padding: 0.4rem 0.6rem; }
+        .pk-pool-over { border-color: var(--primary); background: var(--primary-light); }
+        .pk-pool-title { font-size: var(--fs-xs); font-weight: 800; color: var(--muted-foreground); margin-right: 0.2rem; }
+        .pk-move { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; min-height: 2.6rem; padding: 0.3rem 0.6rem; border: 1px solid var(--primary); background: var(--primary-light); border-radius: 12px; font-size: var(--fs-sm); }
+        .pk-move-idle { border-style: dashed; border-color: var(--border); background: transparent; color: var(--muted-foreground); }
+        .pk-move-what { font-size: var(--fs-md); font-weight: 800; color: var(--primary); }
+        .pk-move-label { font-weight: 700; color: var(--muted-foreground); margin-left: 0.2rem; }
+        .pk-to { min-width: 2.2rem; height: 2rem; padding: 0 0.5rem; border-radius: 10px; border: 1px solid var(--primary); background: #fff; color: var(--primary); font-weight: 900; font-size: var(--fs-md); cursor: pointer; }
+        .pk-to:hover:not(:disabled) { background: var(--primary); color: #fff; }
+        .pk-to:disabled { opacity: 0.35; cursor: not-allowed; }
+        .pk-to-out { border-color: #cbd5e1; color: #475569; font-size: var(--fs-sm); }
+        .pk-to-new { height: 2rem; max-width: 9rem; }
+        .pk-move-opt { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--muted-foreground); font-weight: 600; margin-left: 0.4rem; }
+        .pk-mini { width: 3.6rem; height: 1.8rem; border: 1px solid var(--border); border-radius: 8px; text-align: center; font-size: var(--fs-xs); background: #fff; }
+        .pk-move .pk-x { margin-left: auto; }
+        .pk-rows { display: flex; flex-direction: column; gap: 0.35rem; max-height: 36rem; overflow-y: auto; padding: 0.1rem; }
+        .pk-row { display: grid; grid-template-columns: 2.8rem 13.5rem minmax(0, 1fr) auto; align-items: center; gap: 0.5rem; border: 2px solid #cbd5e1; border-radius: 12px; background: #fff; padding: 0.2rem 0.5rem; }
+        .pk-row-over { border-color: var(--primary); background: var(--primary-light); }
+        .pk-row-no { font-size: var(--fs-lg); font-weight: 900; color: var(--primary); white-space: nowrap; }
+        .pk-row-type { display: flex; align-items: center; gap: 0.35rem; min-width: 0; }
+        .pk-row-meta { display: inline-flex; align-items: center; gap: 0.3rem; flex: none; }
+        .pk-row-meta:empty { display: none; }
+        .pk-slot-select { flex: 1 1 0; width: auto; min-width: 0; text-overflow: ellipsis; }
+        .pk-slot-name { font-size: var(--fs-md); font-weight: 800; overflow-wrap: anywhere; }
+        .pk-slot-dims { color: var(--muted-foreground); font-size: var(--fs-xs); white-space: nowrap; }
+        .pk-slot-empty { color: #94a3b8; font-size: var(--fs-sm); }
+        .pk-row-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem; min-height: 2rem; min-width: 0; }
+        .pk-chip { display: inline-flex; align-items: center; gap: 0.35rem; background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.25rem 0.55rem; font-size: var(--fs-sm); cursor: pointer; touch-action: none; user-select: none; font-family: inherit; }
+        .pk-chip:hover { border-color: var(--primary); }
+        .pk-chip-sel { border: 2px solid var(--primary); background: var(--primary-light); padding: calc(0.25rem - 1px) calc(0.55rem - 1px); }
+        .pk-chip-static { cursor: default; }
+        .pk-chip-static:hover { border-color: #cbd5e1; }
+        .pk-chip-ghost { box-shadow: var(--shadow-md); border-color: var(--primary); padding: 0.45rem 0.8rem; }
+        .pk-name { font-weight: 700; word-break: keep-all; }
+        .pk-qty { color: var(--muted-foreground); white-space: nowrap; }
+        .pk-size { color: #0369a1; font-size: var(--fs-xs); white-space: nowrap; }
+        .pk-hint { color: var(--muted-foreground); font-size: var(--fs-md); padding: 1.2rem 0; text-align: center; border: 2px dashed #e2e8f0; border-radius: 12px; }
+        .pk-addrow { display: flex; align-items: center; gap: 0.5rem; }
+        .pk-add { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted-foreground); }
+        .pk-add .ak-select { min-width: 12rem; }
+        @media (max-width: 900px) { .pk-row { grid-template-columns: 2.8rem minmax(0, 1fr) auto; } .pk-row-chips { grid-column: 1 / -1; } }
         /* PC(901px 이상)에서만 압축한다: 제목 줄과 도구줄을 한 줄로, 작업 영역의 여백·높이를 줄여 업체를 골라도 스크롤이 거의 생기지 않게 한다. 휴대폰은 손으로 누르기 좋은 기존 크기를 쓴다. */
         .pk-top { display: flex; align-items: center; gap: 0.5rem 1rem; flex-wrap: wrap; }
         .pk-top .page-header { flex: 1 1 22rem; min-width: 0; align-items: center; }
@@ -678,215 +788,221 @@ export function PackingLogClient({
           .pk-work-head { padding: 0.5rem 1rem; }
           .pk-rec { padding: 0.4rem 1rem; }
           .pk-tab { padding: 0.25rem 0.75rem; font-size: var(--fs-sm); border-radius: 10px; }
-          .pk-board { padding: 0.65rem 1rem; gap: 0.75rem; min-height: 0; }
-          .pk-boxes { gap: 0.5rem; }
-          .pk-slots { gap: 0.6rem; grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr)); }
-          .pk-slot { min-height: 6rem; }
           .pk-foot { padding: 0.5rem 1rem; }
-          .pk-slot-head { padding: 0.45rem 0.6rem; gap: 0.25rem; }
-          .pk-slot-body { padding: 0.4rem; gap: 0.25rem; }
-          .pk-chip { padding: 0.2rem 0.45rem; }
-          .pk-big { min-height: 2.75rem; padding: 0 1.3rem; font-size: var(--fs-lg); border-radius: 12px; }
         }
         /* 손으로 누르는 화면(휴대폰·태블릿·터치 입력)에서는 누르는 요소를 44px 이상으로 둔다. PC(마우스)는 촘촘한 크기를 유지한다. */
         @media (max-width: 900px), (pointer: coarse) {
           .pk-x { min-width: 44px; min-height: 44px; align-items: center; justify-content: center; }
-          .pk-add-box { min-height: 44px; }
-          .pk-mini { height: 44px; }
           .pk-check { min-height: 44px; }
           .pk-check input { width: 22px; height: 22px; }
         }
         /* 작업 영역 폭이 좁으면(태블릿/좁은 창) 상품 영역을 박스 영역 위로 쌓는다. */
-        @container (max-width: 52rem) { .pk-board { grid-template-columns: 1fr; } }
-        @media (max-width: 900px) { .pk-layout { grid-template-columns: 1fr; } .pk-board { grid-template-columns: 1fr; } .pk-list { max-height: none; flex-direction: row; overflow-x: auto; padding-bottom: 0.25rem; } .pk-biz { flex: none; width: 12.5rem; } .pk-biz-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 100%; } }
+        @media (max-width: 900px) { .pk-layout { grid-template-columns: 1fr; } .pk-list { max-height: none; flex-direction: row; overflow-x: auto; padding-bottom: 0.25rem; } .pk-biz { flex: none; width: 12.5rem; } .pk-biz-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 100%; } }
       `}</style>
     </div>
+  );
+}
+
+// ─── 상품 칩 ────────────────────────────────────────────────────────────────
+// 눌러서 고르면(옮길 박스를 위쪽 이동 줄에서 한 번에 고른다) 끌어서도 옮길 수 있다(마우스용 보조).
+function ItemChip({
+  item,
+  qty,
+  remainingLabel,
+  fromUid,
+  picked,
+  mulbongMismatch = false,
+  onPick,
+}: {
+  item: PackingItem;
+  qty: number;
+  remainingLabel?: string;
+  fromUid: string | null;
+  picked: boolean;
+  mulbongMismatch?: boolean;
+  onPick: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: fromUid ? `placed:${fromUid}:${item.id}` : `item:${item.id}`, data: fromUid ? { itemId: item.id, fromUid } : { itemId: item.id } });
+  const partial = qty < item.quantity - EPS;
+  return (
+    <button
+      type="button"
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onClick={onPick}
+      aria-pressed={picked}
+      className={`pk-chip ${picked ? 'pk-chip-sel' : ''}`}
+      style={{ opacity: isDragging ? 0.4 : 1 }}
+    >
+      <span className="pk-name">{item.name}</span>
+      <span className="pk-qty">{remainingLabel ?? `${fmt(qty)}${item.unit}${partial ? ` / ${fmt(item.quantity)}` : ''}`}</span>
+      {item.sizeRequest && <span className="pk-size">({item.sizeRequest})</span>}
+      {item.aerator ? <span className="pk-aerator">기포기</span> : !fromUid && (item.needsMulbong || item.orderMulbong) && <span className="pk-mulbong">물봉</span>}
+      {mulbongMismatch && <span className="pk-warn" title="물봉 포장이 필요한 상품인데 물봉용 박스가 아닙니다">물봉 필요</span>}
+    </button>
   );
 }
 
 // ─── 아직 안 담은 상품 영역(끌어서 되돌리는 곳이기도 하다) ────────────────────────
 function Pool({
   items,
-  draft,
-  onMoveQty,
-  onWeight,
   remainingOf,
   total,
-  onPlace,
+  picked,
+  onPick,
 }: {
   items: PackingItem[];
-  draft: Draft;
-  onMoveQty: (id: string, v: string) => void;
-  onWeight: (id: string, v: string) => void;
   remainingOf: (i: PackingItem) => number;
   total: number;
-  onPlace: (item: PackingItem, boxUid: string) => void; // 끌지 않고 고른 박스에 바로 담는다(폰·키보드용)
+  picked: Picked | null;
+  onPick: (itemId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: 'pool' });
   return (
     <div ref={setNodeRef} className={`pk-pool ${isOver ? 'pk-pool-over' : ''}`}>
-      <div className="pk-pool-title">아직 담지 않은 상품 ({items.length}/{total})</div>
-      {items.length === 0 && <p className="ak-muted" style={{ fontSize: '0.8125rem' }}>모든 상품을 담았어요. 박스에서 빼려면 상품을 여기로 끌어오세요.</p>}
-      {items.map((item) => (
-        <PoolItem key={item.id} item={item} remaining={remainingOf(item)} moveQty={draft.moveQty[item.id] ?? ''} weight={draft.weights[item.id] ?? ''} onMoveQty={(v) => onMoveQty(item.id, v)} onWeight={(v) => onWeight(item.id, v)} boxes={draft.boxes.map((b, i) => ({ uid: b.uid, label: `${i + 1}번 ${b.name}` }))} onPlace={(uid) => onPlace(item, uid)} />
-      ))}
+      <span className="pk-pool-title">아직 담지 않은 상품 ({items.length}/{total})</span>
+      {items.map((item) => {
+        const remaining = remainingOf(item);
+        return (
+          <ItemChip
+            key={item.id}
+            item={item}
+            qty={remaining}
+            remainingLabel={`${fmt(remaining)}${item.unit}${remaining < item.quantity - EPS ? ` / ${fmt(item.quantity)}` : ''}`}
+            fromUid={null}
+            picked={!!picked && !picked.fromUid && picked.itemId === item.id}
+            onPick={() => onPick(item.id)}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function PoolItem({
+// ─── 이동 줄: 눌러 둔 상품을 어느 박스로 옮길지 한 번에 고른다 ────────────────────────
+// 박스를 보드 안에서 찾아 끌지 않아도 된다. 상품을 누르지 않았을 때도 같은 높이를 차지해 화면이 출렁이지 않는다.
+function MoveBar({
   item,
+  fromUid,
+  boxes,
+  boxTypes,
   remaining,
   moveQty,
   weight,
   onMoveQty,
   onWeight,
-  boxes,
-  onPlace,
+  onMoveTo,
+  onNewBox,
+  onRemove,
+  onClose,
 }: {
-  item: PackingItem;
+  item: PackingItem | null;
+  fromUid: string | null;
+  boxes: DraftBox[];
+  boxTypes: BoxType[];
   remaining: number;
   moveQty: string;
   weight: string;
   onMoveQty: (v: string) => void;
   onWeight: (v: string) => void;
-  boxes: { uid: string; label: string }[];
-  onPlace: (boxUid: string) => void;
+  onMoveTo: (uid: string) => void;
+  onNewBox: (typeId: string) => void;
+  onRemove: () => void;
+  onClose: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `item:${item.id}`, data: { itemId: item.id } });
-  const partial = remaining < item.quantity - EPS;
+  if (!item) return <div className="pk-move pk-move-idle">상품을 누르면 옮길 박스를 고를 수 있어요 (끌어다 놓아도 됩니다)</div>;
   return (
-    <div className="pk-pool-row" style={{ opacity: isDragging ? 0.4 : 1 }}>
-      <div className="pk-chip">
-        <span ref={setNodeRef} className="pk-grip" {...listeners} {...attributes}>
-          <GripVertical size={14} color="#94a3b8" />
-          <span className="pk-name">{item.name}</span>
-          <span className="pk-qty">{fmt(remaining)}{item.unit}{partial ? ` / ${fmt(item.quantity)}` : ''}</span>
-          {item.aerator ? <span className="pk-aerator">기포기</span> : (item.needsMulbong || item.orderMulbong) && <span className="pk-mulbong">물봉</span>}
-        </span>
-      </div>
-      <div className="pk-pool-opts">
-        {remaining > 1 && (
-          <label>
-            담을 수량{' '}
-            <input className="pk-mini" type="number" min="0" step="any" placeholder={fmt(remaining)} value={moveQty} onChange={(e) => onMoveQty(e.target.value)} />
-          </label>
-        )}
-        <label>
-          실측 kg{' '}
-          <input className="pk-mini" type="number" min="0" step="any" placeholder="선택" value={weight} onChange={(e) => onWeight(e.target.value)} />
+    <div className="pk-move" role="group" aria-label={`${item.name} 옮기기`}>
+      <strong className="pk-move-what">{item.name}</strong>
+      <span className="pk-move-label">{fromUid ? '옮길 박스' : '담을 박스'}</span>
+      {boxes.map((b, i) => (
+        <button key={b.uid} type="button" className="pk-to" disabled={b.uid === fromUid} onClick={() => onMoveTo(b.uid)} title={`${i + 1}번 ${b.name}`}>
+          {i + 1}
+        </button>
+      ))}
+      <select className="ak-select pk-to-new" value="" aria-label="새 박스에 담기" onChange={(e) => e.target.value && onNewBox(e.target.value)}>
+        <option value="">새 박스…</option>
+        {boxTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+      </select>
+      {fromUid && <button type="button" className="pk-to pk-to-out" onClick={onRemove} title="박스에서 빼서 아직 담지 않은 상품으로 돌립니다">빼기</button>}
+      {remaining > 1 && (
+        <label className="pk-move-opt">
+          담을 수량 <input className="pk-mini" type="number" min="0" step="any" placeholder={fmt(remaining)} value={moveQty} onChange={(e) => onMoveQty(e.target.value)} />
         </label>
-        {item.sizeRequest && <span>({item.sizeRequest})</span>}
-        {boxes.length > 0 && (
-          <label>
-            {/* 수량·실측을 먼저 입력한 뒤 마지막에 박스를 골라 담는 순서다(드래그가 어려운 폰·키보드용). 고르는 순간 위 칸의 값으로 담긴다 */}
-            <select className="pk-place" value="" aria-label={`${item.name} 박스에 담기`} onChange={(e) => e.target.value && onPlace(e.target.value)}>
-              <option value="">담을 박스 선택…</option>
-              {boxes.map((b) => <option key={b.uid} value={b.uid}>{b.label}</option>)}
-            </select>
-          </label>
-        )}
-      </div>
+      )}
+      <label className="pk-move-opt">
+        실측 kg <input className="pk-mini" type="number" min="0" step="any" placeholder="선택" value={weight} onChange={(e) => onWeight(e.target.value)} />
+      </label>
+      <button type="button" className="pk-x" onClick={onClose} title="선택 풀기" aria-label="선택 풀기"><X size={15} /></button>
     </div>
   );
 }
 
-// ─── 박스 칸 ────────────────────────────────────────────────────────────────
-function BoxSlot({
+// ─── 박스 한 줄 ─────────────────────────────────────────────────────────────
+function BoxRow({
   box,
   index,
   items,
   boxTypes = [],
+  picked = null,
+  onPick,
   onChangeType,
   onRemove,
-  onUnassign,
   readOnly = false,
 }: {
   box: DraftBox;
   index: number;
   items: PackingItem[];
-  // 박스 칸 머리에서 박스 종류를 바꿀 수 있다(담긴 상품은 그대로 유지)
+  // 박스 줄에서 박스 종류를 바꿀 수 있다(담긴 상품은 그대로 유지)
   boxTypes?: BoxType[];
+  picked?: Picked | null;
+  onPick?: (itemId: string) => void;
   onChangeType?: (boxId: string) => void;
   onRemove?: () => void;
-  onUnassign?: (itemId: string) => void;
   // 수정 중이 아닐 때: 끌어다 놓기·빼기 없이 어떤 상품이 담겼는지만 보여준다.
   readOnly?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `box:${box.uid}`, disabled: readOnly });
   const itemById = new Map(items.map((i) => [i.id, i]));
   return (
-    <div ref={setNodeRef} className={`pk-slot ${isOver ? 'pk-slot-over' : ''}`}>
-      <div className="pk-slot-head">
-        <div className="pk-slot-row">
-          <strong className="pk-slot-no">{index}번</strong>
-          {readOnly || !onChangeType ? (
-            <span className="pk-slot-name">{box.name}</span>
-          ) : (
-            <select className="ak-select pk-slot-select" value={box.boxId ?? ''} onChange={(e) => e.target.value && onChangeType(e.target.value)}>
-              {box.boxId === null && <option value="">{box.name} (삭제된 박스)</option>}
-              {boxTypes.filter((t) => t.is_active || t.id === box.boxId).map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          )}
-          {!readOnly && onRemove && <button className="pk-x" onClick={onRemove} title="박스 빼기 (담은 상품은 상품 목록으로 돌아갑니다)"><X size={16} /></button>}
-        </div>
-        {(box.isMulbong || box.boxId === null || box.dims) && (
-          <div className="pk-slot-meta">
-            {box.isMulbong && <span className="pk-mulbong">물봉용</span>}
-            {box.boxId === null && <span className="pk-warn">삭제된 박스</span>}
-            {box.dims && <span className="pk-slot-dims">{box.dims}cm</span>}
-          </div>
+    <div ref={setNodeRef} className={`pk-row ${isOver ? 'pk-row-over' : ''}`}>
+      <strong className="pk-row-no">{index}번</strong>
+      <div className="pk-row-type">
+        {readOnly || !onChangeType ? (
+          <span className="pk-slot-name" title={box.dims ? `${box.dims}cm` : undefined}>{box.name}</span>
+        ) : (
+          <select className="ak-select pk-slot-select" value={box.boxId ?? ''} title={box.dims ? `${box.name} · ${box.dims}cm` : box.name} aria-label={`${index}번 박스 종류`} onChange={(e) => e.target.value && onChangeType(e.target.value)}>
+            {box.boxId === null && <option value="">{box.name} (삭제된 박스)</option>}
+            {boxTypes.filter((t) => t.is_active || t.id === box.boxId).map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
         )}
+        <span className="pk-row-meta">
+          {box.isMulbong && <span className="pk-mulbong">물봉용</span>}
+          {box.boxId === null && <span className="pk-warn">삭제된 박스</span>}
+        </span>
       </div>
-      <div className="pk-slot-body">
-        {box.items.length === 0 && <span className="pk-slot-empty">여기에 상품을 끌어다 놓으세요</span>}
+      <div className="pk-row-chips">
+        {box.items.length === 0 && <span className="pk-slot-empty">{readOnly ? '담긴 상품 없음' : '비어 있음 · 상품을 눌러 이 박스로 옮기세요'}</span>}
         {box.items.map((bi) => {
           const item = itemById.get(bi.orderItemId);
           if (!item) return null;
-          if (readOnly || !onUnassign) {
+          const mismatch = item.needsMulbong && !box.isMulbong;
+          if (readOnly || !onPick) {
             return (
-              <div key={bi.orderItemId} className="pk-chip">
-                <span className="pk-grip" style={{ cursor: 'default' }}>
-                  <span className="pk-name">{item.name}</span>
-                  <span className="pk-qty">{fmt(bi.quantity)}{item.unit}{bi.quantity < item.quantity - EPS ? ` / ${fmt(item.quantity)}` : ''}</span>
-                  {item.needsMulbong && !box.isMulbong && <span className="pk-warn" title="물봉 포장이 필요한 상품인데 물봉용 박스가 아닙니다">물봉 필요</span>}
-                </span>
-              </div>
+              <span key={bi.orderItemId} className="pk-chip pk-chip-static">
+                <span className="pk-name">{item.name}</span>
+                <span className="pk-qty">{fmt(bi.quantity)}{item.unit}{bi.quantity < item.quantity - EPS ? ` / ${fmt(item.quantity)}` : ''}</span>
+                {mismatch && <span className="pk-warn" title="물봉 포장이 필요한 상품인데 물봉용 박스가 아닙니다">물봉 필요</span>}
+              </span>
             );
           }
-          return <PlacedChip key={bi.orderItemId} item={item} qty={bi.quantity} fromUid={box.uid} mulbongMismatch={item.needsMulbong && !box.isMulbong} onRemove={() => onUnassign(bi.orderItemId)} />;
+          return <ItemChip key={bi.orderItemId} item={item} qty={bi.quantity} fromUid={box.uid} picked={!!picked && picked.fromUid === box.uid && picked.itemId === item.id} mulbongMismatch={mismatch} onPick={() => onPick(item.id)} />;
         })}
       </div>
-    </div>
-  );
-}
-
-function PlacedChip({
-  item,
-  qty,
-  fromUid,
-  mulbongMismatch,
-  onRemove,
-}: {
-  item: PackingItem;
-  qty: number;
-  fromUid: string;
-  mulbongMismatch: boolean;
-  onRemove: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `placed:${fromUid}:${item.id}`, data: { itemId: item.id, fromUid } });
-  return (
-    <div className="pk-chip" style={{ opacity: isDragging ? 0.4 : 1 }}>
-      <span ref={setNodeRef} className="pk-grip" {...listeners} {...attributes}>
-        <GripVertical size={14} color="#94a3b8" />
-        <span className="pk-name">{item.name}</span>
-        <span className="pk-qty">{fmt(qty)}{item.unit}{qty < item.quantity - EPS ? ` / ${fmt(item.quantity)}` : ''}</span>
-        {item.aerator && <span className="pk-aerator">기포기</span>}
-        {mulbongMismatch && <span className="pk-warn" title="물봉 포장이 필요한 상품인데 물봉용 박스가 아닙니다">물봉 필요</span>}
-      </span>
-      <button className="pk-x" onClick={onRemove} title="박스에서 빼기"><X size={13} /></button>
+      {!readOnly && onRemove ? <button className="pk-x" onClick={onRemove} title="박스 빼기 (담은 상품은 상품 목록으로 돌아갑니다)" aria-label={`${index}번 박스 빼기`}><X size={16} /></button> : <span />}
     </div>
   );
 }
