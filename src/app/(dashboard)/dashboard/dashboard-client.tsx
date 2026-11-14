@@ -1947,7 +1947,7 @@ export function DashboardClient({
 
                       return (
                         <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[1px] flex min-w-0">
-                          <div data-chip={item.id} className={`relative w-full flex items-center justify-center px-1 rounded-lg border overflow-hidden ${bg} ${border} transition-all group shadow-sm`}>
+                          <div data-chip={item.id} className={`relative w-full flex items-center justify-start px-1.5 rounded-lg border overflow-hidden ${bg} ${border} transition-all group shadow-sm`}>
                             {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
                               <span
                                 className="absolute top-0 left-0 z-20 text-[9px] font-bold leading-none px-1 py-[2px] rounded-br bg-amber-500 text-white"
@@ -1963,7 +1963,7 @@ export function DashboardClient({
                               data-pill
                               data-sizes={pillStepsAttr}
                               onClick={() => !readOnly && handleTogglePacked(item)}
-                              className="w-full min-w-0 flex flex-wrap items-baseline justify-center gap-x-1 z-10 cursor-pointer select-none break-keep [overflow-wrap:anywhere]"
+                              className="w-full min-w-0 flex flex-wrap items-baseline justify-start text-left gap-x-1 z-10 cursor-pointer select-none break-keep [overflow-wrap:anywhere]"
                               // 컨테이너의 글자 크기도 칩 글자 크기에 맞춘다: 안 맞추면 수량을 감싼 상자의 보이지 않는 줄 높이(strut)가 부모의 큰 기본 글자
                               // 크기로 잡혀서, 작은 글자 단계에서 글자가 칩 아래쪽으로 치우친다.
                               style={{ fontSize: 'var(--pq)', lineHeight: 'var(--pl, 1.15)', maxHeight: pillInnerHeight, transform: 'translateY(var(--pshift, 0px))' }}
@@ -2091,7 +2091,7 @@ export function DashboardClient({
                       if (prepLabelOf(item)) suffixParts.push(prepLabelOf(item) as string);
                       return (
                         <div key={item.id} className={`border-r border-slate-100 last:border-r-0 ${density.cell} flex min-w-0`}>
-                          <div data-chip={item.id} className={`relative w-full ${density.chip} flex flex-wrap items-center justify-center content-center gap-x-1 px-1.5 rounded-lg border text-xs text-center break-keep [overflow-wrap:anywhere] shadow-sm ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
+                          <div data-chip={item.id} className={`relative w-full ${density.chip} flex flex-wrap items-center justify-start content-center gap-x-1 px-1.5 rounded-lg border text-xs text-left break-keep [overflow-wrap:anywhere] shadow-sm ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
                             <span className="font-bold">{item.productName}</span>
                             {isUndecidedQuantity(item) ? (
                               <span className="rounded bg-amber-100 px-1 font-black text-amber-700 whitespace-nowrap">수량 미정</span>

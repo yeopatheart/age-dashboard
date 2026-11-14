@@ -81,7 +81,7 @@ test('a tap or a tiny scribble is too short', () => {
   assert.deepEqual(classifyStroke(line({ x: 150, y: 110 }, { x: 160, y: 118 }), targets), { kind: 'none', reason: 'too-short' });
 });
 
-test('a straight stroke across more than half of a chip is recognised in any direction', () => {
+test('a straight stroke across at least a quarter of a chip is recognised in any direction', () => {
   const diagonal = classifyStroke(line({ x: 150, y: 135 }, { x: 190, y: 95 }), targets);
   assert.equal(diagonal.kind === 'line' && diagonal.itemId, 'A');
   const backslash = classifyStroke(line({ x: 150, y: 95 }, { x: 190, y: 135 }), targets);
@@ -97,8 +97,13 @@ test('a short vertical stroke still counts when it spans most of the chip height
   assert.equal(r.kind === 'line' && r.itemId, 'A');
 });
 
-test('a horizontal stroke over about 40% of the chip width does not count (needs 50%)', () => {
-  assert.deepEqual(classifyStroke(line({ x: 140, y: 115 }, { x: 196, y: 115 }), targets), { kind: 'none', reason: 'no-target' });
+test('a horizontal stroke over about 30% of the chip width counts (needs 25%)', () => {
+  const r = classifyStroke(line({ x: 140, y: 115 }, { x: 182, y: 115 }), targets);
+  assert.equal(r.kind === 'line' && r.itemId, 'A');
+});
+
+test('a horizontal stroke over about 20% of the chip width does not count', () => {
+  assert.deepEqual(classifyStroke(line({ x: 140, y: 115 }, { x: 168, y: 115 }), targets), { kind: 'none', reason: 'no-target' });
 });
 
 test('a slightly wavy stroke across a chip still counts as straight', () => {
