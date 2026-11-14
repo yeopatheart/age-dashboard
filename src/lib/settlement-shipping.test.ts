@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildShippingRows, parseShippingMethod, shippingInputError, shippingTotals, shippingUnitPrice, suggestAmount, type ShippingCard, type StoredShipping } from './settlement/shipping.ts';
+import { buildShippingRows, parseShippingMethod, ratesFor, shippingInputError, shippingTotals, shippingUnitPrice, suggestAmount, type ShippingCard, type StoredShipping } from './settlement/shipping.ts';
 import { attachShippingLines, buildSnapshot, groupForReceipts, shippingReceiptRow, type ReceiptSeller, type ReceiptSourceRow } from './settlement/receipt.ts';
 
 const CARD_A = '11111111-1111-4111-8111-111111111111';
@@ -132,4 +132,25 @@ test('attachShippingLines: 사업자를 알 수 없는 배송비 줄은 붙이�
   const ship = buildShippingRows([card({ sellerId: null })], [stored({ amount: 30000 })]).map(shippingReceiptRow).filter((r): r is ReceiptSourceRow => r !== null);
   const { groups } = groupForReceipts([sale()]);
   assert.equal(attachShippingLines(groups, ship)[0].rows.length, 1);
+});
+
+// ── 터미널 설정 → 카드별 제안 금액 ─────────────────────────────────────────
+
+const terminal = { isParcel: false, quickAllowed: true, bus: 10000, quick: 12000, parcel: 5000 };
+
+test('ratesFor: 일반 터미널은 버스, 퀵 이용 고객에게는 퀵도 제안한다', () => {
+  assert.deepEqual(ratesFor(terminal, false), { bus: 10000, quick: null, parcel: null });
+  assert.deepEqual(ratesFor(terminal, true), { bus: 10000, quick: 12000, parcel: null });
+});
+
+test('ratesFor: 퀵 불가 터미널은 퀵 이용 고객이어도 퀵을 제안하지 않는다', () => {
+  assert.deepEqual(ratesFor({ ...terminal, quickAllowed: false }, true), { bus: 10000, quick: null, parcel: null });
+});
+
+test('ratesFor: 택배 터미널은 택배만 제안한다', () => {
+  assert.deepEqual(ratesFor({ ...terminal, isParcel: true }, true), { bus: null, quick: null, parcel: 5000 });
+});
+
+test('ratesFor: 금액이 비어 있으면 그 수단은 제안하지 않는다', () => {
+  assert.deepEqual(ratesFor({ ...terminal, bus: null, quick: null }, true), { bus: null, quick: null, parcel: null });
 });

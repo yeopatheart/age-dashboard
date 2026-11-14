@@ -157,7 +157,8 @@ export function ShippingClient({ rows, sellers, cardOptions }: { rows: ShippingR
           <span title={r.quickBlocked ? '이 터미널은 퀵이 안 되는 곳으로 설정돼 있습니다. 저장된 값은 그대로 둡니다.' : undefined}>
             <strong>{shippingLabel(r.method)}</strong>
             {r.quickBlocked && <span style={{ color: '#b45309' }}> ⚠</span>}
-            {!r.saved && <span className="ak-badge" style={{ marginLeft: 6 }} title="설정으로 만든 제안입니다. 값을 고치거나 저장하면 확정되고 영수증에 들어갑니다.">제안</span>}
+            {!r.saved && <span className="ak-badge" style={{ marginLeft: 6 }} title="터미널 설정으로 만든 제안입니다. 값을 고치거나 저장하면 확정되고 영수증에 들어갑니다. 쓰지 않은 날은 '빼기'를 누르세요.">제안</span>}
+            {r.saved && r.amount === 0 && <span className="ak-badge" style={{ marginLeft: 6 }} title="이 날은 쓰지 않아 뺀 줄입니다(0원). 영수증과 합계에 들어가지 않습니다.">뺌</span>}
           </span>
         );
       },
@@ -304,8 +305,10 @@ export function ShippingClient({ rows, sellers, cardOptions }: { rows: ShippingR
             render: (r0: ShippingRow) => {
               const r = view(r0);
               return r.saved ? (
-                <button className="ak-btn" onClick={() => void remove(r0)} disabled={saving > 0} title="저장한 배송비를 지웁니다. 설정으로 제안할 수 있는 줄은 제안으로 다시 나타납니다.">지우기</button>
-              ) : null;
+                <button className="ak-btn" onClick={() => void remove(r0)} disabled={saving > 0} title={r.amount === 0 ? '뺀 줄을 되돌립니다. 설정으로 제안할 수 있는 줄은 제안으로 다시 나타납니다.' : '저장한 배송비를 지웁니다. 설정으로 제안할 수 있는 줄은 제안으로 다시 나타납니다.'}>지우기</button>
+              ) : (
+                <button className="ak-btn" onClick={() => void commit(r0, { amount: 0 })} disabled={saving > 0} title="이 날은 이 수단을 쓰지 않았습니다. 영수증과 합계에서 뺍니다.">빼기</button>
+              );
             },
           } satisfies Column<ShippingRow & { no: number }>,
         ]
@@ -329,7 +332,7 @@ export function ShippingClient({ rows, sellers, cardOptions }: { rows: ShippingR
         )}
       </div>
       <p className="ak-sub" style={{ margin: 0 }}>
-        고객사 관리의 수단별 박스당 금액과 터미널의 퀵 가능 설정으로 줄을 제안합니다. 값을 고치거나 저장하면 확정되고, 확정된 배송비만 영수증과 합계에 들어갑니다.
+        터미널 관리의 수단별 박스당 금액 × 박스 수로 줄을 제안합니다(퀵은 고객사 관리에서 &ldquo;퀵 이용&rdquo;을 켠 고객만). 값을 고치거나 저장하면 확정되고, 확정된 배송비만 영수증과 합계에 들어갑니다. 그날 쓰지 않은 수단은 &ldquo;빼기&rdquo;를 누르세요.
       </p>
 
       {canEdit && cardOptions.length > 0 && (
@@ -354,7 +357,7 @@ export function ShippingClient({ rows, sellers, cardOptions }: { rows: ShippingR
         rows={pageRows}
         rowKey={(r) => r.key}
         limitRows
-        emptyText="이 날짜에 배송비 줄이 없습니다. 고객사 관리에서 수단별 박스당 금액을 정해 두면 출고가 끝난 고객에게 제안됩니다."
+        emptyText="이 날짜에 배송비 줄이 없습니다. 터미널 관리에서 수단별 박스당 금액을 정해 두면 출고가 끝난 고객에게 제안됩니다."
       />
 
       {pageCount > 1 && (

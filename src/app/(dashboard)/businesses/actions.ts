@@ -24,14 +24,17 @@ export async function createBusiness(
   terminalId: string | null,
   notes: string | null,
   info: BusinessInfo,
+  settlement?: BusinessSettlementFields, // 사업자명·사업자구분·퀵 이용(0063). 마이그레이션 전에는 보내지 않는다
 ): Promise<{ error: string | null }> {
   await requirePermission('businesses:edit');
   const parsed = normalizeInfo(info);
   if ('error' in parsed) return { error: parsed.error };
+  const extra = settlement ? settlementColumns(settlement) : null;
+  if (extra && 'error' in extra) return { error: extra.error };
   const supabase = await createClient();
   const { error } = await supabase
     .from('businesses')
-    .insert({ name: name.trim(), terminal_id: terminalId, notes, business_registration_no: parsed.regNo, representative_name: parsed.rep });
+    .insert({ name: name.trim(), terminal_id: terminalId, notes, business_registration_no: parsed.regNo, representative_name: parsed.rep, ...extra });
   if (error) return { error: error.message };
   revalidatePath('/businesses');
   revalidatePath('/dashboard');
@@ -71,23 +74,29 @@ export async function deleteBusiness(id: string): Promise<{ error: string | null
   return { error: null };
 }
 
-export interface BusinessShippingRates {
-  bus: number | null; // 박스당 기본 금액(원). null = 그 수단을 쓰지 않는 고객사
-  quick: number | null;
-  parcel: number | null;
+export interface BusinessSettlementFields {
+  legalName: string | null; // 사업자명(실제 법인·회사명)
+  sellerId: string | null; // 사업자구분: 이 업체에 공급자로 쓰는 우리 사업자(seller_businesses)
+  usesQuick: boolean; // 퀵을 쓰는 고객사(퀵 가능 터미널이면 정산에 퀵을 제안한다)
 }
 
-const MAX_RATE = 10_000_000; // 박스당 천만 원. 0062 열은 integer라 넘치지 않게만 막는다
+function settlementColumns(fields: BusinessSettlementFields): { error: string } | { legal_name: string | null; seller_id: string | null; uses_quick: boolean } {
+  const legalName = fields.legalName?.trim() || null;
+  if (legalName !== null && legalName.length > 100) return { error: '사업자명은 100자 이하로 입력해주세요.' };
+  return { legal_name: legalName, seller_id: fields.sellerId, uses_quick: fields.usesQuick === true };
+}
 
-// 정산 배송비 제안에 쓰는 고객사별 수단별 박스당 기본 금액. 날짜별 금액은 정산에서 고친다.
-export async function setBusinessShippingRates(id: string, rates: BusinessShippingRates): Promise<{ error: string | null }> {
+// 고객사의 사업자명·사업자구분·퀵 이용 저장(0063). 사업자구분은 정산의 사업자 구분 기본값이 된다.
+export async function setBusinessSettlementFields(id: string, fields: BusinessSettlementFields): Promise<{ error: string | null }> {
   await requirePermission('businesses:edit');
-  for (const v of [rates.bus, rates.quick, rates.parcel]) {
-    if (v !== null && (!Number.isInteger(v) || v < 0 || v > MAX_RATE)) return { error: `박스당 금액은 0~${MAX_RATE.toLocaleString('ko-KR')}원 사이 정수로 입력해주세요.` };
-  }
+  const columns = settlementColumns(fields);
+  if ('error' in columns) return { error: columns.error };
   const supabase = await createClient();
-  const { error } = await supabase.from('businesses').update({ bus_rate: rates.bus, quick_rate: rates.quick, parcel_rate: rates.parcel }).eq('id', id);
-  if (error) return { error: error.message };
+  const { error } = await supabase.from('businesses').update(columns).eq('id', id);
+  if (error) {
+    if (error.code === '23503') return { error: '선택한 사업자구분이 삭제되었습니다. 화면을 새로고침한 뒤 다시 시도해주세요.' };
+    return { error: error.message };
+  }
   revalidatePath('/businesses');
   revalidatePath('/settlement');
   return { error: null };

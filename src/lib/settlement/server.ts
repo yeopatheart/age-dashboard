@@ -8,10 +8,22 @@ import { stageOfCard, type LabelRow } from '@/lib/overview';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { buildSalesRows, type SalesRow, type SalesSourceCard, type SalesSourceItem, type StoredSale } from './sales';
 import type { StoredPurchase } from './purchases';
-import { buildShippingRows, type ShippingCard, type ShippingRow, type StoredShipping, type ShippingMethod } from './shipping';
+import { missingTable } from '@/lib/supabase/missing-table';
+import { buildShippingRows, ratesFor, type ShippingCard, type ShippingRow, type StoredShipping, type ShippingMethod } from './shipping';
 
 type Client = SupabaseClient<Database>;
 const CHUNK = 100;
+
+// 고객사의 사업자구분(0063) → 정산 사업자 구분 기본값. 열이 아직 없으면(마이그레이션 전) 기본값 없이 계속한다.
+async function loadBusinessSellerDefaults(supabase: Client): Promise<Map<string, string>> {
+  try {
+    const rows = await fetchAll((a, b) => supabase.from('businesses').select('id, seller_id').order('id').range(a, b), '고객사 사업자구분 조회 실패: ');
+    return new Map(rows.flatMap((b) => (b.seller_id ? [[b.id, b.seller_id] as [string, string]] : [])));
+  } catch (e) {
+    if (missingTable(e) !== null) return new Map();
+    throw e;
+  }
+}
 
 // 출고 완료된 그날 고객 카드(배송비를 붙이는 단위). 판매내역과 같은 stageOfCard 판정을 쓴다.
 export interface DoneCard {
@@ -29,7 +41,7 @@ export async function loadSalesRows(supabase: Client, from: string, to: string):
 }
 
 export async function loadSalesAndCards(supabase: Client, from: string, to: string): Promise<{ rows: SalesRow[]; doneCards: DoneCard[] }> {
-  const [dailies, businesses, terminalsResult] = await Promise.all([
+  const [dailies, businesses, terminalsResult, sellerDefaults] = await Promise.all([
     fetchAll(
       (a, b) =>
         supabase
@@ -44,6 +56,7 @@ export async function loadSalesAndCards(supabase: Client, from: string, to: stri
     ),
     fetchAll((a, b) => supabase.from('businesses').select('id, name').order('id').range(a, b), '업체 조회 실패: '),
     supabase.from('terminals').select('id, name, is_parcel'),
+    loadBusinessSellerDefaults(supabase),
   ]);
   if (terminalsResult.error) throw new Error(`터미널 조회 실패: ${terminalsResult.error.message}`);
   if (dailies.length === 0) return { rows: [], doneCards: [] };
@@ -101,7 +114,7 @@ export async function loadSalesAndCards(supabase: Client, from: string, to: stri
       parcel: parcelOf(d.terminal_id),
     });
     const name = d.display_name ?? businessName.get(d.business_id) ?? '';
-    return { id: d.id, orderDate: d.order_date, name: split.has(d.business_id) ? `${name} ${roundLabel(d.round)}` : name, sortOrder: d.sort_order, stage, terminal: (d.terminal_id && terminalName.get(d.terminal_id)) || '미지정' };
+    return { id: d.id, orderDate: d.order_date, name: split.has(d.business_id) ? `${name} ${roundLabel(d.round)}` : name, sortOrder: d.sort_order, stage, defaultSellerId: sellerDefaults.get(d.business_id) ?? null, terminal: (d.terminal_id && terminalName.get(d.terminal_id)) || '미지정' };
   });
 
   const items: SalesSourceItem[] = itemRows.map((i) => ({
@@ -138,8 +151,8 @@ export async function loadSalesAndCards(supabase: Client, from: string, to: stri
 export async function loadShippingRows(supabase: Client, doneCards: DoneCard[], sales: SalesRow[]): Promise<{ rows: ShippingRow[]; cards: ShippingCard[] }> {
   if (doneCards.length === 0) return { rows: [], cards: [] };
   const [terminals, businesses] = await Promise.all([
-    fetchAll((a, b) => supabase.from('terminals').select('id, quick_allowed').order('id').range(a, b), '터미널 설정 조회 실패(마이그레이션 0062 적용 필요): '),
-    fetchAll((a, b) => supabase.from('businesses').select('id, bus_rate, quick_rate, parcel_rate').order('id').range(a, b), '고객사 배송비 설정 조회 실패(마이그레이션 0062 적용 필요): '),
+    fetchAll((a, b) => supabase.from('terminals').select('id, is_parcel, quick_allowed, bus_rate, quick_rate, parcel_rate').order('id').range(a, b), '터미널 배송비 설정 조회 실패(마이그레이션 0062·0063 적용 필요): '),
+    fetchAll((a, b) => supabase.from('businesses').select('id, seller_id, uses_quick').order('id').range(a, b), '고객사 정산 설정 조회 실패(마이그레이션 0063 적용 필요): '),
   ]);
   const stored: StoredShipping[] = (
     await mapChunks(
@@ -149,22 +162,29 @@ export async function loadShippingRows(supabase: Client, doneCards: DoneCard[], 
     )
   ).map((r) => ({ id: r.id, cardId: r.daily_business_id, method: r.method as ShippingMethod, boxes: r.boxes, amount: Number(r.amount), sellerId: r.seller_id, paid: r.paid, memo: r.memo }));
 
-  const quickAllowed = new Map(terminals.map((t) => [t.id, t.quick_allowed]));
-  const ratesByBusiness = new Map(businesses.map((b) => [b.id, { bus: b.bus_rate, quick: b.quick_rate, parcel: b.parcel_rate }]));
+  const terminalById = new Map(terminals.map((t) => [t.id, t]));
+  const businessById = new Map(businesses.map((b) => [b.id, b]));
   // 그 고객의 판매 줄 사업자(같은 출고일·고객명의 첫 사업자)
   const sellerByCustomer = new Map<string, string>();
   for (const r of sales) if (r.sellerId && !sellerByCustomer.has(`${r.orderDate}|${r.customer}`)) sellerByCustomer.set(`${r.orderDate}|${r.customer}`, r.sellerId);
 
-  const cards: ShippingCard[] = doneCards.map((c) => ({
-    cardId: c.id,
-    orderDate: c.orderDate,
-    customer: c.name,
-    terminal: c.terminal,
-    quickAllowed: c.terminalId ? (quickAllowed.get(c.terminalId) ?? true) : true,
-    boxes: c.boxes,
-    rates: ratesByBusiness.get(c.businessId) ?? { bus: null, quick: null, parcel: null },
-    sellerId: sellerByCustomer.get(`${c.orderDate}|${c.name}`) ?? null,
-  }));
+  const cards: ShippingCard[] = doneCards.map((c) => {
+    const terminal = c.terminalId ? terminalById.get(c.terminalId) : undefined;
+    const business = businessById.get(c.businessId);
+    return {
+      cardId: c.id,
+      orderDate: c.orderDate,
+      customer: c.name,
+      terminal: c.terminal,
+      quickAllowed: terminal?.quick_allowed ?? true,
+      boxes: c.boxes,
+      // 터미널이 없는('미지정') 카드는 제안할 금액이 없다.
+      rates: terminal
+        ? ratesFor({ isParcel: terminal.is_parcel, quickAllowed: terminal.quick_allowed, bus: terminal.bus_rate, quick: terminal.quick_rate, parcel: terminal.parcel_rate }, business?.uses_quick ?? false)
+        : { bus: null, quick: null, parcel: null },
+      sellerId: sellerByCustomer.get(`${c.orderDate}|${c.name}`) ?? business?.seller_id ?? null,
+    };
+  });
   return { rows: buildShippingRows(cards, stored), cards };
 }
 

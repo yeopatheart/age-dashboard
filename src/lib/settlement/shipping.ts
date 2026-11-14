@@ -19,9 +19,24 @@ export function parseShippingMethod(text: string): ShippingMethod | null {
 }
 
 export interface ShippingRates {
-  bus: number | null; // 박스당 기본 금액(원). null이면 그 수단을 쓰지 않는 고객사
+  bus: number | null; // 박스당 기본 금액(원). null이면 그 수단은 제안하지 않는다
   quick: number | null;
   parcel: number | null;
+}
+
+// 터미널의 퀵 가능 여부와 수단별 박스당 기본 금액(null이면 제안하지 않음). 터미널 관리에서 정한다.
+export interface TerminalShipping {
+  quickAllowed: boolean;
+  bus: number | null;
+  quick: number | null;
+  parcel: number | null;
+}
+
+// 터미널 설정 + 고객사의 퀵 이용으로 그 카드에 제안할 수단별 박스당 금액을 정한다(null이면 제안하지 않음).
+//  - 택배 터미널: 택배만. 그 밖의 터미널: 버스, 그리고 퀵 가능 터미널이면서 퀵을 이용하는 고객사에는 퀵.
+export function ratesFor(terminal: { isParcel: boolean; quickAllowed: boolean; bus: number | null; quick: number | null; parcel: number | null }, usesQuick: boolean): ShippingRates {
+  if (terminal.isParcel) return { bus: null, quick: null, parcel: terminal.parcel };
+  return { bus: terminal.bus, quick: terminal.quickAllowed && usesQuick ? terminal.quick : null, parcel: null };
 }
 
 // 배송비를 붙일 수 있는 카드(출고 완료된 그날 고객 카드) 한 장.
@@ -32,7 +47,7 @@ export interface ShippingCard {
   terminal: string; // 그날 카드의 터미널 이름
   quickAllowed: boolean; // 그 터미널에서 퀵이 되는지(false면 퀵을 제안하지 않는다)
   boxes: number; // 그날 박스 수(제출한 박스 수, 택배는 제출 전이어도 1)
-  rates: ShippingRates;
+  rates: ShippingRates; // ratesFor로 정한 이 카드의 수단별 박스당 금액
   sellerId: string | null; // 그 고객의 판매 줄 사업자(저장한 배송비 줄에 사업자가 없을 때 따른다)
 }
 
@@ -56,7 +71,7 @@ export interface ShippingRow {
   terminal: string;
   method: ShippingMethod;
   boxes: number;
-  rate: number | null; // 그 고객사의 박스당 기본 금액(제안 줄의 박스 수를 고치면 금액을 다시 계산한다). 설정이 없으면 null
+  rate: number | null; // 그 터미널의 박스당 기본 금액(제안 줄의 박스 수를 고치면 금액을 다시 계산한다). 설정이 없으면 null
   amount: number | null; // 제안 줄은 박스 수 × 기본 금액. 저장한 줄은 저장한 금액
   saved: boolean; // false면 설정으로 제안한 줄(저장하기 전에는 영수증에 들어가지 않는다)
   sellerId: string | null; // 저장한 사업자, 없으면 판매 줄의 사업자

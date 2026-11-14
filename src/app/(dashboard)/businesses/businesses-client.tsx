@@ -1,9 +1,8 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { Building2, Plus, Trash2 } from 'lucide-react';
-import { createBusiness, updateBusiness, deleteBusiness, setBusinessShippingRates } from './actions';
-import { formatWon, formatWonDraft, parseWon, wonInputError } from '@/lib/money';
-import { SHIPPING_METHODS, type ShippingMethod, type ShippingRates } from '@/lib/settlement/shipping';
+import { createBusiness, updateBusiness, deleteBusiness, setBusinessSettlementFields } from './actions';
+import type { BusinessFields } from '@/lib/settlement/shipping-settings';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { useCan } from '@/components/permissions-context';
 import {
@@ -13,6 +12,7 @@ import {
   FilterSelect,
   SearchInput,
   SidePanel,
+  Toggle,
   ViaTag,
   useHiddenColumns,
   type Column,
@@ -32,10 +32,10 @@ interface Business {
   representative_name: string | null;
 }
 
-// bus·quick·parcel: 수단별 박스당 기본 금액(비우면 그 수단을 쓰지 않는 고객사)
-type Draft = { name: string; terminalId: string; notes: string; regNo: string; rep: string; bus: string; quick: string; parcel: string };
-const EMPTY_DRAFT: Draft = { name: '', terminalId: '', notes: '', regNo: '', rep: '', bus: '', quick: '', parcel: '' };
-const ratesToDraft = (r: ShippingRates | undefined): Pick<Draft, ShippingMethod> => ({ bus: formatWon(r?.bus ?? null), quick: formatWon(r?.quick ?? null), parcel: formatWon(r?.parcel ?? null) });
+// legalName: 사업자명(법인·회사명), sellerId: 사업자구분(우리 사업자), usesQuick: 퀵 이용(0063)
+type Draft = { name: string; terminalId: string; notes: string; regNo: string; rep: string; legalName: string; sellerId: string; usesQuick: boolean };
+const EMPTY_DRAFT: Draft = { name: '', terminalId: '', notes: '', regNo: '', rep: '', legalName: '', sellerId: '', usesQuick: false };
+const fieldsToDraft = (f: BusinessFields | undefined): Pick<Draft, 'legalName' | 'sellerId' | 'usesQuick'> => ({ legalName: f?.legalName ?? '', sellerId: f?.sellerId ?? '', usesQuick: f?.usesQuick ?? false });
 
 // 입력하는 동안 숫자만 남기고 000-00-00000 모양으로 하이픈을 넣어 준다(최대 10자리).
 const formatRegNo = (v: string) => {
@@ -43,8 +43,8 @@ const formatRegNo = (v: string) => {
   return d.length <= 3 ? d : d.length <= 5 ? `${d.slice(0, 3)}-${d.slice(3)}` : `${d.slice(0, 3)}-${d.slice(3, 5)}-${d.slice(5)}`;
 };
 
-// shippingRates: 고객사 id → 정산 배송비 기본 금액, quickAllowed: 터미널 id → 퀵 가능 여부(0062). null이면 마이그레이션 전이라 그 설정 칸을 숨긴다.
-export function BusinessesClient({ businesses, terminals, shippingRates, quickAllowed }: { businesses: Business[]; terminals: Terminal[]; shippingRates: Record<string, ShippingRates> | null; quickAllowed: Record<string, boolean> | null }) {
+// fields: 고객사 id → 사업자명·사업자구분·퀵 이용(0063), sellers: 사업자구분으로 고를 우리 사업자. fields가 null이면 마이그레이션 전이라 그 칸을 숨긴다.
+export function BusinessesClient({ businesses, terminals, fields, sellers }: { businesses: Business[]; terminals: Terminal[]; fields: Record<string, BusinessFields> | null; sellers: { id: string; name: string }[] }) {
   const can = useCan();
   const canEdit = can('businesses:edit');
   const canDelete = can('businesses:delete');
@@ -71,17 +71,18 @@ export function BusinessesClient({ businesses, terminals, shippingRates, quickAl
           ? b.name.toLowerCase().includes(k) ||
             (b.notes ?? '').toLowerCase().includes(k) ||
             (b.representative_name ?? '').toLowerCase().includes(k) ||
+            (fields?.[b.id]?.legalName ?? '').toLowerCase().includes(k) ||
             (b.business_registration_no ?? '').replace(/-/g, '').includes(k.replace(/-/g, ''))
           : true,
       )
       .filter((b) => (terminalFilter === 'all' ? true : terminalFilter === 'none' ? !b.terminal_id : b.terminal_id === terminalFilter))
       .filter((b) => (viaFilter === 'all' ? true : b.created_via === viaFilter));
     return [...list].sort((a, b) => (sort === 'recent' ? b.created_at.localeCompare(a.created_at) : a.name.localeCompare(b.name, 'ko')));
-  }, [businesses, search, terminalFilter, viaFilter, sort]);
+  }, [businesses, fields, search, terminalFilter, viaFilter, sort]);
 
   const editing = panel && panel !== 'new' ? businesses.find((b) => b.id === panel) ?? null : null;
   // 저장하지 않은 입력이 있는지(패널을 닫을 때 확인을 받는다)
-  const baseline: Draft = panel === 'new' ? { ...EMPTY_DRAFT, terminalId: terminals[0]?.id ?? '' } : editing ? { name: editing.name, terminalId: editing.terminal_id ?? '', notes: editing.notes ?? '', regNo: editing.business_registration_no ?? '', rep: editing.representative_name ?? '', ...ratesToDraft(shippingRates?.[editing.id]) } : EMPTY_DRAFT;
+  const baseline: Draft = panel === 'new' ? { ...EMPTY_DRAFT, terminalId: terminals[0]?.id ?? '' } : editing ? { name: editing.name, terminalId: editing.terminal_id ?? '', notes: editing.notes ?? '', regNo: editing.business_registration_no ?? '', rep: editing.representative_name ?? '', ...fieldsToDraft(fields?.[editing.id]) } : EMPTY_DRAFT;
   const dirty = !!panel && canEdit && JSON.stringify(draft) !== JSON.stringify(baseline);
 
   const openNew = () => {
@@ -92,7 +93,7 @@ export function BusinessesClient({ businesses, terminals, shippingRates, quickAl
   };
   const openEdit = (b: Business) => {
     setPanel(b.id);
-    setDraft({ name: b.name, terminalId: b.terminal_id ?? '', notes: b.notes ?? '', regNo: b.business_registration_no ?? '', rep: b.representative_name ?? '', ...ratesToDraft(shippingRates?.[b.id]) });
+    setDraft({ name: b.name, terminalId: b.terminal_id ?? '', notes: b.notes ?? '', regNo: b.business_registration_no ?? '', rep: b.representative_name ?? '', ...fieldsToDraft(fields?.[b.id]) });
     setConfirmDelete(false);
     setError(null);
   };
@@ -115,16 +116,12 @@ export function BusinessesClient({ businesses, terminals, shippingRates, quickAl
     const terminalId = draft.terminalId || null;
     const notes = draft.notes.trim() || null;
     const info = { businessRegistrationNo: draft.regNo, representativeName: draft.rep };
-    // 배송비 기본 금액은 이미 있는 고객사에서만 저장한다(새 고객사는 저장한 뒤 다시 열어 정한다).
-    if (panel !== 'new' && shippingRates) {
-      const problem = (['bus', 'quick', 'parcel'] as const).map((k) => wonInputError(draft[k])).find((p) => p !== null);
-      if (problem) return setError(`배송비 기본 금액을 확인해주세요. ${problem}`);
-    }
+    const settlementFields = { legalName: draft.legalName, sellerId: draft.sellerId || null, usesQuick: draft.usesQuick };
     const ok = await run(async () => {
-      if (panel === 'new') return createBusiness(draft.name, terminalId, notes, info);
+      if (panel === 'new') return createBusiness(draft.name, terminalId, notes, info, fields ? settlementFields : undefined);
       const saved = await updateBusiness(panel as string, draft.name, terminalId, notes, info);
-      if (saved.error || !shippingRates) return saved;
-      return setBusinessShippingRates(panel as string, { bus: parseWon(draft.bus), quick: parseWon(draft.quick), parcel: parseWon(draft.parcel) });
+      if (saved.error || !fields) return saved;
+      return setBusinessSettlementFields(panel as string, settlementFields);
     });
     if (ok) setPanel(null);
   };
@@ -141,6 +138,21 @@ export function BusinessesClient({ businesses, terminals, shippingRates, quickAl
         return <span className={`ak-badge ${p.className}`} style={p.style}>{t.name}</span>;
       },
     },
+    ...(fields
+      ? [
+          { key: 'legalName', label: '사업자명', render: (b: Business) => (fields[b.id]?.legalName ? <span>{fields[b.id].legalName}</span> : <span className="ak-muted">—</span>) } satisfies Column<Business>,
+          {
+            key: 'seller',
+            label: '사업자구분',
+            render: (b: Business) => {
+              const id = fields[b.id]?.sellerId;
+              const name = id ? sellers.find((x) => x.id === id)?.name : undefined;
+              return name ? <span>{name}</span> : <span className="ak-muted">미지정</span>;
+            },
+          } satisfies Column<Business>,
+          { key: 'quick', label: '퀵', render: (b: Business) => (fields[b.id]?.usesQuick ? <span>이용</span> : <span className="ak-muted">—</span>) } satisfies Column<Business>,
+        ]
+      : []),
     { key: 'rep', label: '대표자', render: (b) => (b.representative_name ? <span>{b.representative_name}</span> : <span className="ak-muted">—</span>) },
     { key: 'regNo', label: '사업자등록번호', render: (b) => (b.business_registration_no ? <span style={{ fontVariantNumeric: 'tabular-nums' }}>{b.business_registration_no}</span> : <span className="ak-muted">—</span>) },
     { key: 'notes', label: '메모', render: (b) => (b.notes ? <span className="ak-ellipsis ak-muted">{b.notes}</span> : <span className="ak-muted">—</span>) },
@@ -152,7 +164,7 @@ export function BusinessesClient({ businesses, terminals, shippingRates, quickAl
       <AdminHeader icon={<Building2 size={20} />} title="고객사 관리" sub="업체별로 보낼 터미널을 정해두면 주문이 들어올 때마다 다시 고르지 않아도 됩니다. 행을 누르면 수정할 수 있습니다." />
 
       <div className="ak-toolbar">
-        <SearchInput value={search} onChange={setSearch} placeholder="고객사·대표자·사업자번호·메모 검색" />
+        <SearchInput value={search} onChange={setSearch} placeholder="고객사·사업자명·대표자·사업자번호·메모 검색" />
         <FilterSelect
           value={terminalFilter}
           onChange={setTerminalFilter}
@@ -224,6 +236,29 @@ export function BusinessesClient({ businesses, terminals, shippingRates, quickAl
               {terminals.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
+          {fields && (
+            <>
+              <div className="ak-field">
+                <label>사업자명</label>
+                <input className="ak-input" value={draft.legalName} onChange={(e) => setDraft({ ...draft, legalName: e.target.value })} maxLength={100} placeholder="실제 법인·회사명 (예: 주식회사 ○○)" />
+              </div>
+              <div className="ak-field">
+                <label>사업자구분</label>
+                <select className="ak-input" value={draft.sellerId} onChange={(e) => setDraft({ ...draft, sellerId: e.target.value })}>
+                  <option value="">미지정</option>
+                  {sellers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+                <p className="ak-sub" style={{ margin: 0 }}>이 업체에 공급자로 쓰는 우리 사업자입니다. 정산 판매내역·배송비·영수증의 사업자 구분 기본값이 됩니다(정산에서 줄마다 바꿀 수도 있습니다).</p>
+              </div>
+              <div className="ak-setting">
+                <span>
+                  퀵 이용
+                  <small>퀵 가능 터미널에서 퀵을 쓰는 고객사입니다. 켜면 정산 배송비에 퀵을 제안합니다(정산에서 그날만 뺄 수도 있습니다)</small>
+                </span>
+                <Toggle checked={draft.usesQuick} onChange={(v) => setDraft({ ...draft, usesQuick: v })} label="퀵 이용" disabled={!canEdit} />
+              </div>
+            </>
+          )}
           <div className="ak-field">
             <label>대표자명</label>
             <input className="ak-input" value={draft.rep} onChange={(e) => setDraft({ ...draft, rep: e.target.value })} placeholder="예) 홍길동" />
@@ -236,36 +271,6 @@ export function BusinessesClient({ businesses, terminals, shippingRates, quickAl
             <label>메모</label>
             <textarea className="ak-input ak-textarea" value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} placeholder="배송 시 주의사항 등" />
           </div>
-          {editing && shippingRates && (
-            <div className="ak-field">
-              <label>정산 배송비 기본 금액 (박스당, 원)</label>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                {SHIPPING_METHODS.map((m) => {
-                  const blocked = m.key === 'quick' && !!draft.terminalId && quickAllowed?.[draft.terminalId] === false;
-                  return (
-                    <label key={m.key} style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 6rem' }}>
-                      <span className="ak-sub">{m.label}</span>
-                      <input
-                        className="ak-input"
-                        inputMode="numeric"
-                        style={{ textAlign: 'right' }}
-                        placeholder="사용 안 함"
-                        disabled={blocked}
-                        aria-label={`${m.label} 박스당 금액`}
-                        value={blocked ? '' : draft[m.key]}
-                        onChange={(e) => setDraft({ ...draft, [m.key]: formatWonDraft(e.target.value) })}
-                      />
-                    </label>
-                  );
-                })}
-              </div>
-              <p className="ak-sub" style={{ margin: 0 }}>
-                {draft.terminalId && quickAllowed?.[draft.terminalId] === false ? '이 고객사의 터미널은 퀵이 안 되는 곳이라 퀵 금액은 쓰지 않습니다. ' : ''}
-                비워 두면 그 수단은 정산에 제안하지 않습니다. 정산의 배송비 구역에서 이 금액으로 줄을 제안하고, 날짜별 금액은 거기서 고칩니다.
-              </p>
-            </div>
-          )}
-          {panel === 'new' && shippingRates && <p className="ak-sub" style={{ margin: 0 }}>정산 배송비 기본 금액은 고객사를 저장한 뒤 다시 열어 정합니다.</p>}
           {editing && (
             <p className="ak-meta">{editing.created_via === 'order' ? '주문입력' : '수기입력'}으로 {editing.created_at.slice(0, 10).replace(/-/g, '.')} 등록</p>
           )}

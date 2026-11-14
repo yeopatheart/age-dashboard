@@ -38,6 +38,10 @@ type Terminal = {
   is_parcel: boolean;
   // false면 이 터미널은 퀵이 안 된다(0062). 정산에서 퀵 배송비를 제안하지 않는다.
   quick_allowed: boolean;
+  // 정산 배송비 기본 금액(0063): 수단별 박스당 원. null이면 그 수단을 제안하지 않는다(버스=택배 아닌 터미널, 퀵=퀵 가능 터미널, 택배=택배 터미널)
+  bus_rate: number | null;
+  quick_rate: number | null;
+  parcel_rate: number | null;
 };
 
 type Business = {
@@ -50,10 +54,10 @@ type Business = {
   // 선택 입력(0024). 사업자등록번호는 000-00-00000 형식.
   business_registration_no: string | null;
   representative_name: string | null;
-  // 정산 배송비 기본 금액(0062): 수단별 박스당 원. null이면 그 수단을 쓰지 않는 고객사
-  bus_rate: number | null;
-  quick_rate: number | null;
-  parcel_rate: number | null;
+  // 사업자명(실제 법인·회사명), 공급자로 쓰는 우리 사업자(seller_businesses), 퀵 이용 여부(0063)
+  legal_name: string | null;
+  seller_id: string | null;
+  uses_quick: boolean;
 };
 
 type Product = {
@@ -409,7 +413,7 @@ export type Database = {
       >;
       terminals: TableDef<
         Terminal,
-        Pick<Terminal, "name"> & { id?: string; created_at?: string; created_via?: CreatedVia; fill_color?: string | null; border_color?: string | null; is_separate?: boolean; is_parcel?: boolean; quick_allowed?: boolean }
+        Pick<Terminal, "name"> & { id?: string; created_at?: string; created_via?: CreatedVia; fill_color?: string | null; border_color?: string | null; is_separate?: boolean; is_parcel?: boolean; quick_allowed?: boolean; bus_rate?: number | null; quick_rate?: number | null; parcel_rate?: number | null }
       >;
       businesses: TableDef<
         Business,
@@ -421,9 +425,9 @@ export type Database = {
           created_via?: CreatedVia;
           business_registration_no?: string | null;
           representative_name?: string | null;
-          bus_rate?: number | null;
-          quick_rate?: number | null;
-          parcel_rate?: number | null;
+          legal_name?: string | null;
+          seller_id?: string | null;
+          uses_quick?: boolean;
         }
       >;
       products: TableDef<
