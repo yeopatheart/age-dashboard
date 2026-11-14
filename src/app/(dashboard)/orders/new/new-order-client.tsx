@@ -180,7 +180,11 @@ export function NewOrderClient({
         memo: s.memo,
         aiRepaired: s.source === 'ai',
       }));
-      await commitOrderLines(orderDate, round, decisions, rawText);
+      const result = await commitOrderLines(orderDate, round, decisions, rawText);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setDone(true);
       setSuggestions(null);
       setRawText('');
