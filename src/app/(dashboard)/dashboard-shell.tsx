@@ -256,7 +256,7 @@ export function DashboardShell({
           </div>
         </header>
 
-        <main className={`main-content animate-fade-in ${pathname === '/dashboard' ? 'main-content-tight' : ''}`}>
+        <main className={`main-content animate-fade-in ${pathname === '/dashboard' ? 'main-content-tight main-content-soft' : ''}`}>
           {children}
         </main>
 
