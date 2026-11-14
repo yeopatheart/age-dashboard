@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { fetchBoardInk, fetchBoardInkStamp, subscribeBoardInk } from '@/lib/ink/board-ink-client';
 import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, redrawLive, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
 import { eraseStroke } from '@/lib/ink/erase';
-import { classifyStroke, pathLength, REASON_LABEL } from '@/lib/ink/gesture';
+import { classifyStroke, pathLength, REASON_LABEL, startsTwoFingerTap, TWO_FINGER } from '@/lib/ink/gesture';
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
 import { cardPosition, clampToViewport, stackPositions } from '@/lib/ink/menu-layout';
 import { resolvePoints, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, type Box, type InkStroke } from '@/lib/ink/store';
@@ -73,14 +73,10 @@ interface ActiveStroke {
   origin: Pt; // 획을 시작할 때 잰 그림 층의 화면 위 왼쪽 위(획 도중 점마다 다시 재지 않는다)
   layer: { width: number; height: number };
   touched: Set<string>; // 지우개가 닿은(잘라 낸) 획에 붙어 있던 상품 id
-  startedAt: number; // 펜이 닿은 시각(이벤트 timeStamp, performance.now와 같은 기준) — 짧게 톡 친 것(탭)인지 가리는 데 쓴다
+  startedAt: number; // 닿은 시각(이벤트 timeStamp) — 두 번째 손가락이 곧바로 닿았는지(두 손가락 탭) 가리는 데 쓴다
+  pointerType: string;
 }
 
-// 탭·따닥 판정: 펜이 TAP_MAX_MS 안에 TAP_MAX_PATH_PX 이내로만 움직이고 떼면 탭, 앞 탭에서 DOUBLE_TAP_MS 안·DOUBLE_TAP_DIST_PX 이내에 또 탭하면 따닥(되돌리기).
-const TAP_MAX_MS = 300;
-const TAP_MAX_PATH_PX = 10;
-const DOUBLE_TAP_MS = 400;
-const DOUBLE_TAP_DIST_PX = 48;
 
 const clamp = (v: number, min: number, max: number) => Math.min(Math.max(v, min), max);
 
@@ -404,7 +400,39 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     const canvas = canvasRef.current;
     if (!current || !canvas) return;
     if (e.width > PALM_PX || e.height > PALM_PX) return; // 손바닥: 무시한다(먼저 닿아 있어도 뒤에 닿는 작은 접촉은 그린다)
-    if (activeRef.current) return; // 한 획이 진행 중일 때 들어오는 다른 접촉은 무시한다
+    const two = twoFingerRef.current;
+    if (two) {
+      if (e.timeStamp - two.startedAt <= TWO_FINGER.staleMs) {
+        two.broken = true; // 판정 중에 세 번째 접촉이 닿으면 되돌리기가 아니다
+        return;
+      }
+      twoFingerRef.current = null; // 오래 남은 상태(손가락 뗌 이벤트를 놓쳤다)는 버리고 새로 시작한다
+    }
+    const first = activeRef.current;
+    if (first) {
+      // 첫 손가락이 아직 쓰기 시작하지 않았을 때(안 움직였을 때) 곧바로 다른 손가락이 닿으면 두 손가락 탭 판정을 시작한다. 첫 손가락이 이미 그린 점은 버린다.
+      if (current === 'pen' && first.pointerId !== e.pointerId) {
+        const second = local(e);
+        const firstPoint = first.points[0];
+        if (startsTwoFingerTap({ pointerType: first.pointerType, startedAt: first.startedAt, pathPx: pathLength(first.points), point: firstPoint }, { pointerType: e.pointerType, timeStamp: e.timeStamp, point: second })) {
+          activeRef.current = null;
+          scheduleRedraw(); // 첫 손가락이 찍은 점을 지운다
+          try {
+            canvas.setPointerCapture(e.pointerId);
+          } catch {
+            // 이미 사라진 접촉은 캡처할 수 없다. 그래도 판정한다.
+          }
+          twoFingerRef.current = {
+            startedAt: first.startedAt,
+            start: new Map([[first.pointerId, firstPoint], [e.pointerId, second]]),
+            down: new Set([first.pointerId, e.pointerId]),
+            broken: false,
+            at: { x: (firstPoint.x + second.x) / 2, y: (firstPoint.y + second.y) / 2 },
+          };
+        }
+      }
+      return; // 한 획이 진행 중일 때 들어오는 다른 접촉은 무시한다
+    }
     closeMenu(); // 그리기 시작하면 열려 있던 메뉴·설정 카드를 닫는다
     try {
       canvas.setPointerCapture(e.pointerId);
@@ -425,6 +453,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       layer: { width: layerRect.width, height: layerRect.height },
       touched: new Set<string>(),
       startedAt: e.timeStamp,
+      pointerType: e.pointerType,
     };
     activeRef.current = active;
     if (current === 'pen') {
@@ -441,6 +470,13 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const two = twoFingerRef.current;
+    const twoStart = two?.start.get(e.pointerId);
+    if (two && twoStart) {
+      const now = local(e);
+      if (Math.hypot(now.x - twoStart.x, now.y - twoStart.y) > TWO_FINGER.maxMovePx) two.broken = true; // 움직였으면 되돌리기가 아니다(그리지도 않는다)
+      return;
+    }
     const active = activeRef.current;
     if (!active || active.pointerId !== e.pointerId) return;
     const events = e.nativeEvent.getCoalescedEvents?.() ?? [];
@@ -504,9 +540,26 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     commit({ strokes: [...cur.strokes, stroke], history: pushHistory(cur.history, { before: active.before, packed: packedItemId ? [packedItemId] : undefined }) });
   };
 
-  // 직전에 톡 친 시각·자리. 두 번째 탭이 이 안(시간·거리)에 오면 따닥이다.
-  const lastTapRef = useRef<{ at: number; x: number; y: number } | null>(null);
-  const isTap = (active: ActiveStroke, endedAt: number) => endedAt - active.startedAt <= TAP_MAX_MS && pathLength(active.points) <= TAP_MAX_PATH_PX;
+  // 두 손가락 탭 판정 상태(없으면 null). 판정 중에는 손가락이 획을 그리지 않는다.
+  const twoFingerRef = useRef<{ startedAt: number; start: Map<number, Pt>; down: Set<number>; broken: boolean; at: Pt } | null>(null);
+
+  // 손가락을 뗄 때: 두 손가락 탭 판정 중이면 그쪽에서 처리하고, 아니면 한 획의 끝으로 본다.
+  const endPointer = (e: React.PointerEvent<HTMLCanvasElement>, cancelled: boolean) => {
+    const two = twoFingerRef.current;
+    if (two && two.down.has(e.pointerId)) {
+      two.down.delete(e.pointerId);
+      if (cancelled || e.timeStamp - two.startedAt > TWO_FINGER.maxMs) two.broken = true;
+      if (two.down.size === 0) {
+        twoFingerRef.current = null;
+        if (!two.broken && stateRef.current.history.length > 0) {
+          undo();
+          showNote('되돌렸습니다', two.at);
+        }
+      }
+      return;
+    }
+    finishStroke(e, cancelled);
+  };
 
   const finishStroke = (e: React.PointerEvent<HTMLCanvasElement>, cancelled: boolean) => {
     const active = activeRef.current;
@@ -521,23 +574,6 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
           active.points.push(active.tail);
         }
         endInk(ctx, active.cursor);
-      }
-      // 짧게 톡 친 것(탭)은 획으로 남기지 않는다. 연달아 두 번 톡 치면(따닥) "되돌리기"다(2026-11-14 현장 요청: 스마트 칠판에서 메뉴를 열지 않고 되돌린다).
-      if (!cancelled && isTap(active, e.timeStamp)) {
-        const now = e.timeStamp;
-        const at = active.points[0];
-        const prev = lastTapRef.current;
-        scheduleRedraw(); // 톡 친 자리에 남은 점을 지운다
-        if (prev && now - prev.at <= DOUBLE_TAP_MS && Math.hypot(at.x - prev.x, at.y - prev.y) <= DOUBLE_TAP_DIST_PX) {
-          lastTapRef.current = null;
-          if (stateRef.current.history.length > 0) {
-            undo();
-            showNote('되돌렸습니다', at);
-          }
-        } else {
-          lastTapRef.current = { at: now, x: at.x, y: at.y };
-        }
-        return;
       }
       if (cancelled || active.points.length < 2) {
         scheduleRedraw();
@@ -704,8 +740,8 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
         style={{ touchAction: tool ? 'none' : undefined }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={(e) => finishStroke(e, false)}
-        onPointerCancel={(e) => finishStroke(e, true)}
+        onPointerUp={(e) => endPointer(e, false)}
+        onPointerCancel={(e) => endPointer(e, true)}
         onContextMenu={(e) => e.preventDefault()}
       />
       {/* 펜이 꺼져 있을 때 메뉴가 열려 있으면, 화면의 다른 곳을 누르는 것으로 메뉴를 닫는다. 펜이 켜져 있으면 그리기 시작이 메뉴를 닫는다. */}

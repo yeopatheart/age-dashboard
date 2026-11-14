@@ -178,3 +178,28 @@ export function classifyStroke(points: Pt[], targets: Target[]): GestureResult {
   if (chord / length >= GESTURE.lineMinStraight) return classifyLine(points, targets, length);
   return classifyCircle(points, targets);
 }
+
+// ── 두 손가락 탭(되돌리기) ─────────────────────────────────────────────────────
+// 손가락(touch) 두 개가 거의 동시에(joinMs 안에) 닿고, 첫 손가락이 아직 쓰기 시작하지 않았고(firstMaxPathPx 이하), 서로 minGapPx 이상 떨어져 있고,
+// 둘 다 maxMovePx 이상 움직이지 않은 채 maxMs 안에 모두 떼면 되돌리기다. 한 손가락 따닥은 필기의 점·마침표와 구분되지 않아 쓰지 않는다.
+export const TWO_FINGER = {
+  joinMs: 150,
+  maxMs: 350,
+  minGapPx: 24,
+  maxMovePx: 16,
+  firstMaxPathPx: 10,
+  staleMs: 1500, // 이보다 오래 남은 판정 상태는 놓친 손가락 뗌 이벤트로 보고 버린다(필기가 막히지 않게)
+} as const;
+
+export function startsTwoFingerTap(
+  first: { pointerType: string; startedAt: number; pathPx: number; point: Pt },
+  second: { pointerType: string; timeStamp: number; point: Pt },
+): boolean {
+  return (
+    first.pointerType === 'touch' &&
+    second.pointerType === 'touch' &&
+    second.timeStamp - first.startedAt <= TWO_FINGER.joinMs &&
+    first.pathPx <= TWO_FINGER.firstMaxPathPx &&
+    dist(first.point, second.point) >= TWO_FINGER.minGapPx
+  );
+}

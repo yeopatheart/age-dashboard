@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyStroke, coverage, GESTURE, insidePolygon, pathLength, signedTurning, thin, type Target } from './ink/gesture.ts';
+import { classifyStroke, coverage, GESTURE, insidePolygon, pathLength, signedTurning, startsTwoFingerTap, thin, type Target } from './ink/gesture.ts';
 import type { Pt } from './ink/canvas.ts';
 
 // 같은 줄에 나란한 상품 칸 둘(A, B)과 아래 줄의 칸(C). 칸 높이 30, 칸 사이 간격 20.
@@ -137,4 +137,15 @@ test('geometry helpers', () => {
   assert.equal(coverage(A, [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]), 0);
   assert.ok(Math.abs(signedTurning(ellipse(0, 0, 10, 10, 1, 40))) > 1.8 * Math.PI);
   assert.equal(thin([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 5, y: 0 }, { x: 6, y: 0 }], 3).length, 3);
+});
+
+test('two-finger tap starts only for two touches that land together, apart, before the first one wrote anything', () => {
+  const first = { pointerType: 'touch', startedAt: 1000, pathPx: 2, point: { x: 100, y: 100 } };
+  const second = { pointerType: 'touch', timeStamp: 1060, point: { x: 180, y: 110 } };
+  assert.equal(startsTwoFingerTap(first, second), true);
+  assert.equal(startsTwoFingerTap({ ...first, pointerType: 'pen' }, second), false); // 펜 + 손가락은 손바닥 닿음이다
+  assert.equal(startsTwoFingerTap(first, { ...second, pointerType: 'pen' }), false);
+  assert.equal(startsTwoFingerTap(first, { ...second, timeStamp: 1400 }), false); // 늦게 닿은 손가락은 필기 중 다른 접촉
+  assert.equal(startsTwoFingerTap({ ...first, pathPx: 40 }, second), false); // 첫 손가락이 이미 쓰고 있다
+  assert.equal(startsTwoFingerTap(first, { ...second, point: { x: 105, y: 100 } }), false); // 한 손가락이 번진 것
 });
