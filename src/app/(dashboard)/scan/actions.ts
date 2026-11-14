@@ -82,7 +82,7 @@ export async function scanBarcode(raw: string): Promise<ScanResult> {
 
   // 권한 확인과 라벨 조회는 서로 무관하게 같이 보낸다(읽기만 하므로). 상태를 바꾸는 갱신은 권한 확인이 끝난 뒤에만 한다.
   const supabase = await createClient();
-  const [, { data: label }] = await Promise.all([
+  const [access, { data: label }] = await Promise.all([
     requirePermission('scan:scan'),
     supabase.from('box_labels').select('id, daily_business_id, seq, barcode, loaded_at').eq('barcode', code).maybeSingle(),
   ]);
@@ -95,8 +95,7 @@ export async function scanBarcode(raw: string): Promise<ScanResult> {
 
   if (label.loaded_at) return { status: 'duplicate', box: await describe(supabase, label) };
 
-  const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims.sub ?? null;
+  const userId = access.userId; // 권한 확인이 이미 읽은 로그인 정보를 쓴다(인증 확인을 한 번 더 하지 않는다)
   const loadedAt = new Date().toISOString();
   // 동시에 두 번 스캔돼도 한 번만 처리되도록 아직 상차 전인 행만 갱신한다.
   const { data: updated } = await supabase.from('box_labels').update({ loaded_at: loadedAt, loaded_by: userId }).eq('id', label.id).is('loaded_at', null).select('id').maybeSingle();
@@ -120,9 +119,8 @@ export async function scanBarcode(raw: string): Promise<ScanResult> {
 
 // 잘못 스캔한 박스를 상차 전 상태로 되돌린다.
 export async function undoScan(labelId: string): Promise<{ error: string | null }> {
-  await requirePermission('scan:undo');
+  const access = await requirePermission('scan:undo');
   const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
   const { data: label } = await supabase.from('box_labels').select('daily_business_id, seq').eq('id', labelId).maybeSingle();
   // 합포장으로 함께 상차 처리된 박스도 같이 되돌린다.
   const merged = label ? await mergedSeqsOf(supabase, label.daily_business_id, label.seq) : [];
@@ -131,7 +129,7 @@ export async function undoScan(labelId: string): Promise<{ error: string | null 
     : await supabase.from('box_labels').update({ loaded_at: null, loaded_by: null }).eq('id', labelId).select('id');
   if (error) return { error: error.message };
   const ids = [...new Set([labelId, ...(undone ?? []).map((u) => u.id)])];
-  await supabase.from('box_label_events').insert(ids.map((label_id) => ({ label_id, event: 'undo' as const, created_by: claims?.claims.sub ?? null })));
+  await supabase.from('box_label_events').insert(ids.map((label_id) => ({ label_id, event: 'undo' as const, created_by: access.userId })));
   revalidatePath('/scan');
   return { error: null };
 }
