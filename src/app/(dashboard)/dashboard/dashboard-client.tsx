@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Check, GripVertical, Plus, Pencil, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PenLine, TriangleAlert, Truck } from 'lucide-react';
-import { businessIdsInBothRounds, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
+import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
@@ -16,6 +16,7 @@ import { ProductCustomersPopover } from './product-customers-popover';
 import { CustomerOrderPanel } from './customer-order-panel';
 import { BoxAssignModal } from './box-assign-modal';
 import { fitRowHeight } from '@/lib/row-fit';
+import { packRows } from '@/lib/page-rows';
 import { useTouchDesktop } from '@/lib/use-touch-desktop';
 import { useHydrated } from '@/lib/use-hydrated';
 import { useToast, useUndoToast } from '@/components/toast';
@@ -200,6 +201,15 @@ function DoneBadge() {
   return (
     <span className="inline-flex items-center gap-0.5 align-middle mr-1 px-1 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold leading-[14px]" title="이 업체의 모든 상품이 완료되었습니다">
       <Check className="w-2.5 h-2.5" strokeWidth={4} />완료
+    </span>
+  );
+}
+
+// 주문 상품이 모두 취소된 고객사 표시. 이 고객사는 박스 할당·라벨 출력·상차가 필요 없다.
+function CancelledBadge() {
+  return (
+    <span className="inline-flex items-center align-middle mr-1 px-1 rounded border border-rose-300 bg-rose-100 text-rose-700 text-[10px] font-extrabold leading-[14px]" title="이 업체의 모든 주문이 취소되었습니다 — 박스 할당·라벨 출력·상차가 필요 없습니다">
+      취소
     </span>
   );
 }
@@ -843,14 +853,52 @@ export function DashboardClient({
   const mainRows = allRows.filter((r) => !separateNames.has(r.terminal));
   const rows = mainRows;
   const [separateOpen, setSeparateOpen] = useState(false);
+  // 별도 주문 팝업은 스크롤 없이 주문 목록의 모니터 1·2처럼 화면(쪽)으로 나눠 본다: 행 높이를 재서 팝업 높이에 들어가는 만큼씩 한 쪽에 둔다.
+  // 다른 쪽의 행도 화면 밖에 숨겨 둔 채 렌더해서 높이를 재고(펜 그림은 이 행들의 칸을 무시한다), 쪽마다 그림을 따로 저장한다(monitor s1·s2…).
+  const [sepPage, setSepPage] = useState(0);
+  const [sepHeights, setSepHeights] = useState<Record<string, number>>({});
+  const sepListRef = useRef<HTMLDivElement>(null);
+  const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 0 : window.innerHeight));
+  useLayoutEffect(() => {
+    if (!separateOpen) return;
+    const onResize = () => setViewportHeight(window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [separateOpen]);
+  // 행 높이 측정: 렌더 뒤마다 재서 달라졌을 때만 상태를 바꾼다(같으면 다시 그리지 않는다).
+  useLayoutEffect(() => {
+    if (!separateOpen) return;
+    const measure = () => {
+      const list = sepListRef.current;
+      if (!list) return;
+      const next: Record<string, number> = {};
+      list.querySelectorAll<HTMLElement>('[data-sep-row]').forEach((el) => {
+        next[el.dataset.sepRow as string] = Math.ceil(el.getBoundingClientRect().height);
+      });
+      setSepHeights((prev) => {
+        const keys = Object.keys(next);
+        return keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k]) ? prev : next;
+      });
+    };
+    measure();
+    void document.fonts?.ready.then(measure);
+  });
   // 품목별 수량은 일반 주문과 별도 주문(택배·직배송 등)을 나눠 센다 — 기본 화면에는 일반 주문 상품만, 별도 주문 상품은 팝업에서 본다.
   const separateDailyIds = new Set(separateRows.map((r) => r.dailyBusinessId));
   const mainItems = items.filter((i) => !separateDailyIds.has(i.dailyBusinessId));
   const separateItems = items.filter((i) => separateDailyIds.has(i.dailyBusinessId));
   const columns = getProductSummary(mainItems);
   const separateColumns = getProductSummary(separateItems);
+  // 별도 주문 팝업의 쪽 나누기: 팝업이 쓸 수 있는 높이(화면의 88% − 제목 줄 − 안쪽 여백)에 들어가는 만큼씩.
+  const SEP_ROW_GAP = 8;
+  const sepAvail = Math.max(0, Math.floor(viewportHeight * 0.88) - 88);
+  const sepPages = packRows(separateRows.map((r) => sepHeights[r.dailyBusinessId] ?? 56), sepAvail, SEP_ROW_GAP);
+  const sepPageNo = Math.min(sepPage, sepPages.length - 1);
+  const sepVisible = new Set(sepPages[sepPageNo].map((i) => separateRows[i].dailyBusinessId));
   // 터미널별 박스는 기본 주문표 기준이다 — 별도 주문 터미널은 "별도 주문" 팝업에서 따로 본다.
-  const terminalBoxTotals = getTerminalBoxTotals(mainRows);
+  // 주문이 모두 취소된 고객사의 박스는 터미널별 박스 수에 세지 않는다.
+  const cancelledCardSet = new Set(mainRows.filter((r) => isCardCancelled(items.filter((i) => i.dailyBusinessId === r.dailyBusinessId))).map((r) => r.dailyBusinessId));
+  const terminalBoxTotals = getTerminalBoxTotals(mainRows.filter((r) => !cancelledCardSet.has(r.dailyBusinessId)));
 
   // 표의 상품 열은 더 이상 "오늘 등록된 품목 종류"(columns) 기준이 아니라 "업체 한 곳이
   // 가장 많이 주문한 상품 수 + 1"(마지막은 항상 추가 버튼) 기준이다 — 열 개수가 품목 종류
@@ -1522,7 +1570,7 @@ export function DashboardClient({
           </div>
           {separateNames.size > 0 && (
             <button
-              onClick={() => setSeparateOpen(true)}
+              onClick={() => { setSepPage(0); setSeparateOpen(true); }}
               className="h-8 px-2.5 inline-flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-colors bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
               title={`별도 주문 보기 (택배·직배송 등) — ${separateRows.length}건`}
               aria-label="별도 주문 보기"
@@ -1729,7 +1777,7 @@ export function DashboardClient({
                       </span>
                     </div>
                     <div
-                      className={`relative border-r border-slate-100 px-2 flex items-center overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : ''} ${readOnly ? '' : 'cursor-pointer hover:bg-slate-100/70'}`}
+                      className={`relative border-r border-slate-100 px-2 flex items-center overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : isCardCancelled(rowItems) ? 'bg-rose-50' : ''} ${readOnly ? '' : 'cursor-pointer hover:bg-slate-100/70'}`}
                       {...(readOnly
                         ? {}
                         : {
@@ -1745,14 +1793,14 @@ export function DashboardClient({
                           })}
                     >
                       {/* 업체명은 현장에서 정확히 보여야 하므로 말줄임 없이 전체 폭을 쓴다(최대 2줄, 행 높이 고정). */}
-                      <span className="text-xs font-bold text-slate-700 leading-[1.15] break-keep line-clamp-2" title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
+                      <span className={`text-xs font-bold leading-[1.15] break-keep line-clamp-2 ${isCardCancelled(rowItems) ? 'text-rose-700 line-through decoration-rose-400' : 'text-slate-700'}`} title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge />}{isCardCancelled(rowItems) && <CancelledBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
                     </div>
                     {/* 박스 구성을 정한 뒤 주문이 바뀌면 이 칸이 붉게 바뀌고 경고 아이콘이 붙는다. 고객명 칸에는 아무것도 붙이지 않는다(이름은 절대 가려지면 안 된다, 2026-11-14). */}
                     <div
-                      className={`border-r border-slate-100 px-1 flex items-center justify-center gap-1 whitespace-nowrap ${row.packingChanged ? 'bg-rose-100' : 'bg-slate-50/60'} ${canOpenBox ? 'cursor-pointer hover:bg-slate-200/70' : ''}`}
-                      title={canOpenBox ? (row.packingChanged ? '주문이 바뀌었습니다 — 눌러서 박스 할당을 다시 확인하세요' : '누르면 이 업체의 박스 할당을 고칩니다') : row.packingChanged ? '주문이 바뀌었습니다 — 박스 할당에서 박스 구성을 다시 확인하세요' : undefined}
-                      {...(canOpenBox
+                      className={`border-r border-slate-100 px-1 flex items-center justify-center gap-1 whitespace-nowrap ${row.packingChanged && !isCardCancelled(rowItems) ? 'bg-rose-100' : 'bg-slate-50/60'} ${canOpenBox && !isCardCancelled(rowItems) ? 'cursor-pointer hover:bg-slate-200/70' : ''}`}
+                      title={isCardCancelled(rowItems) ? '주문이 모두 취소된 업체 — 박스 할당이 필요 없습니다' : canOpenBox ? (row.packingChanged ? '주문이 바뀌었습니다 — 눌러서 박스 할당을 다시 확인하세요' : '누르면 이 업체의 박스 할당을 고칩니다') : row.packingChanged ? '주문이 바뀌었습니다 — 박스 할당에서 박스 구성을 다시 확인하세요' : undefined}
+                      {...(canOpenBox && !isCardCancelled(rowItems)
                         ? {
                             role: 'button',
                             tabIndex: 0,
@@ -1761,8 +1809,8 @@ export function DashboardClient({
                           }
                         : {})}
                     >
-                      <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null ? 'text-slate-300' : row.packingChanged ? 'text-rose-700' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{row.totalBoxes ?? '-'}</span>
-                      {row.packingChanged && <TriangleAlert className="w-3.5 h-3.5 shrink-0 text-rose-600" strokeWidth={2.5} aria-label="박스 재확인 필요" />}
+                      <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null || isCardCancelled(rowItems) ? 'text-slate-300' : row.packingChanged ? 'text-rose-700' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{isCardCancelled(rowItems) ? '-' : (row.totalBoxes ?? '-')}</span>
+                      {row.packingChanged && !isCardCancelled(rowItems) && <TriangleAlert className="w-3.5 h-3.5 shrink-0 text-rose-600" strokeWidth={2.5} aria-label="박스 재확인 필요" />}
                       {row.mergeGroups.length > 0 && <span className="rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`} aria-label="합포장">합</span>}
                     </div>
 
@@ -1869,22 +1917,32 @@ export function DashboardClient({
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[88vh] flex flex-col border border-slate-200" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl flex-shrink-0" style={{ backgroundColor: '#003057' }}>
               <h3 className="text-sm font-bold text-white tracking-wide">별도 주문 ({separateRows.length}) — {[...separateNames].join(', ')}</h3>
+              {sepPages.length > 1 && (
+                <div role="tablist" aria-label="별도 주문 화면" className="ml-auto mr-4 flex gap-1">
+                  {sepPages.map((_, i) => (
+                    <button key={i} role="tab" aria-selected={i === sepPageNo} onClick={() => setSepPage(i)} className={`rounded-md px-3 py-1 text-xs font-bold ${i === sepPageNo ? 'bg-white text-[#003057]' : 'bg-white/15 text-white hover:bg-white/30'}`}>
+                      화면 {i + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
               <button onClick={() => setSeparateOpen(false)} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
             </div>
             <div className="relative flex-1 min-h-0 flex gap-3 p-4">
-            <div className="flex-1 min-w-0 overflow-y-auto flex flex-col gap-2">
+            <div ref={sepListRef} className="relative flex-1 min-w-0 overflow-y-auto flex flex-col gap-2">
               {separateRows.length === 0 && (
                 <p className="text-sm text-slate-400 text-center py-10">별도 주문이 없습니다. 터미널 관리에서 &apos;별도 주문&apos;으로 지정한 터미널의 주문이 여기에 모입니다.</p>
               )}
               <DndContext id="separate-dnd" sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleSeparateDragEnd}>
-              <SortableContext items={separateRows.map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
+              <SortableContext items={separateRows.filter((r) => sepVisible.has(r.dailyBusinessId)).map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
               {separateRows.map((row) => {
                 const rowItems = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence);
+                const visible = sepVisible.has(row.dailyBusinessId);
                 return (
+                  <div key={row.dailyBusinessId} data-sep-row={row.dailyBusinessId} data-ink-ignore={visible ? undefined : ''} aria-hidden={!visible} className={visible ? '' : 'invisible absolute inset-x-0 top-0 pointer-events-none'}>
                   <SortableRow
-                    key={row.dailyBusinessId}
                     id={row.dailyBusinessId}
-                    disabled={readOnly}
+                    disabled={readOnly} // 숨긴 행도 손잡이 칸까지 같은 모양이어야 높이를 똑같이 잰다(숨긴 행은 pointer-events가 꺼져 있어 끌 수 없다)
                     className="flex items-center gap-3 border border-slate-200 rounded-lg px-3 py-1.5 group bg-white"
                     style={{}}
                   >
@@ -1903,7 +1961,7 @@ export function DashboardClient({
                     )}
                     <div className="w-72 flex-shrink-0 flex items-center gap-2">
                       <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
-                      <span className="flex-1 min-w-0 text-sm font-bold text-slate-800 break-keep leading-tight">{isCardComplete(rowItems) && <DoneBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} onOpen={(el) => openCustomerPanel(row.dailyBusinessId, el)} /></span>
+                      <span className={`flex-1 min-w-0 text-sm font-bold break-keep leading-tight ${isCardCancelled(rowItems) ? 'text-rose-700' : 'text-slate-800'}`}>{isCardComplete(rowItems) && <DoneBadge />}{isCardCancelled(rowItems) && <CancelledBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} onOpen={(el) => openCustomerPanel(row.dailyBusinessId, el)} /></span>
                       <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes ?? '-'}</span>
                       {row.mergeGroups.length > 0 && <span className="flex-shrink-0 rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800">합포장</span>}
                     </div>
@@ -1939,17 +1997,18 @@ export function DashboardClient({
                     </>
                     )}
                   </SortableRow>
+                  </div>
                 );
               })}
               </SortableContext>
               </DndContext>
             </div>
-            {separateColumns.length > 0 && <ProductSummaryPanel columns={separateColumns} chipStyle={chipStyle} onPick={(p, r) => pickProduct('separate', p, r)} />}
-            {/* 별도 주문 팝업의 펜: 주문 목록과 같다(그릴 수 있는 기기는 쓰고, 아니면 같은 그림을 읽기 전용으로 본다). 그림은 모니터 1·2와 따로 's'에 저장한다. */}
+            {separateColumns.length > 0 && <ProductSummaryPanel columns={separateColumns} chipStyle={chipStyle} availHeight={sepAvail > 0 ? sepAvail : undefined} onPick={(p, r) => pickProduct('separate', p, r)} />}
+            {/* 별도 주문 팝업의 펜: 주문 목록과 같다(그릴 수 있는 기기는 쓰고, 아니면 같은 그림을 읽기 전용으로 본다). 그림은 모니터 1·2와 따로 쪽마다(s1·s2…) 저장한다. */}
             {inkWriterPopup ? (
-              <InkLayer key={`sep|${orderDate}`} date={orderDate} monitor="s" dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
+              <InkLayer key={`sep|${orderDate}|${sepPageNo}`} date={orderDate} monitor={`s${sepPageNo + 1}`} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
             ) : (
-              hydrated && !inkHidden && <InkLayer key={`sepview|${orderDate}`} viewOnly date={orderDate} monitor="s" dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
+              hydrated && !inkHidden && <InkLayer key={`sepview|${orderDate}|${sepPageNo}`} viewOnly date={orderDate} monitor={`s${sepPageNo + 1}`} dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
             )}
             </div>
           </div>

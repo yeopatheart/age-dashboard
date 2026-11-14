@@ -16,13 +16,16 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { BarChart3, CircleDashed, ClipboardList, Package, PackageCheck, Printer, PrinterCheck, PrinterX, Trash2, X } from 'lucide-react';
+import { BarChart3, CircleDashed, ClipboardList, Link2, Package, PackageCheck, Printer, PrinterCheck, PrinterX, Trash2, X } from 'lucide-react';
 import type { StoredPlan } from '@/lib/packing/server';
 import type { PackingBoxType as BoxType, PackingBusiness, PackingItem } from '@/lib/packing/types';
 import { summarizeBoxNeeds } from '@/lib/packing/box-needs';
 import { emptyBoxMessage, firstEmptyBoxIndex, removalShiftsPrintedLabels } from '@/lib/packing/box-rules';
 import { EXCLUDED_REASON_LABEL } from '@/lib/packing/excluded-items';
 import { submitPacking, assignItemsToBoxes, deletePackingRecord } from './actions';
+import { prepareBatchLabelPrint } from '../labels/actions';
+import { LabelPrinter, type LabelPrintJob } from '@/components/labels/label-printer';
+import { mergeKey, mergeUids, pruneUidGroups, seqGroupsFromUid, uidGroupsFromSeq, unmergeUids, type UidGroups } from '@/lib/packing/merge-draft';
 import { LabelPanel } from './label-panel';
 import { useCan } from '@/components/permissions-context';
 import { DateNav } from '@/components/date-nav';
@@ -45,6 +48,8 @@ interface Draft {
   source: 'base' | 'auto' | 'manual';
   // 이 작성본이 시작한 추천 순위(0부터). 수정했는지는 이 순위의 원래 구성과 비교해서 판단한다.
   baseRank: number;
+  // 합포장 묶음(박스의 화면 식별자 묶음). 박스를 지우거나 순서가 바뀌어도 따라가고, 제출할 때 현재 박스 순서의 번호 묶음으로 바꾼다.
+  mergeUids: UidGroups;
 }
 
 const EPS = 0.0001;
@@ -94,7 +99,7 @@ export function PackingLogClient({
   orderDate,
   today,
   allowPast,
-  rows,
+  rows: allRows,
   boxes,
   embedded = false,
   onSubmitted,
@@ -109,6 +114,8 @@ export function PackingLogClient({
   onSubmitted?: () => void;
 }) {
   const router = useRouter();
+  // 주문 상품이 모두 취소된 고객사는 박스 할당·라벨 출력이 필요 없어 목록에서 뺀다(업체 수·제출 수·필요 박스에도 세지 않는다).
+  const rows = useMemo(() => (embedded ? allRows : allRows.filter((r) => !r.cancelled)), [allRows, embedded]);
   // 과거 날짜는 설정에서 "과거 날짜 편집"을 켰을 때만 제출·삭제할 수 있다(서버도 같은 규칙으로 막는다).
   // 제출 권한이 없는 계정은 조회 전용이다. 기록 삭제·라벨 출력은 각각 별도 권한이다.
   const can = useCan();
@@ -171,16 +178,26 @@ export function PackingLogClient({
   };
   // 항상 수정할 수 있다: 화면의 박스·상품이 곧 작성본이다. 건드리기 전에는 추천(또는 제출한 기록) 그대로이고,
   // 건드리면 그때부터 업체별로 보관한다(제출·되돌리기 전까지는 이 화면 메모리에만 있다).
-  const makeDraft = (row: PackingBusiness, rank: number): Draft => ({
-    boxes: baseBoxes(row, rank),
+  const makeDraft = (row: PackingBusiness, rank: number): Draft => {
+    const boxes = baseBoxes(row, rank);
+    return {
+    boxes,
+    mergeUids: uidGroupsFromSeq(boxes.map((b) => b.uid), row.mergeGroups),
     moveQty: {},
     weights: Object.fromEntries(row.items.filter((i) => i.weightKg != null).map((i) => [i.id, String(i.weightKg)])),
     source: 'base',
     baseRank: rank,
-  });
+    };
+  };
+  // 합포장을 처음 불러온 상태(제출한 기록의 묶음)와 비교하는 키. 박스를 건드리지 않고 묶음만 바꿔도 "수정함"이다.
+  const baseMergeKey = (row: PackingBusiness, rank: number) => {
+    const uids = baseBoxes(row, rank).map((b) => b.uid);
+    return mergeKey(uids, uidGroupsFromSeq(uids, row.mergeGroups));
+  };
+  const draftMergeKey = (d: Draft) => mergeKey(d.boxes.map((b) => b.uid), d.mergeUids);
   const isModified = (row: PackingBusiness) => {
     const d = drafts[row.id];
-    return !!d && layoutKey(d.boxes) !== layoutKey(baseBoxes(row, d.baseRank));
+    return !!d && (layoutKey(d.boxes) !== layoutKey(baseBoxes(row, d.baseRank)) || draftMergeKey(d) !== baseMergeKey(row, d.baseRank));
   };
   const rank = selected ? rankOf(selected) : 0;
   const draft: Draft | null = selected ? drafts[selected.id] ?? makeDraft(selected, rank) : null;
@@ -246,8 +263,12 @@ export function PackingLogClient({
       const filled = draft.boxes[at]?.items.length ?? 0;
       if (!shifts && filled > 0 && !window.confirm(`${at + 1}번 박스를 뺄까요? 담은 상품 ${filled}개는 상품 목록으로 돌아갑니다.`)) return;
     }
-    updateDraft((d) => ({ ...d, boxes: d.boxes.filter((b) => b.uid !== uid) }));
+    updateDraft((d) => {
+      const boxesNext = d.boxes.filter((b) => b.uid !== uid);
+      return { ...d, boxes: boxesNext, mergeUids: pruneUidGroups(d.mergeUids, boxesNext.map((b) => b.uid)) };
+    });
   };
+  const changeMerge = (next: UidGroups) => updateDraft((d) => ({ ...d, mergeUids: next }));
 
   const parseMove = (d: Draft, item: PackingItem) => {
     const remaining = remainingOf(d, item);
@@ -339,6 +360,8 @@ export function PackingLogClient({
       weights,
       // 불러온 배치나 자동 배정을 그대로 제출하면 사람이 확인한 것으로 보지 않는다.
       itemsVerified: modified && draft.source === 'manual',
+      // 합포장은 이 화면에서 바꿨을 때만 보낸다(라벨 영역에서 따로 바꾼 묶음을 덮어쓰지 않으려고).
+      mergeGroups: draftMergeKey(draft) !== baseMergeKey(selected, draft.baseRank) ? seqGroupsFromUid(draft.boxes.map((b) => b.uid), draft.mergeUids) : undefined,
     });
     setBusy(false);
     if (result.error) return setError(result.error);
@@ -417,6 +440,26 @@ export function PackingLogClient({
     boxes.map((b) => b.name),
   );
 
+  // 라벨 일괄 출력: 제출한 업체(택배 제외) 중 아직 한 번도 출력하지 않은 라벨을 업체 번호순으로 한 번에 낸다. 대상 수는 목록의 출력 현황으로 센다.
+  const [batchJob, setBatchJob] = useState<LabelPrintJob | null>(null);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const batchTargets = rows.filter((r) => r.submitted && !r.parcel && r.labelStatus && r.labelStatus.total > r.labelStatus.printed);
+  const batchLabels = batchTargets.reduce((sum, r) => sum + (r.labelStatus ? r.labelStatus.total - r.labelStatus.printed : 0), 0);
+  const unsubmittedCount = rows.filter((r) => !r.submitted && !r.parcel).length;
+  const handleBatchPrint = async () => {
+    if (batchBusy || batchLabels === 0) return;
+    const warn = unsubmittedCount > 0 ? `\n\n아직 박스를 제출하지 않은 업체 ${unsubmittedCount}곳은 제외됩니다.` : '';
+    if (!window.confirm(`아직 출력하지 않은 라벨 ${batchLabels}장(${batchTargets.length}곳)을 업체 번호순으로 한꺼번에 출력합니다.${warn}\n\n인쇄 창을 닫거나 취소해도 "출력함"으로 기록됩니다. 계속할까요?`)) return;
+    setBatchBusy(true);
+    setError(null);
+    const payload = await prepareBatchLabelPrint(orderDate);
+    setBatchBusy(false);
+    if (payload.error || !payload.template) return setError(payload.error ?? '라벨을 준비하지 못했습니다.');
+    if (payload.skipped.length > 0) setError(`일부 업체의 라벨은 준비하지 못했습니다: ${payload.skipped.join(' / ')}`);
+    else setNotice(`${payload.businesses}곳 · 라벨 ${payload.labels.length}장을 출력합니다.`);
+    setBatchJob({ template: payload.template, labels: payload.labels, rotate: payload.rotated });
+  };
+
   const go = (date: string) => router.push(`/packing-log?date=${date}`);
 
   const visibleRows = onlyPending ? rows.filter((r) => !r.submitted) : rows;
@@ -439,6 +482,11 @@ export function PackingLogClient({
           <DateNav value={orderDate} today={today} onChange={go} label="박스 할당 날짜" />
           <span className="ak-count">업체 {rows.length}곳 · 제출 {doneCount}곳</span>
           <span className="ak-spacer" />
+          {can('packing:print') && (
+            <button type="button" className="ak-btn ak-btn-primary" disabled={batchBusy || batchLabels === 0} onClick={handleBatchPrint} title={batchLabels === 0 ? '출력할 라벨이 없습니다(제출한 업체의 라벨을 모두 출력했습니다)' : '아직 출력하지 않은 라벨을 업체 번호순으로 한꺼번에 출력합니다'}>
+              <Printer size={14} /> {batchBusy ? '준비 중…' : `라벨 일괄 출력${batchLabels > 0 ? ` (${batchTargets.length}곳 · ${batchLabels}장)` : ''}`}
+            </button>
+          )}
           {can('reports:view') && <Link href="/reports/box?view=accuracy" className="ak-btn"><BarChart3 size={14} /> 추천 정확도</Link>}
           <label className="pk-check"><input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} /> 미기록 업체만</label>
         </div>
@@ -592,6 +640,7 @@ export function PackingLogClient({
                         <BoxRow key={box.uid} box={box} index={idx + 1} items={selected.items} boxTypes={boxes} picked={activePick} onPick={(id) => togglePick(id, box.uid)} onChangeType={(boxId) => changeBoxType(box.uid, boxId)} onRemove={() => removeBox(box.uid)} />
                       ))}
                     </div>
+                    {draft.boxes.length >= 2 && <MergeBar boxes={draft.boxes} groups={draft.mergeUids} onChange={changeMerge} />}
                     <div className="pk-addrow">
                       <label className="pk-add">
                         <Package size={14} aria-hidden />
@@ -642,6 +691,8 @@ export function PackingLogClient({
           )}
         </div>
       )}
+
+      <LabelPrinter job={batchJob} onDone={() => setBatchJob(null)} />
 
       <style>{`
         .pk-root { display: flex; flex-direction: column; gap: var(--space-block); min-width: 0; }
@@ -700,6 +751,13 @@ export function PackingLogClient({
         .pk-needs-sum b { color: var(--foreground); font-weight: 900; }
         .pk-biz-done { opacity: 0.6; }
         .pk-layout-single { grid-template-columns: minmax(0, 1fr); }
+        .pk-merge { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; padding: 0.3rem 0.6rem; border: 1px dashed #cbd5e1; border-radius: 12px; font-size: var(--fs-sm); }
+        .pk-merge-title { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 800; color: var(--primary); }
+        .pk-merge-group { display: inline-flex; align-items: center; gap: 0.2rem; background: #ecfdf5; border: 1px solid #6ee7b7; color: #065f46; border-radius: 999px; padding: 0.05rem 0.2rem 0.05rem 0.6rem; font-weight: 800; }
+        .pk-merge-pick { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: auto; }
+        .pk-to-on { background: var(--primary); color: #fff; }
+        .pk-to-merge { border-color: #059669; color: #047857; }
+        .pk-to-merge:hover:not(:disabled) { background: #059669; color: #fff; }
         .pk-board { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.65rem 1rem; }
         .pk-pool { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; background: #f8fafc; border: 2px dashed #e2e8f0; border-radius: 12px; padding: 0.4rem 0.6rem; }
         .pk-pool-over { border-color: var(--primary); background: var(--primary-light); }
@@ -970,6 +1028,40 @@ function BoxRow({
         })}
       </div>
       {!readOnly && onRemove ? <button className="pk-x" onClick={onRemove} title="박스 빼기 (담은 상품은 상품 목록으로 돌아갑니다)" aria-label={`${index}번 박스 빼기`}><X size={16} /></button> : <span />}
+    </div>
+  );
+}
+
+// ─── 합포장 ─────────────────────────────────────────────────────────────────
+// 포장이 끝난 뒤 함께 테이핑해 내보낼 박스를 묶는다(라벨에 "합포장 1·2"가 찍히고, 하나만 스캔해도 묶인 박스가 모두 상차된다). 박스 번호를 눌러 고르고 [묶기].
+// 묶음은 제출할 때 함께 저장된다. 박스를 지우면 묶음도 따라간다.
+function MergeBar({ boxes, groups, onChange }: { boxes: DraftBox[]; groups: UidGroups; onChange: (next: UidGroups) => void }) {
+  const [pick, setPick] = useState<string[]>([]);
+  const uids = boxes.map((b) => b.uid);
+  const seqGroups = seqGroupsFromUid(uids, groups);
+  const toggle = (uid: string) => setPick((cur) => (cur.includes(uid) ? cur.filter((u) => u !== uid) : [...cur, uid]));
+  return (
+    <div className="pk-merge" role="group" aria-label="합포장">
+      <span className="pk-merge-title"><Link2 size={14} aria-hidden /> 합포장</span>
+      {seqGroups.map((g) => (
+        <span key={g.join('-')} className="pk-merge-group">
+          {g.join('·')}번
+          <button type="button" className="pk-x" aria-label={`${g.join('·')}번 합포장 풀기`} title="합포장 풀기" onClick={() => onChange(unmergeUids(groups, groups.find((x) => x.includes(uids[g[0] - 1])) ?? []))}>
+            <X size={12} />
+          </button>
+        </span>
+      ))}
+      {seqGroups.length === 0 && <span className="ak-muted">같이 내보낼 박스를 골라 묶으세요</span>}
+      <span className="pk-merge-pick">
+        {boxes.map((b, i) => (
+          <button key={b.uid} type="button" className={`pk-to ${pick.includes(b.uid) ? 'pk-to-on' : ''}`} aria-pressed={pick.includes(b.uid)} onClick={() => toggle(b.uid)} title={`${i + 1}번 ${b.name}`}>
+            {i + 1}
+          </button>
+        ))}
+        <button type="button" className="pk-to pk-to-merge" disabled={pick.length < 2} onClick={() => { onChange(mergeUids(groups, pick)); setPick([]); }}>
+          묶기
+        </button>
+      </span>
     </div>
   );
 }

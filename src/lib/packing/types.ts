@@ -33,6 +33,10 @@ export interface PackingBusiness {
   recommendation: RecommendationView | null;
   // 제출한 업체의 라벨 출력 현황(목록 칩용). 택배·미제출 업체는 null
   labelStatus: LabelPrintStatus | null;
+  // 주문 상품이 모두 취소된 고객사: 박스 할당·라벨 출력·상차가 필요 없다(박스 할당 화면 목록에서 뺀다).
+  cancelled: boolean;
+  // 합포장 묶음(박스 순번 묶음, 예: [[1,2]]). 포장 뒤 함께 테이핑하는 박스들이다.
+  mergeGroups: number[][];
   // 미제출: 추천을 만든 뒤 주문이 바뀜 / 제출: 제출한 뒤 주문이 바뀜
   orderChanged: boolean;
   submitted: {

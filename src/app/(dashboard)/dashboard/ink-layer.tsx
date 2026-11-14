@@ -109,6 +109,7 @@ function chipBoxes(canvas: HTMLCanvasElement): Map<string, Box> {
   const layer = canvas.getBoundingClientRect();
   const out = new Map<string, Box>();
   canvas.parentElement?.querySelectorAll<HTMLElement>('[data-chip]').forEach((el) => {
+    if (el.closest('[data-ink-ignore]')) return; // 화면 밖에 숨겨 둔 행(별도 주문 팝업의 다른 쪽)의 칸은 이 화면의 그림 대상이 아니다
     const id = el.dataset.chip;
     const r = el.getBoundingClientRect();
     if (id && r.width > 0 && r.height > 0) out.set(id, { left: r.left - layer.left, top: r.top - layer.top, width: r.width, height: r.height });
