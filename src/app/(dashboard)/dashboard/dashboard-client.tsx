@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Check, GripVertical, Plus, Pencil, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PenLine, TriangleAlert, Truck } from 'lucide-react';
-import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
+import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, productDelta, formatDelta, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
@@ -58,6 +58,7 @@ const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 // 안 주면(팝업) 기본 크기로 그리고 넘치면 패널 안에서 스크롤한다.
 const SUMMARY_ITEM_HEIGHTS = [26, 24, 22, 20, 18, 16, 14];
 // 추가(+N)·미정 배지는 칩 글자보다 작게, 위아래 여백을 1px만 둬서 칩 테두리에 닿지 않게 한다(15px 칩에서 배지가 테두리를 넘어 보였다).
+const DELTA_TITLE = '처음 입력 이후 바뀐 수량: 새로 추가된 수량과, 이미 있던 품목의 수량을 고친 만큼의 합(줄면 −)';
 const SUMMARY_BADGE_STYLE: React.CSSProperties = { padding: '1px 3px', fontSize: '0.9em' };
 function ProductSummaryPanel({
   columns,
@@ -71,7 +72,7 @@ function ProductSummaryPanel({
   onPick: (product: ProductSummaryRow, rect: DOMRect) => void;
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
-  const signature = `${columns.map((c) => `${c.key}:${c.total}:${c.added}:${c.unshipped}:${c.undecided}`).join('|')}@${availHeight ?? ''}`;
+  const signature = `${columns.map((c) => `${c.key}:${c.total}:${c.added}:${c.changed}:${c.unshipped}:${c.undecided}`).join('|')}@${availHeight ?? ''}`;
   // 품목·수량·높이가 바뀌면 가장 큰 크기부터 다시 시도한다.
   const [fit, setFit] = useState<{ signature: string; level: number }>({ signature: '', level: 0 });
   const level = availHeight === undefined ? 0 : fit.signature === signature ? fit.level : 0;
@@ -109,7 +110,7 @@ function ProductSummaryPanel({
               ) : (
                 <>
                   {product.total}{product.unit}
-                  {product.added > 0 && <span className="ml-1 inline-block rounded bg-white/70 leading-none text-sky-700" style={SUMMARY_BADGE_STYLE} title={`전체 ${product.total}${product.unit} 중 처음 입력 이후 추가된 수량`}>+{product.added}</span>}
+                  {productDelta(product) !== 0 && <span className="ml-1 inline-block rounded bg-white/70 leading-none text-sky-700" style={SUMMARY_BADGE_STYLE} title={DELTA_TITLE}>{formatDelta(productDelta(product), product.unit)}</span>}
                   {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
                 </>
               )}
@@ -853,7 +854,7 @@ export function DashboardClient({
   const mainRows = allRows.filter((r) => !separateNames.has(r.terminal));
   const rows = mainRows;
   const [separateOpen, setSeparateOpen] = useState(false);
-  // 별도 주문 팝업은 스크롤 없이 주문 목록의 모니터 1·2처럼 화면(쪽)으로 나눠 본다: 행 높이를 재서 팝업 높이에 들어가는 만큼씩 한 쪽에 둔다.
+  // 별도 주문 팝업은 스크롤 없이 주문 목록의 모니터 1·2처럼 모니터(쪽)로 나눠 본다: 행 높이를 재서 팝업 높이에 들어가는 만큼씩 한 쪽에 둔다.
   // 다른 쪽의 행도 화면 밖에 숨겨 둔 채 렌더해서 높이를 재고(펜 그림은 이 행들의 칸을 무시한다), 쪽마다 그림을 따로 저장한다(monitor s1·s2…).
   const [sepPage, setSepPage] = useState(0);
   const [sepHeights, setSepHeights] = useState<Record<string, number>>({});
@@ -890,9 +891,15 @@ export function DashboardClient({
   const columns = getProductSummary(mainItems);
   const separateColumns = getProductSummary(separateItems);
   // 별도 주문 팝업의 쪽 나누기: 팝업이 쓸 수 있는 높이(화면의 88% − 제목 줄 − 안쪽 여백)에 들어가는 만큼씩.
-  const SEP_ROW_GAP = 8;
-  const sepAvail = Math.max(0, Math.floor(viewportHeight * 0.88) - 88);
+  // 표 모양이라 행 사이 간격은 없고(테두리만), 표 머리 줄 높이만큼 쓸 수 있는 높이에서 뺀다.
+  const SEP_ROW_GAP = 0;
+  const SEP_HEADER_H = 30;
+  const sepAvail = Math.max(0, Math.floor(viewportHeight * 0.88) - 88 - SEP_HEADER_H);
   const sepPages = packRows(separateRows.map((r) => sepHeights[r.dailyBusinessId] ?? 56), sepAvail, SEP_ROW_GAP);
+  // 상품 열 수는 별도 주문 행 중 상품이 가장 많은 업체 기준(쪽을 넘겨도 열이 바뀌지 않게 모든 행에서 센다).
+  const sepSlotCount = Math.max(1, ...separateRows.map((r) => items.filter((i) => i.dailyBusinessId === r.dailyBusinessId).length));
+  const sepGridTemplate = `44px 76px minmax(150px, 1.3fr) 64px repeat(${sepSlotCount}, minmax(104px, 1fr))`;
+  const sepMinWidth = 44 + 76 + 150 + 64 + sepSlotCount * 104;
   const sepPageNo = Math.min(sepPage, sepPages.length - 1);
   const sepVisible = new Set(sepPages[sepPageNo].map((i) => separateRows[i].dailyBusinessId));
   // 터미널별 박스는 기본 주문표 기준이다 — 별도 주문 터미널은 "별도 주문" 팝업에서 따로 본다.
@@ -1265,7 +1272,7 @@ export function DashboardClient({
   // 품목별 수량: 모니터 2는 오른쪽 세로 패널, 전체보기(모바일 포함)는 표 위 카드로 보여준다.
   const chipStyle = (name: string): React.CSSProperties => {
     const c = resolveColors(productColors[name]?.fill, productColors[name]?.border);
-    return { backgroundColor: c.fill, borderColor: c.border, color: c.text };
+    return { backgroundColor: c.fill, borderColor: c.border, color: c.text, filter: 'saturate(0.8) brightness(0.93)' }; // 밝은 파스텔이 눈부시지 않게 채도·밝기를 낮춘다
   };
   // 상품 칩을 누르면 그 옆에 이 상품을 주문한 고객사 목록(플로팅)을 연다. 목록은 매번 최신 items로 계산한다.
   const [customerPanel, setCustomerPanel] = useState<{ dailyBusinessId: string; anchor: { left: number; top: number; right: number; bottom: number } } | null>(null);
@@ -1301,7 +1308,7 @@ export function DashboardClient({
       ) : (
         <>
           <span className="text-xs font-black">{product.total}{product.unit}</span>
-          {product.added > 0 && <span className="text-[10px] font-bold text-sky-700 bg-white/70 rounded px-1" title={`전체 ${product.total}${product.unit} 중 처음 입력 이후 추가된 수량`}>+{product.added}</span>}
+          {productDelta(product) !== 0 && <span className="text-[10px] font-bold text-sky-700 bg-white/70 rounded px-1" title={DELTA_TITLE}>{formatDelta(productDelta(product), product.unit)}</span>}
           {product.unshipped > 0 && <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded px-1">미출고 {product.unshipped}</span>}
         </>
       )}
@@ -1918,10 +1925,10 @@ export function DashboardClient({
             <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl flex-shrink-0" style={{ backgroundColor: '#003057' }}>
               <h3 className="text-sm font-bold text-white tracking-wide">별도 주문 ({separateRows.length}) — {[...separateNames].join(', ')}</h3>
               {sepPages.length > 1 && (
-                <div role="tablist" aria-label="별도 주문 화면" className="ml-auto mr-4 flex gap-1">
+                <div role="tablist" aria-label="별도 주문 모니터" className="ml-auto mr-4 flex gap-1">
                   {sepPages.map((_, i) => (
                     <button key={i} role="tab" aria-selected={i === sepPageNo} onClick={() => setSepPage(i)} className={`rounded-md px-3 py-1 text-xs font-bold ${i === sepPageNo ? 'bg-white text-[#003057]' : 'bg-white/15 text-white hover:bg-white/30'}`}>
-                      화면 {i + 1}
+                      모니터 {i + 1}
                     </button>
                   ))}
                 </div>
@@ -1929,71 +1936,90 @@ export function DashboardClient({
               <button onClick={() => setSeparateOpen(false)} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
             </div>
             <div className="relative flex-1 min-h-0 flex gap-3 p-4">
-            <div ref={sepListRef} className="relative flex-1 min-w-0 overflow-y-auto flex flex-col gap-2">
+            <div ref={sepListRef} className="relative flex-1 min-w-0 overflow-auto flex flex-col rounded-lg border border-slate-200">
               {separateRows.length === 0 && (
                 <p className="text-sm text-slate-400 text-center py-10">별도 주문이 없습니다. 터미널 관리에서 &apos;별도 주문&apos;으로 지정한 터미널의 주문이 여기에 모입니다.</p>
+              )}
+              {/* 주문 목록과 같은 표 모양: 헤더 + 칸마다 테두리가 있는 행. 상품 열 수는 이 팝업의 모든 행 중 상품이 가장 많은 업체 기준이다(쪽을 넘겨도 열이 안 바뀐다). */}
+              {separateRows.length > 0 && (
+                <div className="grid flex-shrink-0 sticky top-0 z-10 text-white text-xs font-bold" style={{ backgroundColor: '#003057', gridTemplateColumns: sepGridTemplate, minWidth: sepMinWidth, height: SEP_HEADER_H }}>
+                  <div className="border-r border-white/20 px-2 flex items-center justify-center">No</div>
+                  <div className="border-r border-white/20 px-2 flex items-center justify-center">터미널</div>
+                  <div className="border-r border-white/20 px-3 flex items-center">고객명</div>
+                  <div className="border-r border-white/20 px-2 flex items-center justify-center">박스</div>
+                  {Array.from({ length: sepSlotCount }).map((_, i) => (
+                    <div key={i} className="border-r last:border-r-0 border-white/20 px-1.5 flex items-center justify-center text-center">상품 {i + 1}</div>
+                  ))}
+                </div>
               )}
               <DndContext id="separate-dnd" sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleSeparateDragEnd}>
               <SortableContext items={separateRows.filter((r) => sepVisible.has(r.dailyBusinessId)).map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
               {separateRows.map((row) => {
                 const rowItems = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence);
                 const visible = sepVisible.has(row.dailyBusinessId);
+                const cancelledCard = isCardCancelled(rowItems);
                 return (
-                  <div key={row.dailyBusinessId} data-sep-row={row.dailyBusinessId} data-ink-ignore={visible ? undefined : ''} aria-hidden={!visible} className={visible ? '' : 'invisible absolute inset-x-0 top-0 pointer-events-none'}>
+                  <div key={row.dailyBusinessId} data-sep-row={row.dailyBusinessId} data-ink-ignore={visible ? undefined : ''} aria-hidden={!visible} className={visible ? '' : 'invisible absolute inset-x-0 top-0 pointer-events-none'} style={{ minWidth: sepMinWidth }}>
                   <SortableRow
                     id={row.dailyBusinessId}
                     disabled={readOnly} // 숨긴 행도 손잡이 칸까지 같은 모양이어야 높이를 똑같이 잰다(숨긴 행은 pointer-events가 꺼져 있어 끌 수 없다)
-                    className="flex items-center gap-3 border border-slate-200 rounded-lg px-3 py-1.5 group bg-white"
-                    style={{}}
+                    className="group/row grid border-b border-slate-100 bg-white hover:bg-slate-50/50 transition-colors"
+                    style={{ gridTemplateColumns: sepGridTemplate }}
                   >
                     {(handle) => (
                     <>
-                    <span className="w-6 flex-shrink-0 text-center text-xs font-bold text-slate-400">{row.businessNumber}</span>
-                    {handle && (
-                      <div
-                        ref={handle.ref}
-                        {...handle.props}
-                        className="flex-shrink-0 -ml-1 p-1 rounded cursor-grab active:cursor-grabbing touch-none select-none text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                        title="끌어서 순서 변경"
-                      >
-                        <GripVertical className="w-4 h-4" />
-                      </div>
-                    )}
-                    <div className="w-72 flex-shrink-0 flex items-center gap-2">
-                      <span className={`whitespace-nowrap flex-shrink-0 px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal}</span>
-                      <span className={`flex-1 min-w-0 text-sm font-bold break-keep leading-tight ${isCardCancelled(rowItems) ? 'text-rose-700' : 'text-slate-800'}`}>{isCardComplete(rowItems) && <DoneBadge />}{isCardCancelled(rowItems) && <CancelledBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} onOpen={(el) => openCustomerPanel(row.dailyBusinessId, el)} /></span>
-                      <span className="flex-shrink-0 text-xs text-slate-500 whitespace-nowrap">박스 {row.totalBoxes ?? '-'}</span>
-                      {row.mergeGroups.length > 0 && <span className="flex-shrink-0 rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800">합포장</span>}
+                    <div className="border-r border-slate-100 px-2 flex items-center justify-center text-xs font-bold text-slate-400 bg-slate-50">
+                      {handle ? (
+                        <div
+                          ref={handle.ref}
+                          {...handle.props}
+                          className="relative w-full h-full min-h-[44px] flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
+                          title="끌어서 순서 변경"
+                        >
+                          <span className="group-hover/row:invisible">{row.businessNumber}</span>
+                          <GripVertical className="absolute w-4 h-4 text-slate-500 invisible group-hover/row:visible" />
+                        </div>
+                      ) : (
+                        row.businessNumber
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
-                      {row.memo && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">메모: {row.memo}</span>}
-                      {rowItems.map((item) => {
-                        const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked, item.unshippedQuantity, item.quantity);
-                        const suffixParts: string[] = [];
-                        if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
-                        if (item.sizeRequest) suffixParts.push(item.sizeRequest);
+                    <div className="border-r border-slate-100 px-2 flex items-center justify-center">
+                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal || '-'}</span>
+                    </div>
+                    <div className={`border-r border-slate-100 px-3 py-1.5 flex flex-col justify-center gap-0.5 min-w-0 ${isCardComplete(rowItems) ? 'bg-emerald-50' : cancelledCard ? 'bg-rose-50' : ''}`}>
+                      <span className={`text-sm font-bold break-keep leading-tight ${cancelledCard ? 'text-rose-700' : 'text-slate-800'}`}>{isCardComplete(rowItems) && <DoneBadge />}{cancelledCard && <CancelledBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} onOpen={(el) => openCustomerPanel(row.dailyBusinessId, el)} /></span>
+                      {row.memo && <span className="text-[11px] font-bold leading-tight text-amber-700">메모: {row.memo}</span>}
+                    </div>
+                    <div className="border-r border-slate-100 px-1 flex items-center justify-center gap-1 whitespace-nowrap bg-slate-50/60">
+                      <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null || cancelledCard ? 'text-slate-300' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{cancelledCard ? '-' : (row.totalBoxes ?? '-')}</span>
+                      {row.mergeGroups.length > 0 && <span className="rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`} aria-label="합포장">합</span>}
+                    </div>
+                    {Array.from({ length: sepSlotCount }).map((_, slotIndex) => {
+                      const item = rowItems[slotIndex];
+                      // 빈 칸도 다른 칸과 같은 테두리로 그려서 열 경계가 행마다 어긋나 보이지 않게 한다.
+                      if (!item) return <div key={slotIndex} className="border-r border-slate-100 last:border-r-0" />;
+                      const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked, item.unshippedQuantity, item.quantity);
+                      const suffixParts: string[] = [];
+                      if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
+                      if (item.sizeRequest) suffixParts.push(item.sizeRequest);
                       if (prepLabelOf(item)) suffixParts.push(prepLabelOf(item) as string);
-                        return (
-                          <div key={item.id} data-chip={item.id} className={`relative flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
-                            <span className="flex items-baseline gap-1 min-w-0">
-                              <span className="font-bold">{item.productName}</span>
-                              {isUndecidedQuantity(item) ? (
-                                <span className="font-black text-amber-700">수량 미정</span>
-                              ) : (
-                                <>
-                                  <span className="font-black text-sm">{item.quantity}</span>
-                                  <span className="font-semibold">{item.unit}</span>
-                                </>
-                              )}
-                              {suffixParts.length > 0 && <span className="font-semibold text-sky-600">({suffixParts.join(', ')})</span>}
-                              {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
-                                <span className="text-[10px] font-bold text-white bg-amber-500 rounded px-1 py-[1px]" title={item.unshippedReason ?? undefined}>미출고 {item.unshippedQuantity}</span>
-                              )}
-                            </span>
+                      return (
+                        <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[3px] flex min-w-0">
+                          <div data-chip={item.id} className={`relative w-full min-h-[44px] flex flex-wrap items-center justify-center content-center gap-x-1 px-1.5 py-1 rounded-lg border text-xs text-center break-keep [overflow-wrap:anywhere] shadow-sm ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
+                            <span className="font-bold">{item.productName}</span>
+                            {isUndecidedQuantity(item) ? (
+                              <span className="rounded bg-amber-100 px-1 font-black text-amber-700 whitespace-nowrap">수량 미정</span>
+                            ) : (
+                              <span className="whitespace-nowrap"><span className="font-black text-sm">{item.quantity}</span><span className="ml-0.5 font-semibold">{item.unit}</span></span>
+                            )}
+                            {suffixParts.length > 0 && <span className="font-semibold text-sky-600">({suffixParts.join(', ')})</span>}
+                            {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
+                              <span className="text-[10px] font-bold text-white bg-amber-500 rounded px-1 py-[1px]" title={item.unshippedReason ?? undefined}>미출고 {item.unshippedQuantity}</span>
+                            )}
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
                     </>
                     )}
                   </SortableRow>
