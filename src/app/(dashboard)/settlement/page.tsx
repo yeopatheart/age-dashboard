@@ -11,6 +11,7 @@ import { loadSalesAndCards, loadShippingRows, loadStoredPurchases, loadSupplierD
 import { loadReceipts } from '@/lib/settlement/receipt-server';
 import { buildPurchaseRows } from '@/lib/settlement/purchases';
 import { DateBar } from './date-bar';
+import { ExcelBar } from './excel-bar';
 import { SettlementSection } from './settlement-section';
 import { SettlementClient } from './settlement-client';
 import { PurchasesClient } from './purchases-client';
@@ -18,9 +19,9 @@ import { ShippingClient } from './shipping-client';
 
 // 정산: 출고가 끝난 주문을 판매내역과 매입내역으로 보여 주고 가격·사업자 구분·입금 여부·메모를 입력한다. 매입내역·판매내역을 한 화면에 함께 보여 준다.
 // 정산은 하루(출고일) 단위다. ?d=YYYY-MM-DD(기본 오늘, 미래는 오늘로 본다)로 날짜를 정하고, 세 구역(판매내역·배송비·매입내역)이 같은 날짜를 쓴다.
-export default async function SettlementPage({ searchParams }: { searchParams: Promise<{ d?: string }> }) {
+export default async function SettlementPage({ searchParams }: { searchParams: Promise<{ d?: string; v?: string }> }) {
   const accessCheck = requireMenu('settlement'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 await로 확정)
-  const { d } = await searchParams;
+  const { d, v } = await searchParams;
   const today = todayKST();
   const date = parseSettlementDate(d, today);
   const supabase = await createClient();
@@ -82,11 +83,24 @@ export default async function SettlementPage({ searchParams }: { searchParams: P
   }));
 
   // 날짜를 옮기면 입력 중이던 값·선택을 새로 시작한다(key가 바뀌면 화면 상태가 초기화된다).
-  const key = date;
+  const key = `${date}-${v ?? ''}`; // v: 엑셀 가져오기 뒤 구역을 새로 그리려고 붙이는 값
   return (
     <div className="ak-page">
       {header}
       <DateBar date={date} today={today} />
+      <ExcelBar
+        key={date}
+        date={date}
+        data={{
+          date,
+          sales: sales.rows,
+          shipping: shipping.value?.rows ?? null,
+          purchases: purchaseRows,
+          sellers: sellers.rows,
+          suppliers: directory.value?.suppliers ?? [],
+          shippingCustomers: (shipping.value?.cards ?? []).map((c) => c.customer),
+        }}
+      />
       <div className="ak-split">
         <SettlementSection id="sales" title="판매내역" openOnMobile>
           <SettlementClient

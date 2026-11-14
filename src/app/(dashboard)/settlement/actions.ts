@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { requirePermission } from '@/lib/permissions/access';
 import { parseShippingMethod, shippingInputError, UUID_PATTERN, type ShippingInput } from '@/lib/settlement/shipping';
+import { upsertShippingRows } from '@/lib/settlement/write';
 
 export interface SalesPatch {
   itemIds: string[]; // 값을 바꿀 판매내역 줄(주문 줄 id). 여러 줄이면 같은 값을 일괄 적용한다
@@ -151,20 +152,9 @@ export async function saveShippingRows(rows: ShippingInput[]): Promise<{ error: 
     const problem = shippingInputError(r);
     if (problem) return { error: problem };
   }
-  const byKey = new Map(rows.map((r) => [`${r.cardId}|${r.method}`, r])); // 같은 행이 겹치면 마지막 값
   const supabase = await createClient();
-  const list = [...byKey.values()];
-  for (let i = 0; i < list.length; i += CHUNK) {
-    const chunk = list.slice(i, i + CHUNK).map((r) => {
-      const memo = (r.memo ?? '').trim();
-      return { daily_business_id: r.cardId, method: parseShippingMethod(r.method)!, boxes: r.boxes, amount: r.amount, seller_id: r.sellerId, paid: r.paid === true, memo: memo === '' ? null : memo };
-    });
-    const { error } = await supabase.from('settlement_shipping').upsert(chunk, { onConflict: 'daily_business_id,method' });
-    if (error) {
-      if (error.code === '23503') return { error: '주문 카드나 사업자가 바뀌어 저장하지 못했습니다. 화면을 새로고침한 뒤 다시 시도해주세요.' };
-      return { error: error.message };
-    }
-  }
+  const result = await upsertShippingRows(supabase, rows);
+  if (result.error) return result;
   revalidatePath('/settlement');
   return { error: null };
 }
