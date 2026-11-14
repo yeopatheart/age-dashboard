@@ -26,10 +26,7 @@ export const MAX_STROKES = 300;
 // 쓰는 동안에도 같은 간격(STORE_MIN_STEP)으로만 점을 받으므로(ink-layer) 저장본과 쓰던 점 목록이 같다.
 export const MAX_POINTS = 800; // 획 하나가 저장하는 점 상한(긴 글씨 한 획도 넉넉하다)
 export const STORE_MIN_STEP = 1.5; // 이보다 가까운 점은 버린다(CSS px). 1.5px 미만은 같은 자리로 봐도 눈에 보이지 않는다
-const KEY_PREFIX = 'board-ink:v1:';
 const COLOR = /^#[0-9a-f]{6}$/i;
-
-export const inkKey = (date: string, monitor: string) => `${KEY_PREFIX}${date}:${monitor}`;
 
 const round4 = (n: number) => Math.round(n * 10000) / 10000;
 
@@ -72,49 +69,28 @@ export function resolvePoints(stroke: InkStroke, layer: { width: number; height:
   return out;
 }
 
-export function serializeInk(strokes: InkStroke[]): string {
-  return JSON.stringify({ v: 1, strokes: strokes.slice(-MAX_STROKES) });
-}
-
-// 저장된 글자를 읽는다. 모양이 틀리거나 망가진 것은 버리고, 읽을 수 없으면 빈 목록이다(그림이 없어질 뿐 화면은 멈추지 않는다).
-export function parseInk(raw: string | null): InkStroke[] {
-  if (!raw) return [];
-  try {
-    const data: unknown = JSON.parse(raw);
-    if (typeof data !== 'object' || data === null || (data as { v?: unknown }).v !== 1) return [];
-    const list = (data as { strokes?: unknown }).strokes;
-    if (!Array.isArray(list)) return [];
-    const out: InkStroke[] = [];
-    for (const item of list) {
-      if (typeof item !== 'object' || item === null) continue;
-      const s = item as Record<string, unknown>;
-      const pts = s.pts;
-      if (typeof s.id !== 'string' || typeof s.color !== 'string' || !COLOR.test(s.color)) continue;
-      if (typeof s.width !== 'number' || !Number.isFinite(s.width) || s.width < 0.5 || s.width > 64) continue;
-      if (!Array.isArray(pts) || pts.length < 4 || pts.length % 2 !== 0 || pts.length > MAX_POINTS * 2 || !pts.every((n) => typeof n === 'number' && Number.isFinite(n))) continue;
-      if (s.anchor !== undefined && typeof s.anchor !== 'string') continue;
-      out.push({ id: s.id, color: s.color, width: s.width, pts: pts as number[], ...(typeof s.anchor === 'string' ? { anchor: s.anchor } : {}) });
-    }
-    return out.slice(-MAX_STROKES);
-  } catch {
-    return [];
+// 서버(또는 어디서든)에서 읽은 획 목록을 검증한다. 모양이 틀리거나 망가진 획은 버리고, 읽을 수 없으면 빈 목록이다(그림이 없어질 뿐 화면은 멈추지 않는다).
+// 서버가 저장하기 전에 한 번, 화면이 읽은 뒤에 한 번 같은 규칙으로 거른다.
+export function parseInkStrokes(data: unknown): InkStroke[] {
+  if (!Array.isArray(data)) return [];
+  const out: InkStroke[] = [];
+  for (const item of data) {
+    if (typeof item !== 'object' || item === null) continue;
+    const s = item as Record<string, unknown>;
+    const pts = s.pts;
+    if (typeof s.id !== 'string' || typeof s.color !== 'string' || !COLOR.test(s.color)) continue;
+    if (typeof s.width !== 'number' || !Number.isFinite(s.width) || s.width < 0.5 || s.width > 64) continue;
+    if (!Array.isArray(pts) || pts.length < 4 || pts.length % 2 !== 0 || pts.length > MAX_POINTS * 2 || !pts.every((n) => typeof n === 'number' && Number.isFinite(n))) continue;
+    if (s.anchor !== undefined && typeof s.anchor !== 'string') continue;
+    out.push({ id: s.id, color: s.color, width: s.width, pts: pts as number[], ...(typeof s.anchor === 'string' ? { anchor: s.anchor } : {}) });
   }
+  return out.slice(-MAX_STROKES);
 }
 
-interface KeyStorage {
-  length: number;
-  key(index: number): string | null;
-  removeItem(key: string): void;
-}
-
-// 오래된 날짜의 그림을 지운다. keepDates에 든 날짜(예: 오늘·어제)만 남긴다.
-export function pruneInk(storage: KeyStorage, keepDates: string[]): void {
-  const stale: string[] = [];
-  for (let i = 0; i < storage.length; i++) {
-    const key = storage.key(i);
-    if (!key || !key.startsWith(KEY_PREFIX)) continue;
-    const date = key.slice(KEY_PREFIX.length).split(':')[0];
-    if (!keepDates.includes(date)) stale.push(key);
-  }
-  for (const key of stale) storage.removeItem(key);
+// 서버 보관 기간: 오늘을 포함해 3일(오늘·어제·그제). 이 날짜보다 이전 그림은 지운다(YYYY-MM-DD 문자열 비교로 충분하다).
+export const INK_KEEP_DAYS = 3;
+export function inkCutoffDate(today: string): string {
+  const d = new Date(`${today}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - (INK_KEEP_DAYS - 1));
+  return d.toISOString().slice(0, 10);
 }

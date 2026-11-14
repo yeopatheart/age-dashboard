@@ -8,6 +8,8 @@ import { requirePermission } from '@/lib/permissions/access';
 import { editableDateError, todayKST } from '@/lib/order-date';
 import { manualItemChanged, resolveManualChangeStatus } from '@/lib/manual-item-status';
 import { loadAppSettings } from '@/lib/settings-server';
+import { inkCutoffDate, parseInkStrokes } from '@/lib/ink/store';
+import { missingTable, migrationsFor } from '@/lib/supabase/missing-table';
 import { isIsoDate, nonNegativeNumberError, positiveNumberError, textError } from '@/lib/validate';
 import type { Database } from '@/lib/types/database';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -43,6 +45,28 @@ export async function togglePacked(orderItemId: string, nextPacked: boolean): Pr
     .eq('id', orderItemId);
   if (error) return { error: error.message };
   revalidatePath('/dashboard');
+  return { error: null };
+}
+
+// 칠판 펜 그림을 날짜·모니터당 한 행에 통째로 저장한다(PC가 같은 그림을 본다). 칠판이 그릴 때마다 최신 전체를 보내므로 마지막 저장이 남는다.
+// 획은 서버에서도 한 번 더 걸러 저장한다. 보관은 3일이라 저장할 때 그보다 오래된 행을 지운다. 이 화면은 새로 그리지 않으므로 revalidatePath는 부르지 않는다.
+export async function saveBoardInk(orderDate: string, monitor: string, strokes: unknown): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
+  if (!isIsoDate(orderDate)) return { error: '날짜 형식이 올바르지 않습니다.' };
+  if (monitor !== '1' && monitor !== '2') return { error: '모니터는 1 또는 2입니다.' };
+  const supabase = await createClient();
+  const guard = await dateError(supabase, orderDate);
+  if (guard) return { error: guard };
+  const { error } = await supabase
+    .from('board_ink')
+    .upsert({ order_date: orderDate, monitor, strokes: parseInkStrokes(strokes), updated_at: new Date().toISOString() }, { onConflict: 'order_date,monitor' });
+  if (error) {
+    const table = missingTable(error.message);
+    if (table) return { error: `펜 그림 저장 테이블이 없습니다. 마이그레이션 ${migrationsFor([table]).join(', ')}을 먼저 적용해 주세요.` };
+    return { error: error.message };
+  }
+  // 오래된 그림 정리는 저장을 막지 않는다(실패해도 다음 저장 때 다시 시도한다).
+  await supabase.from('board_ink').delete().lt('order_date', inkCutoffDate(todayKST()));
   return { error: null };
 }
 
