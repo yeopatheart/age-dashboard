@@ -8,7 +8,7 @@ export const normalizeConfirmMode = (value: unknown): LabelConfirmMode => (value
 
 // 인쇄 작업 이름(= 인쇄할 때의 문서 제목). 에이전트가 Windows 인쇄 이벤트의 문서 이름에서 이 규칙으로 작업 id를 찾는다.
 // scripts/label-agent/label-agent.ps1의 정규식과 같아야 한다.
-export const PRINT_JOB_TITLE_PREFIX = 'AGE-LABEL-';
+const PRINT_JOB_TITLE_PREFIX = 'AGE-LABEL-';
 export const printJobTitle = (jobId: string) => `${PRINT_JOB_TITLE_PREFIX}${jobId}`;
 const JOB_TITLE_PATTERN = /AGE-LABEL-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 export function jobIdFromTitle(title: string): string | null {

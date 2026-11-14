@@ -151,7 +151,7 @@ function MergeEditor({ boxCount, groups, disabled, onChange }: { boxCount: numbe
 }
 
 // 화면만 그리는 부분(데이터를 props로 받는다).
-export function LabelPanelView({
+function LabelPanelView({
   boxCount,
   boxTypes,
   groups,
