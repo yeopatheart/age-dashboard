@@ -58,6 +58,12 @@ const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
 // 안 주면(팝업) 기본 크기로 그리고 넘치면 패널 안에서 스크롤한다.
 const SUMMARY_ITEM_HEIGHTS = [26, 24, 22, 20, 18, 16, 14];
 // 추가(+N)·미정 배지는 칩 글자보다 작게, 위아래 여백을 1px만 둬서 칩 테두리에 닿지 않게 한다(15px 칩에서 배지가 테두리를 넘어 보였다).
+// 별도 주문 팝업 표의 행 촘촘함 단계(0 = 넉넉함). 칸 안쪽 여백과 칩·번호 칸의 최소 높이만 줄이고 글자 크기는 바꾸지 않는다(글자 잘림 점검 대상 아님).
+const SEP_DENSITIES = [
+  { cell: 'p-[3px]', chip: 'min-h-[44px] py-1', name: 'py-1.5', no: 'min-h-[44px]' },
+  { cell: 'p-[2px]', chip: 'min-h-[34px] py-0.5', name: 'py-1', no: 'min-h-[34px]' },
+  { cell: 'p-[1px]', chip: 'min-h-[28px] py-0', name: 'py-0.5', no: 'min-h-[28px]' },
+] as const;
 const DELTA_TITLE = '처음 입력 이후 바뀐 수량: 새로 추가된 수량과, 이미 있던 품목의 수량을 고친 만큼의 합(줄면 −)';
 const SUMMARY_BADGE_STYLE: React.CSSProperties = { padding: '1px 3px', fontSize: '0.9em' };
 function ProductSummaryPanel({
@@ -89,7 +95,7 @@ function ProductSummaryPanel({
   }, [signature, level, availHeight]);
   const itemHeight = SUMMARY_ITEM_HEIGHTS[level];
   return (
-    <aside className="w-52 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ borderTop: '3px solid #003057' }}>
+    <aside className="w-52 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ borderTop: '3px solid var(--soft-brass, #003057)' }}>
       <div className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100 flex-shrink-0">품목별 수량</div>
       <div ref={gridRef} className={`flex-1 min-h-0 flex flex-wrap content-start gap-x-1 p-1.5 ${availHeight === undefined ? 'overflow-y-auto' : 'overflow-hidden'}`}>
         {columns.map((product) => (
@@ -317,7 +323,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-[70] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl" style={{ backgroundColor: '#003057' }}>
+        <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl" style={{ backgroundColor: 'var(--soft-head, #003057)' }}>
           <h3 className="text-sm font-bold text-white tracking-wide">{title}</h3>
           <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
             <X className="w-4 h-4" />
@@ -406,7 +412,7 @@ function UnshippedModal({
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50">닫기</button>
           <button
             type="button" disabled={busy || !valid} onClick={() => submit(parsed)}
-            className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-40" style={{ backgroundColor: '#003057' }}
+            className="px-4 py-2 rounded-lg text-sm font-bold text-white disabled:opacity-40" style={{ backgroundColor: 'var(--soft-head, #003057)' }}
           >저장</button>
         </div>
       </div>
@@ -594,7 +600,7 @@ function OrderFormModal({
         )}
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors">취소</button>
-          <button onClick={handleSave} disabled={!isEdit && !matchedBusiness} className="px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors disabled:opacity-40" style={{ backgroundColor: '#003057' }}>저장</button>
+          <button onClick={handleSave} disabled={!isEdit && !matchedBusiness} className="px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors disabled:opacity-40" style={{ backgroundColor: 'var(--soft-head, #003057)' }}>저장</button>
         </div>
       </div>
     </Modal>
@@ -733,7 +739,7 @@ function ItemFormModal({
 
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors">취소</button>
-          <button onClick={handleSave} className="px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors" style={{ backgroundColor: '#003057' }}>저장</button>
+          <button onClick={handleSave} className="px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors" style={{ backgroundColor: 'var(--soft-head, #003057)' }}>저장</button>
         </div>
       </div>
     </Modal>
@@ -860,12 +866,22 @@ export function DashboardClient({
   const [sepHeights, setSepHeights] = useState<Record<string, number>>({});
   const sepListRef = useRef<HTMLDivElement>(null);
   const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 0 : window.innerHeight));
+  // 표 모양이라 행 사이 간격은 없고(테두리만), 표 머리 줄 높이만큼 쓸 수 있는 높이에서 뺀다.
+  const SEP_ROW_GAP = 0;
+  const SEP_HEADER_H = 30;
+  const sepAvail = Math.max(0, Math.floor(viewportHeight * 0.88) - 88 - SEP_HEADER_H);
+  // 모니터 1에 조금만 넘치는데 모니터 2로 넘기지 않도록, 먼저 행 여백을 한 단계씩 줄여서 한 쪽에 들어가는지 본다(글자 크기는 그대로).
+  // 끝까지 줄여도 안 들어갈 때만 쪽을 나눈다. 단계는 팝업을 열거나 주문·창 높이가 바뀌면 처음(넉넉함)부터 다시 정한다.
+  const [sepFit, setSepFit] = useState({ key: '', level: 0 });
   useLayoutEffect(() => {
     if (!separateOpen) return;
     const onResize = () => setViewportHeight(window.innerHeight);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [separateOpen]);
+  // 별도 주문 행·상품 수나 창 높이가 바뀌면 촘촘함 단계를 처음으로 되돌린다(줄어든 주문에서 계속 촘촘하게 남지 않도록). 팝업을 열 때도 처음부터(버튼에서 비운다).
+  const sepFitKey = `${separateRows.length}:${items.filter((i) => separateRows.some((r) => r.dailyBusinessId === i.dailyBusinessId)).length}:${viewportHeight}`;
+  const sepDensity = sepFit.key === sepFitKey ? sepFit.level : 0;
   // 행 높이 측정: 렌더 뒤마다 재서 달라졌을 때만 상태를 바꾼다(같으면 다시 그리지 않는다).
   useLayoutEffect(() => {
     if (!separateOpen) return;
@@ -880,6 +896,9 @@ export function DashboardClient({
         const keys = Object.keys(next);
         return keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k]) ? prev : next;
       });
+      // 방금 잰 높이로 한 쪽에 다 들어가는지 본다. 안 들어가고 더 줄일 수 있으면 한 단계 더 촘촘하게(다음 렌더에서 다시 잰다).
+      const heights = separateRows.map((r) => next[r.dailyBusinessId] ?? 56);
+      if (packRows(heights, sepAvail, SEP_ROW_GAP).length > 1 && sepDensity < SEP_DENSITIES.length - 1) setSepFit({ key: sepFitKey, level: sepDensity + 1 });
     };
     measure();
     void document.fonts?.ready.then(measure);
@@ -891,10 +910,6 @@ export function DashboardClient({
   const columns = getProductSummary(mainItems);
   const separateColumns = getProductSummary(separateItems);
   // 별도 주문 팝업의 쪽 나누기: 팝업이 쓸 수 있는 높이(화면의 88% − 제목 줄 − 안쪽 여백)에 들어가는 만큼씩.
-  // 표 모양이라 행 사이 간격은 없고(테두리만), 표 머리 줄 높이만큼 쓸 수 있는 높이에서 뺀다.
-  const SEP_ROW_GAP = 0;
-  const SEP_HEADER_H = 30;
-  const sepAvail = Math.max(0, Math.floor(viewportHeight * 0.88) - 88 - SEP_HEADER_H);
   const sepPages = packRows(separateRows.map((r) => sepHeights[r.dailyBusinessId] ?? 56), sepAvail, SEP_ROW_GAP);
   // 상품 열 수는 별도 주문 행 중 상품이 가장 많은 업체 기준(쪽을 넘겨도 열이 바뀌지 않게 모든 행에서 센다).
   const sepSlotCount = Math.max(1, ...separateRows.map((r) => items.filter((i) => i.dailyBusinessId === r.dailyBusinessId).length));
@@ -1272,7 +1287,7 @@ export function DashboardClient({
   // 품목별 수량: 모니터 2는 오른쪽 세로 패널, 전체보기(모바일 포함)는 표 위 카드로 보여준다.
   const chipStyle = (name: string): React.CSSProperties => {
     const c = resolveColors(productColors[name]?.fill, productColors[name]?.border);
-    return { backgroundColor: c.fill, borderColor: c.border, color: c.text, filter: 'saturate(0.8) brightness(0.93)' }; // 밝은 파스텔이 눈부시지 않게 채도·밝기를 낮춘다
+    return { backgroundColor: c.fill, borderColor: c.border, color: c.text, filter: 'saturate(0.75) brightness(0.96)' }; // 밝은 파스텔이 눈부시지 않게 채도·밝기를 낮춘다
   };
   // 상품 칩을 누르면 그 옆에 이 상품을 주문한 고객사 목록(플로팅)을 연다. 목록은 매번 최신 items로 계산한다.
   const [customerPanel, setCustomerPanel] = useState<{ dailyBusinessId: string; anchor: { left: number; top: number; right: number; bottom: number } } | null>(null);
@@ -1319,7 +1334,7 @@ export function DashboardClient({
   // 접기 버튼은 카드 아래 가장자리 오른쪽에 반쯤 걸쳐 두어(엑셀의 그룹 접기 단추처럼) 자리를 따로 차지하지 않는다.
   const summaryCard = (
     <div className="relative flex-shrink-0">
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden" style={{ borderTop: '3px solid #003057' }}>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden" style={{ borderTop: '3px solid var(--soft-brass, #003057)' }}>
         {summaryCollapsed ? (
           <div className="flex items-center gap-2 px-3 py-1">
             <span className="text-xs font-bold text-slate-500">품목별 수량</span>
@@ -1577,7 +1592,7 @@ export function DashboardClient({
           </div>
           {separateNames.size > 0 && (
             <button
-              onClick={() => { setSepPage(0); setSeparateOpen(true); }}
+              onClick={() => { setSepPage(0); setSepFit({ key: '', level: 0 }); setSeparateOpen(true); }}
               className="h-8 px-2.5 inline-flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-colors bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
               title={`별도 주문 보기 (택배·직배송 등) — ${separateRows.length}건`}
               aria-label="별도 주문 보기"
@@ -1639,7 +1654,7 @@ export function DashboardClient({
             <button
               onClick={() => setActionMenuOpen((v) => !v)}
               className="w-8 h-8 rounded-lg text-white shadow-sm hover:opacity-90 transition-opacity flex items-center justify-center"
-              style={{ backgroundColor: '#003057' }}
+              style={{ backgroundColor: 'var(--soft-head, #003057)' }}
               title={readOnly ? '엑셀 다운로드' : '새 주문 추가 · 엑셀 다운로드'}
               aria-label={readOnly ? '엑셀 다운로드' : '새 주문 추가·엑셀 다운로드'}
               aria-haspopup="menu"
@@ -1716,8 +1731,8 @@ export function DashboardClient({
             {/* 헤더 */}
             <div
               ref={headerRef}
-              className={`grid text-white text-xs font-bold flex-shrink-0 ${!isSplitMode ? 'sticky top-0 z-10' : ''}`}
-              style={{ backgroundColor: '#003057', gridTemplateColumns: gridTemplate }}
+              className={`soft-head-line grid text-white text-xs font-bold flex-shrink-0 ${!isSplitMode ? 'sticky top-0 z-10' : ''}`}
+              style={{ backgroundColor: 'var(--soft-head, #003057)', gridTemplateColumns: gridTemplate }}
             >
               <div className="border-r border-b-2 border-white/20 px-2 py-1.5 flex items-center justify-center">No</div>
               <div className="border-r border-b-2 border-white/20 px-2 py-1.5 flex items-center justify-center">터미널</div>
@@ -1922,7 +1937,7 @@ export function DashboardClient({
       {separateOpen && (
         <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4" onClick={() => setSeparateOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[88vh] flex flex-col border border-slate-200" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl flex-shrink-0" style={{ backgroundColor: '#003057' }}>
+            <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl flex-shrink-0" style={{ backgroundColor: 'var(--soft-head, #003057)' }}>
               <h3 className="text-sm font-bold text-white tracking-wide">별도 주문 ({separateRows.length}) — {[...separateNames].join(', ')}</h3>
               {sepPages.length > 1 && (
                 <div role="tablist" aria-label="별도 주문 모니터" className="ml-auto mr-4 flex gap-1">
@@ -1942,13 +1957,13 @@ export function DashboardClient({
               )}
               {/* 주문 목록과 같은 표 모양: 헤더 + 칸마다 테두리가 있는 행. 상품 열 수는 이 팝업의 모든 행 중 상품이 가장 많은 업체 기준이다(쪽을 넘겨도 열이 안 바뀐다). */}
               {separateRows.length > 0 && (
-                <div className="grid flex-shrink-0 sticky top-0 z-10 text-white text-xs font-bold" style={{ backgroundColor: '#003057', gridTemplateColumns: sepGridTemplate, minWidth: sepMinWidth, height: SEP_HEADER_H }}>
-                  <div className="border-r border-white/20 px-2 flex items-center justify-center">No</div>
-                  <div className="border-r border-white/20 px-2 flex items-center justify-center">터미널</div>
-                  <div className="border-r border-white/20 px-3 flex items-center">고객명</div>
-                  <div className="border-r border-white/20 px-2 flex items-center justify-center">박스</div>
+                <div className="soft-head-line grid flex-shrink-0 sticky top-0 z-10 text-white text-xs font-bold" style={{ backgroundColor: 'var(--soft-head, #003057)', gridTemplateColumns: sepGridTemplate, minWidth: sepMinWidth, height: SEP_HEADER_H }}>
+                  <div className="border-r border-b-2 border-white/20 px-2 flex items-center justify-center">No</div>
+                  <div className="border-r border-b-2 border-white/20 px-2 flex items-center justify-center">터미널</div>
+                  <div className="border-r border-b-2 border-white/20 px-3 flex items-center">고객명</div>
+                  <div className="border-r border-b-2 border-white/20 px-2 flex items-center justify-center">박스</div>
                   {Array.from({ length: sepSlotCount }).map((_, i) => (
-                    <div key={i} className="border-r last:border-r-0 border-white/20 px-1.5 flex items-center justify-center text-center">상품 {i + 1}</div>
+                    <div key={i} className="border-r last:border-r-0 border-b-2 border-white/20 px-1.5 flex items-center justify-center text-center">상품 {i + 1}</div>
                   ))}
                 </div>
               )}
@@ -1958,6 +1973,7 @@ export function DashboardClient({
                 const rowItems = items.filter((i) => i.dailyBusinessId === row.dailyBusinessId).sort((a, b) => a.productSequence - b.productSequence);
                 const visible = sepVisible.has(row.dailyBusinessId);
                 const cancelledCard = isCardCancelled(rowItems);
+                const density = SEP_DENSITIES[sepDensity];
                 return (
                   <div key={row.dailyBusinessId} data-sep-row={row.dailyBusinessId} data-ink-ignore={visible ? undefined : ''} aria-hidden={!visible} className={visible ? '' : 'invisible absolute inset-x-0 top-0 pointer-events-none'} style={{ minWidth: sepMinWidth }}>
                   <SortableRow
@@ -1973,7 +1989,7 @@ export function DashboardClient({
                         <div
                           ref={handle.ref}
                           {...handle.props}
-                          className="relative w-full h-full min-h-[44px] flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
+                          className={`relative w-full h-full ${density.no} flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none`}
                           title="끌어서 순서 변경"
                         >
                           <span className="group-hover/row:invisible">{row.businessNumber}</span>
@@ -1986,7 +2002,7 @@ export function DashboardClient({
                     <div className="border-r border-slate-100 px-2 flex items-center justify-center">
                       <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal || '-'}</span>
                     </div>
-                    <div className={`border-r border-slate-100 px-3 py-1.5 flex flex-col justify-center gap-0.5 min-w-0 ${isCardComplete(rowItems) ? 'bg-emerald-50' : cancelledCard ? 'bg-rose-50' : ''}`}>
+                    <div className={`border-r border-slate-100 px-3 ${density.name} flex flex-col justify-center gap-0.5 min-w-0 ${isCardComplete(rowItems) ? 'bg-emerald-50' : cancelledCard ? 'bg-rose-50' : ''}`}>
                       <span className={`text-sm font-bold break-keep leading-tight ${cancelledCard ? 'text-rose-700' : 'text-slate-800'}`}>{isCardComplete(rowItems) && <DoneBadge />}{cancelledCard && <CancelledBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} onOpen={(el) => openCustomerPanel(row.dailyBusinessId, el)} /></span>
                       {row.memo && <span className="text-[11px] font-bold leading-tight text-amber-700">메모: {row.memo}</span>}
                     </div>
@@ -2004,8 +2020,8 @@ export function DashboardClient({
                       if (item.sizeRequest) suffixParts.push(item.sizeRequest);
                       if (prepLabelOf(item)) suffixParts.push(prepLabelOf(item) as string);
                       return (
-                        <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[3px] flex min-w-0">
-                          <div data-chip={item.id} className={`relative w-full min-h-[44px] flex flex-wrap items-center justify-center content-center gap-x-1 px-1.5 py-1 rounded-lg border text-xs text-center break-keep [overflow-wrap:anywhere] shadow-sm ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
+                        <div key={item.id} className={`border-r border-slate-100 last:border-r-0 ${density.cell} flex min-w-0`}>
+                          <div data-chip={item.id} className={`relative w-full ${density.chip} flex flex-wrap items-center justify-center content-center gap-x-1 px-1.5 rounded-lg border text-xs text-center break-keep [overflow-wrap:anywhere] shadow-sm ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
                             <span className="font-bold">{item.productName}</span>
                             {isUndecidedQuantity(item) ? (
                               <span className="rounded bg-amber-100 px-1 font-black text-amber-700 whitespace-nowrap">수량 미정</span>
