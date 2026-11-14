@@ -27,9 +27,9 @@ export function fitCanvas(canvas: HTMLCanvasElement): { ctx: CanvasRenderingCont
   const { width, height } = backingSize(rect.width, rect.height, dpr);
   canvas.width = width;
   canvas.height = height;
-  // desynchronized: 그리는 화면을 이벤트 처리 주기와 떼어 지연을 줄이라는 힌트(펜이 느리게 따라오는 것을 줄인다). 지원하지 않는 브라우저는 무시한다.
-  // 캔버스의 옵션은 처음 getContext를 부른 이 자리에서만 정해진다(다른 곳의 getContext('2d')는 같은 컨텍스트를 돌려준다).
-  const ctx = canvas.getContext('2d', { desynchronized: true });
+  // desynchronized 옵션은 쓰지 않는다. 11-14에 켠 뒤 스마트 칠판의 주문 목록이 캔버스 영역 전체 까만 화면으로 열렸다(PC는 정상, 2026-11-15).
+  // 이 옵션은 캔버스를 화면 합성 경로에서 떼어 내서, 합성이 다른 칠판 브라우저에서는 위에 겹친 요소·캔버스가 검게 나올 수 있다. 칠판에서 확인하기 전에는 다시 켜지 않는다.
+  const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   ctx.setTransform(width / rect.width, 0, 0, height / rect.height, 0, 0); // 반올림 오차까지 반영해 CSS 좌표와 정확히 맞춘다
   ctx.lineCap = 'round';
