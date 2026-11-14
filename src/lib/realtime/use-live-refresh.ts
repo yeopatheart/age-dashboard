@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
@@ -20,13 +20,19 @@ const REFRESH_MAX_WAIT_MS = 2_000;
 // 안전 새로고침: 실시간 신호가 조용히 끊겨도(TV 절전 등) 화면을 새로 받는다(탭이 보이는 동안만). SAFETY_TICK_MS마다 확인해서,
 // 실시간이 붙어 있으면 마지막으로 받은 지 SAFETY_LIVE_MS가 지났을 때만, 붙어 있지 않으면 매번 받는다. 한 번 받을 때마다 DB 요청이 10건 넘게 나가므로
 // 켜진 기기 수만큼 곱해지는 부하를 줄인다(예전에는 실시간이 정상이어도 1분마다 받았다).
-const SAFETY_TICK_MS = 60_000;
+const SAFETY_TICK_MS = 15_000;
 const SAFETY_LIVE_MS = 180_000;
-// 연결이 잠깐 흔들려 채널이 닫혔다 곧 다시 붙는 것은 흔하다(네트워크 순간 끊김, 서버의 연결 정리). 그때마다 빨간 경고와 "연결이 끊겼습니다" 소리가 나면
-// 오경보라서(2026-11-14 현장), 이 시간 안에 다시 붙으면 경고하지 않는다. 그 이상 끊겨 있으면 그때 "끊김"으로 알린다.
-const DOWN_GRACE_MS = 8_000;
-// 끊긴 채로 있으면 이 간격으로 스스로 다시 연결을 시도한다(탭이 보이는 동안만).
+// 실시간이 끊겨 있는 동안은 이 간격으로 화면을 새로 받아서, 신호가 없어도 화면이 15초 안팎으로 최신을 유지한다(끊김 안내를 믿고 멈춰 있지 않게).
+const SAFETY_DOWN_MS = 15_000;
+// 연결이 잠깐 흔들려 채널이 닫혔다 곧 다시 붙는 것은 흔하다(네트워크 순간 끊김, 서버의 연결 정리, 칠판의 느린 화면 때문에 연결 확인이 늦어질 때).
+// 그때마다 경고가 뜨면 오경보라서(2026-11-14 현장), 이 시간 안에 다시 붙으면 경고하지 않는다. 그 이상 끊겨 있으면 그때 "끊김"으로 알린다.
+const DOWN_GRACE_MS = 20_000;
+// 끊긴 채로 있어도 supabase-js가 스스로 다시 붙는다(1·2·5·10초 간격). 그 사이에 우리가 채널을 지우고 새로 만들면 다시 붙는 과정이 처음부터 다시 시작해서
+// 오히려 끊김이 길어진다. 마지막으로 붙어 있던 때부터 이 시간이 지났을 때만 직접 새로 연결한다(탭이 보이는 동안만).
+const RECONNECT_AFTER_MS = 30_000;
 const RECONNECT_RETRY_MS = 10_000;
+// 화면 새로고침(RSC 요청) 한 번이 이보다 오래 끝나지 않으면 멈춘 것으로 보고 다음 새로고침을 막지 않는다.
+const REFRESH_STUCK_MS = 20_000;
 
 // 다른 기기에서 주문 줄·업체 카드가 바뀌면 이 화면을 서버에서 다시 받아온다(router.refresh).
 // Realtime은 "바뀌었다"는 신호로만 쓰고, 화면 데이터는 지금처럼 서버에서 읽는다(권한·조인 로직을 한 곳에 둔다).
@@ -45,6 +51,20 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
     scopeRef.current = scope;
   });
   const router = useRouter();
+  // 화면 새로고침은 한 번에 하나만 보낸다. 앞의 새로고침이 끝나기 전에 또 보내면 요청이 겹쳐서(앞 것이 취소되거나 응답 순서가 뒤바뀌어) 칩이 옛 상태로 깜빡이고
+  // 서버에 같은 일이 여러 번 쌓였다. 진행 중에 온 요청은 하나로 모았다가 끝난 뒤 한 번 더 받는다.
+  const [refreshing, startRefresh] = useTransition();
+  const refreshingRef = useRef(false);
+  const refreshStartedAt = useRef(0);
+  const dirtyRef = useRef(false);
+  const flushRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    refreshingRef.current = refreshing;
+    if (!refreshing && dirtyRef.current) {
+      dirtyRef.current = false;
+      flushRef.current();
+    }
+  }, [refreshing]);
   const [status, setStatus] = useState<Exclude<LiveStatus, 'off'>>('connecting');
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
 
@@ -56,14 +76,23 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
     let firstSignalAt = 0; // 묶는 중인 첫 신호의 시각(0 = 묶는 중 아님)
     let lastRefresh = Date.now(); // 화면은 방금 서버에서 받은 상태로 시작한다
     let live = false;
+    let lastOkAt = Date.now(); // 마지막으로 연결이 붙어 있던 시각(처음에는 시작 시각). 직접 다시 연결할지 가르는 기준이다.
     const refreshNow = () => {
       clearTimeout(timer);
       timer = undefined;
       firstSignalAt = 0;
+      if (refreshingRef.current && Date.now() - refreshStartedAt.current < REFRESH_STUCK_MS) {
+        dirtyRef.current = true; // 진행 중인 새로고침이 끝나면 한 번 더 받는다
+        return;
+      }
       lastRefresh = Date.now();
-      router.refresh();
+      refreshStartedAt.current = lastRefresh;
+      startRefresh(() => {
+        router.refresh();
+      });
       setLastRefreshAt(lastRefresh);
     };
+    flushRef.current = refreshNow;
     // 카카오 주문 한 번 확정으로 여러 줄이 연달아 바뀌므로 짧은 시간(REFRESH_DEBOUNCE_MS) 안의 신호는 한 번의 새로고침으로 묶는다.
     // 신호가 끊이지 않아도 첫 신호부터 REFRESH_MAX_WAIT_MS 안에는 받는다.
     const refreshSoon = () => {
@@ -77,10 +106,10 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
     let lastTick = Date.now();
     const safety = setInterval(() => {
       const now = Date.now();
-      const slept = now - lastTick > SAFETY_TICK_MS * 2;
+      const slept = now - lastTick > SAFETY_TICK_MS * 4; // 15초 주기가 1분 넘게 멈췄다 돌아왔으면 절전에서 깨어난 것
       lastTick = now;
       if (document.visibilityState !== 'visible') return;
-      if (slept || !live || now - lastRefresh >= SAFETY_LIVE_MS) refreshNow();
+      if (slept || (!live && now - lastRefresh >= SAFETY_DOWN_MS) || now - lastRefresh >= SAFETY_LIVE_MS) refreshNow();
     }, SAFETY_TICK_MS);
     // 이 날짜로 방금 들어온 업체 카드. 화면을 새로 받기 전에 그 카드의 주문 줄 신호가 먼저 오므로 따로 기억해 둔다.
     const incomingDailyIds = new Set<string>();
@@ -109,16 +138,17 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
       try {
         await supabase.realtime.setAuth();
         if (cancelled) return;
-        channel = supabase
+        const mine = supabase
           .channel(`board-orders-${++seq}`)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, (payload) => onItemRowChange({ eventType: payload.eventType, new: payload.new, old: payload.old }))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_businesses' }, (payload) => onDailyChange({ eventType: payload.eventType, new: payload.new, old: payload.old }))
           .subscribe((s) => {
-            if (cancelled) return;
+            if (cancelled || channel !== mine) return; // 이미 지운 옛 채널의 닫힘 신호가 새 채널의 상태를 덮어쓰지 않게 한다
             if (s === 'SUBSCRIBED') {
               clearTimeout(downTimer);
               downTimer = undefined;
               live = true;
+              lastOkAt = Date.now();
               setStatus('live');
               refreshSoon(); // 화면을 받은 뒤 구독이 붙기 전까지의 변경을 메운다(재연결 때도 같다)
             } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED') {
@@ -131,14 +161,21 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
               }, DOWN_GRACE_MS);
             }
           });
+        channel = mine;
       } finally {
         connecting = false;
       }
     };
     void connect();
     // 죽은 채널을 지우고 새로 연결한다. 이미 붙어 있거나 연결 중이면 아무것도 하지 않는다.
-    const reconnectIfDead = () => {
-      if (connecting || String(channel?.state) === 'joined') return;
+    // force가 아니면 마지막으로 붙어 있던 때부터 RECONNECT_AFTER_MS가 지났을 때만 한다(그 안에는 supabase-js가 스스로 다시 붙는 중이라 건드리면 오히려 늦어진다).
+    const reconnectIfDead = (force = false) => {
+      if (connecting) return;
+      if (String(channel?.state) === 'joined') {
+        lastOkAt = Date.now();
+        return;
+      }
+      if (!force && Date.now() - lastOkAt < RECONNECT_AFTER_MS) return;
       const old = channel;
       channel = null;
       live = false;
@@ -150,7 +187,7 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
     };
     const wake = () => {
       if (document.visibilityState !== 'visible') return;
-      reconnectIfDead();
+      reconnectIfDead(true); // 절전·숨김에서 돌아왔을 때는 기다리지 않고 붙어 있지 않으면 바로 새로 연결한다
       refreshSoon();
     };
     // 창을 클릭해 포커스만 돌아온 것은 화면이 계속 보이던 상태라 놓친 변경이 없다: 죽은 연결만 살리고 화면은 다시 받지 않는다

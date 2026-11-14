@@ -2,6 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/types/database";
 import { isTransientAuthError } from "@/lib/supabase/auth-errors";
+import { createRetryingFetch } from "@/lib/supabase/retry-fetch";
+
+const retryingFetch = createRetryingFetch();
 
 const PUBLIC_PATHS = ["/login"];
 
@@ -12,6 +15,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: retryingFetch }, // 로그인 확인(서명키·사용자 조회)의 일시적 실패를 다시 시도한다
       cookies: {
         getAll() {
           return request.cookies.getAll();
