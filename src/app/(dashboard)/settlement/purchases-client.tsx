@@ -19,16 +19,14 @@ export function PurchasesClient({
   sellers,
   suppliers,
   supplierIdsByProduct,
-  multiDay,
 }: {
   rows: PurchaseRow[];
   sellers: Option[];
   suppliers: Option[]; // 전체 매입처(이름 표시용)
   supplierIdsByProduct: Record<string, string[]>; // 품목(상품명) → 그 상품에 연결된 매입처 id
-  multiDay: boolean;
 }) {
   const canEdit = useCan()('settlement:edit');
-  // 저장 결과를 기다리지 않고 화면에 바로 보이는 값(실패하면 되돌린다). 기간을 옮기면 화면 상태가 새로 시작된다.
+  // 저장 결과를 기다리지 않고 화면에 바로 보이는 값(실패하면 되돌린다). 날짜를 옮기면 화면 상태가 새로 시작된다.
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [drafts, setDrafts] = useState<Drafts>({}); // 입력 중인 매입가·메모(칸을 벗어날 때 저장한다)
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -138,7 +136,6 @@ export function PurchasesClient({
 
   const columns: Column<PurchaseRow & { no: number }>[] = [
     { key: 'no', label: '번호', hideable: false, className: 'ak-fit', render: (r) => r.no },
-    ...(multiDay ? [{ key: 'date', label: '출고일', hideable: false, className: 'ak-fit', render: (r: PurchaseRow) => r.orderDate.slice(5).replace('-', '.') } satisfies Column<PurchaseRow & { no: number }>] : []),
     {
       key: 'seller',
       label: '사업자 구분',
@@ -345,7 +342,7 @@ export function PurchasesClient({
         selected={canEdit ? selected : undefined}
         onToggleRow={canEdit ? toggleRow : undefined}
         onToggleAll={canEdit ? toggleAllOnPage : undefined}
-        emptyText="이 기간에 매입내역이 없습니다. 판매내역이 올라오면 품목이 자동으로 추가됩니다."
+        emptyText="이 날짜에 매입내역이 없습니다. 판매내역이 올라오면 품목이 자동으로 추가됩니다."
       />
 
       {pageCount > 1 && (

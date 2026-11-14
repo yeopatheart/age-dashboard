@@ -19,21 +19,17 @@ type Drafts = Record<string, { price?: string; unitPrice?: string; memo?: string
 export function SettlementClient({
   rows,
   sellers,
-  multiDay,
-  from,
-  to,
+  date,
   issued,
 }: {
   rows: SalesRow[];
   sellers: { id: string; name: string }[];
-  multiDay: boolean;
-  from: string; // 조회 기간(영수증 발행 때 서버가 같은 기간의 판매내역을 다시 읽는다)
-  to: string;
-  issued: IssuedReceiptKey[]; // 이 기간에 이미 발행한 영수증(중복 발행 경고에 쓴다)
+  date: string; // 정산 날짜(영수증 발행 때 서버가 같은 날의 판매내역을 다시 읽는다)
+  issued: IssuedReceiptKey[]; // 이 날짜에 이미 발행한 영수증(중복 발행 경고에 쓴다)
 }) {
   const canEdit = useCan()('settlement:edit');
   const isMobile = useIsMobile();
-  // 저장 결과를 기다리지 않고 화면에 바로 보이는 값(실패하면 되돌린다). 기간을 옮기면 화면 상태가 새로 시작된다.
+  // 저장 결과를 기다리지 않고 화면에 바로 보이는 값(실패하면 되돌린다). 날짜를 옮기면 화면 상태가 새로 시작된다.
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [drafts, setDrafts] = useState<Drafts>({}); // 입력 중인 판매가·메모(칸을 벗어날 때 저장한다)
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -188,7 +184,6 @@ export function SettlementClient({
 
   const columns: Column<SalesRow & { no: number }>[] = [
     { key: 'no', label: '번호', hideable: false, className: 'ak-fit', render: (r) => r.no },
-    ...(multiDay ? [{ key: 'date', label: '출고일', hideable: false, className: 'ak-fit', render: (r: SalesRow) => r.orderDate.slice(5).replace('-', '.') } satisfies Column<SalesRow & { no: number }>] : []),
     {
       key: 'seller',
       label: '사업자 구분',
@@ -506,7 +501,7 @@ export function SettlementClient({
         selected={canEdit ? selected : undefined}
         onToggleRow={canEdit ? toggleRow : undefined}
         onToggleAll={canEdit ? toggleAllOnPage : undefined}
-        emptyText="이 기간에 출고가 끝난 주문이 없습니다."
+        emptyText="이 날짜에 출고가 끝난 주문이 없습니다."
       />
 
       {/* 휴대폰에서 하단에 고정된 일괄 바가 표 마지막 줄을 가리지 않게 하는 여백 */}
@@ -515,8 +510,8 @@ export function SettlementClient({
         <ReceiptIssuePanel
           rows={viewed.filter((r) => selected.has(r.itemId))}
           sellers={sellers}
-          from={from}
-          to={to}
+          from={date}
+          to={date}
           issued={issued}
           saving={saving > 0}
           onClose={() => setReceiptOpen(false)}
