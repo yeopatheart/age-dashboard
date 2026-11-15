@@ -15,7 +15,8 @@ import { InkLayer, type InkItem } from './ink-layer';
 import { ProductCustomersPopover } from './product-customers-popover';
 import { CustomerOrderPanel } from './customer-order-panel';
 import { BoxAssignModal } from './box-assign-modal';
-import { fitRowHeight } from '@/lib/row-fit';
+import { rowLayout } from '@/lib/monitor-rows';
+import { BoardStage, type StageInfo } from './board-stage';
 import { packRows } from '@/lib/page-rows';
 import { useTouchDesktop } from '@/lib/use-touch-desktop';
 import { useHydrated } from '@/lib/use-hydrated';
@@ -39,14 +40,10 @@ import {
   type ManualItemFields,
 } from './actions';
 
-// 행 높이는 고정값이 아니라 단계(큰 것부터)에서 고른다 — 모니터 2대에 주문이 전부 들어가는
-// 가장 큰 높이를 쓰므로, 주문이 적으면 시원하게(40px), 최대 60건까지 늘면 30px까지 줄어든다.
-// 전체보기·모니터 1·2가 항상 같은 높이를 쓴다. 30px 미만은 가독성 때문에 내려가지 않는다.
-const ROW_HEIGHT_TIERS = [40, 36, 32, 30];
-const MIN_ROW_HEIGHT = ROW_HEIGHT_TIERS[ROW_HEIGHT_TIERS.length - 1];
-const MONITOR_COUNT = 2;
+// 행 높이 규칙은 src/lib/monitor-rows.ts(단계 40→36→32→30px, 예전 규칙 그대로).
 const ROW_FIT_MAX_SHRINK = 6; // 하단 자투리에 한 행을 더 넣으려고 행을 줄일 수 있는 최대 높이(px)
 const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
+const SEP_REF_VIEWPORT_H = 720; // 칠판의 창 높이(CSS px). 별도 주문 팝업의 쪽 나눔 기준
 
 // 헤더와 각 본문 행이 전부 독립된 flexbox였을 때는 같은 칸이라도 행마다 내용에 따라 폭이
 // 1~2px씩 미묘하게 달라져(브라우저의 flex 여유공간 분배가 셀 내용에 영향받는 경우가 있다)
@@ -229,21 +226,25 @@ function SortableRow({
   disabled,
   className,
   style,
+  scale = 1,
   children,
 }: {
   id: string;
   disabled: boolean;
   className: string;
   style: React.CSSProperties;
+  scale?: number; // 기준 화면(board-stage)에 걸린 배율. 끌기가 측정한 거리는 화면 좌표라, 배율 안에서 그리려면 배율로 나눈다.
   children: (handle: { ref: (el: HTMLElement | null) => void; props: Record<string, unknown> } | null) => React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
   return (
     <div
       ref={setNodeRef}
+      // 필기가 이 줄을 따라가도록 줄 위치를 재는 표시(ink-layer의 anchorBoxes가 찾는다)
+      data-ink-row={id}
       className={`${className} ${isDragging ? 'relative z-10 bg-white shadow-lg opacity-90' : ''}`}
       // 세로 이동만 허용한다(modifiers 패키지 없이 x를 버린다).
-      style={{ ...style, transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined, transition }}
+      style={{ ...style, transform: transform ? `translate3d(0, ${Math.round(transform.y / scale)}px, 0)` : undefined, transition }}
     >
       {children(disabled ? null : { ref: setActivatorNodeRef, props: { ...attributes, ...listeners } })}
     </div>
@@ -901,7 +902,9 @@ export function DashboardClient({
   const [sepPage, setSepPage] = useState(0);
   const [sepHeights, setSepHeights] = useState<Record<string, number>>({});
   const sepListRef = useRef<HTMLDivElement>(null);
-  const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 0 : window.innerHeight));
+  // 별도 주문 팝업의 쪽 나눔은 창 높이가 칠판(720px)보다 커도 칠판 높이로 계산한다: 큰 PC 창에서도 칠판과 같은 주문이 같은 쪽에 나온다(필기도 쪽마다 저장된다).
+  // 칠판보다 낮은 창은 그 높이에 맞춘다(팝업이 창 밖으로 넘치지 않게).
+  const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 0 : Math.min(window.innerHeight, SEP_REF_VIEWPORT_H)));
   // 표 모양이라 행 사이 간격은 없고(테두리만), 표 머리 줄 높이만큼 쓸 수 있는 높이에서 뺀다.
   const SEP_ROW_GAP = 0;
   const SEP_HEADER_H = 30;
@@ -911,7 +914,7 @@ export function DashboardClient({
   const [sepFit, setSepFit] = useState({ key: '', level: 0 });
   useLayoutEffect(() => {
     if (!separateOpen) return;
-    const onResize = () => setViewportHeight(window.innerHeight);
+    const onResize = () => setViewportHeight(Math.min(window.innerHeight, SEP_REF_VIEWPORT_H));
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [separateOpen]);
@@ -1000,8 +1003,10 @@ export function DashboardClient({
 
   const effectiveMonitorMode = isMobile ? 'all' : monitorMode;
   const isSplitMode = effectiveMonitorMode !== 'all';
+  // 기준 화면(board-stage)이 배율을 걸고 있는지. 배율이 걸린 기기(PC 등)는 펜으로 쓰지 않고 읽기만 하며, 줄 끌기는 배율만큼 보정한다.
+  const [stage, setStage] = useState<StageInfo>({ native: true, scale: 1 });
   // 이 기기가 칠판 펜으로 그릴 수 있는지. 아니면(PC 등) 같은 그림을 읽기 전용으로 본다.
-  const inkWriter = penAvailable && isSplitMode && can('dashboard:edit') && !(isPast && !allowPast);
+  const inkWriter = penAvailable && isSplitMode && stage.native && can('dashboard:edit') && !(isPast && !allowPast);
   // 별도 주문 팝업은 모니터 1·2와 달리 분할 모드 조건이 없다(팝업 자체가 하나의 화면).
   const inkWriterPopup = penAvailable && can('dashboard:edit') && !(isPast && !allowPast);
   // 표 본문에 쓸 수 있는 높이(스크롤 영역 − 헤더)를 측정해서 행 높이 단계와 줄 수를 정한다.
@@ -1065,14 +1070,11 @@ export function DashboardClient({
     void document.fonts?.ready.then(measure);
   }, [nameSignature]);
 
-  const tierHeight =
-    availHeight > 0
-      ? ROW_HEIGHT_TIERS.find((h) => MONITOR_COUNT * Math.floor(availHeight / h) >= rows.length) ?? MIN_ROW_HEIGHT
-      : ROW_HEIGHT_TIERS[0];
-  // 단계 높이로 나누고 남는 자투리가 하단의 어정쩡한 빈 공간이 되지 않게, 행을 조금(6px 이하) 줄여서 한 행을 더 넣을 수 있으면 넣는다(2026-11-14 현장 요청).
-  const fitted = availHeight > 0 ? fitRowHeight(availHeight, tierHeight, MIN_ROW_HEIGHT, ROW_FIT_MAX_SHRINK) : { rowHeight: tierHeight, capacity: INITIAL_ROW_CAPACITY };
-  const rowHeight = fitted.rowHeight;
-  const ownCapacity = fitted.capacity;
+  // 줄 높이·모니터별 줄 수는 예전 규칙 그대로(src/lib/monitor-rows.ts)다. 달라진 것은 availHeight가 기준 화면(board-stage)의 높이라서
+  // 어느 기기에서 열어도 칠판과 같은 줄이 같은 모니터에 나온다는 점이다. 모니터 2는 모니터 1이 가져간 줄 수 다음부터 시작한다.
+  const layoutRows = rowLayout(rows.length, availHeight, INITIAL_ROW_CAPACITY, ROW_FIT_MAX_SHRINK);
+  const rowHeight = layoutRows.rowHeight;
+  const ownCapacity = layoutRows.capacity;
   const startIndex = effectiveMonitorMode === '2' ? ownCapacity : 0;
   // 화면에 다 못 들어가는 줄은 이 화면에 표시하지 않고 다음 모니터로 넘긴다.
   const monitorSlice = isSplitMode ? rows.slice(startIndex, startIndex + ownCapacity) : rows;
@@ -1122,6 +1124,9 @@ export function DashboardClient({
     });
   };
   const rowSlotCount = isSplitMode ? ownCapacity : displayedRows.length;
+  // 줄 높이·줄 구성·열 폭이 바뀌면 필기를 다시 그리라고 알리는 값(줄에 붙은 필기가 바뀐 줄 위치를 따라간다). 다 잰 뒤(ready)에야 예전 필기를 줄에 붙인다.
+  const inkLayoutKey = `${rowHeight}|${nameColumn}|${terminalColumn}|${displayedRows.map((r) => r.dailyBusinessId).join(',')}`;
+  const inkLayoutReady = hydrated && availHeight > 0 && availWidth > 0 && stage.native;
   // gridTemplateRows를 고정하지 않으면 내용이 긴 칸 하나가 행 전체를 키워서 행 높이 규칙이 깨진다.
   const rowStyle = { height: rowHeight, gridTemplateRows: `${rowHeight}px` };
   // 상품 팁은 한 줄에 다 들어가면 한 줄, 아니면 같은 행 높이 안에서 2줄로 나눠 보여준다(상품명을 말줄임하지 않는다).
@@ -1584,7 +1589,9 @@ export function DashboardClient({
     // 대시보드 페이지의 여백 자체는 dashboard-shell.tsx의 .main-content-tight가 담당한다
     // (12px/16px) — 여기서 음수 마진으로 상쇄하는 방식은 main-content의 overflow-y:auto가
     // overflow-x까지 auto로 끌어올리는 CSS 규칙과 부딪혀 표 오른쪽이 잘려 보이는 버그가 있었다.
-    <div className="flex flex-col h-[calc(100vh-24px)] gap-2">
+    <>
+    <BoardStage enabled={isSplitMode} onChange={setStage}>
+    <div className="flex flex-col h-full w-full gap-2">
       <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm flex-shrink-0 flex-nowrap">
         <div className="flex gap-2 items-center flex-1 min-w-0">
           <div className="flex items-center gap-1 flex-shrink-0">
@@ -1623,6 +1630,12 @@ export function DashboardClient({
               </div>
             ))}
           </div>
+          {/* 모니터 2에 가장 촘촘한 높이로도 다 못 들어가는 주문이 있으면 조용히 사라지지 않게 알린다(전체보기에서는 모두 보인다). */}
+          {isSplitMode && rows.length > startIndex + ownCapacity && (
+            <span className="flex-shrink-0 rounded-md bg-red-600 px-2 py-1 text-xs font-black leading-none text-white" title="이 화면에 다 들어가지 않는 주문이 있습니다. 전체보기에서 확인하세요.">
+              {rows.length - startIndex - ownCapacity}건 안 보임
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -1853,6 +1866,7 @@ export function DashboardClient({
                     key={row.dailyBusinessId}
                     id={row.dailyBusinessId}
                     disabled={readOnly}
+                    scale={stage.scale}
                     className="group/row grid border-b border-slate-100 hover:bg-slate-50/50 transition-colors shrink-0"
                     style={{ gridTemplateColumns: gridTemplate, ...rowStyle }}
                   >
@@ -2001,11 +2015,13 @@ export function DashboardClient({
         {/* 칠판 펜: 터치 기기(스마트 칠판)이고 수정 권한이 있고 오늘(또는 과거 편집 허용)인 모니터 1·2에서만 그릴 수 있다. 전체보기는 스크롤로 그림이 어긋나서 제외한다.
             그릴 수 없는 기기(PC 등)는 같은 그림을 읽기 전용으로 겹쳐 본다(서버에 저장된 그림, 툴바 버튼으로 숨길 수 있다). */}
         {separateOpen ? null : inkWriter ? (
-          <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
+          <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} ready={inkLayoutReady} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
         ) : (
-          hydrated && isSplitMode && !inkHidden && <InkLayer key={`view|${orderDate}|${effectiveMonitorMode}`} viewOnly date={orderDate} monitor={effectiveMonitorMode} dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
+          hydrated && isSplitMode && !inkHidden && <InkLayer key={`view|${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} ready={inkLayoutReady} viewOnly date={orderDate} monitor={effectiveMonitorMode} dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
         )}
       </div>
+    </div>
+    </BoardStage>
 
       {separateOpen && (
         <div className="fixed inset-0 z-[60] overflow-hidden overscroll-contain bg-slate-900/40 flex items-center justify-center p-4" onClick={() => setSeparateOpen(false)}>
@@ -2131,6 +2147,6 @@ export function DashboardClient({
       )}
 
       {overlays}
-    </div>
+    </>
   );
 }

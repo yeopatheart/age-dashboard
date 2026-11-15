@@ -8,6 +8,7 @@ import { eraseStroke } from '@/lib/ink/erase';
 import { classifyStroke, pathLength, REASON_LABEL, startsTwoFingerTap, TWO_FINGER } from '@/lib/ink/gesture';
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
 import { cardPosition, clampToViewport, stackPositions } from '@/lib/ink/menu-layout';
+import { anchorLegacyStrokes, isRowAnchor, pickRowAnchor } from '@/lib/ink/row-anchor';
 import { resolvePoints, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, type Box, type InkStroke } from '@/lib/ink/store';
 import { saveBoardInk } from './actions';
 
@@ -40,6 +41,7 @@ const PREFS_KEY = 'board-ink-prefs';
 const POS_KEY = 'board-ink-pos';
 const NOTE_MS = 6000;
 const SAVE_DELAY_MS = 500; // 그린 뒤 이 시간 안의 변경은 한 번의 저장으로 묶는다
+const LEGACY_SETTLE_MS = 2000; // 예전 필기를 줄에 붙이거나 다른 모니터에서 넘어온 필기를 가져오기 전에 줄 위치가 이 시간 동안 더 바뀌지 않기를 기다린다(표 높이·글꼴이 자리잡는 중에 붙이면 엉뚱한 줄에 붙는다)
 
 type Tool = 'pen' | 'eraser';
 interface Prefs {
@@ -107,17 +109,40 @@ function loadPos(): Pt {
   return defaultPos();
 }
 
-// 그림 층(캔버스) 기준으로 잰 화면 위 상품 칸들의 위치. 칸은 `data-chip="상품 id"`로 찾는다.
-function chipBoxes(canvas: HTMLCanvasElement): Map<string, Box> {
+// 그림 층(캔버스) 기준으로 잰 화면 위 상품 칸과 줄의 위치. 칸은 `data-chip="상품 id"`, 줄은 `data-ink-row="업체 카드 id"`(키는 `row:카드 id`)로 찾는다.
+// 획은 시작한 줄(또는 동그라미·직선으로 표시한 상품 칸)에 붙어서 칸·줄의 크기가 바뀌거나 위치가 움직여도 따라간다.
+function anchorBoxes(canvas: HTMLCanvasElement): Map<string, Box> {
   const layer = canvas.getBoundingClientRect();
   const out = new Map<string, Box>();
-  canvas.parentElement?.querySelectorAll<HTMLElement>('[data-chip]').forEach((el) => {
-    if (el.closest('[data-ink-ignore]')) return; // 화면 밖에 숨겨 둔 행(별도 주문 팝업의 다른 쪽)의 칸은 이 화면의 그림 대상이 아니다
-    const id = el.dataset.chip;
+  const measure = (el: HTMLElement, key: string | undefined) => {
+    if (!key || el.closest('[data-ink-ignore]')) return; // 화면 밖에 숨겨 둔 행(별도 주문 팝업의 다른 쪽)의 칸은 이 화면의 그림 대상이 아니다
     const r = el.getBoundingClientRect();
-    if (id && r.width > 0 && r.height > 0) out.set(id, { left: r.left - layer.left, top: r.top - layer.top, width: r.width, height: r.height });
-  });
+    if (r.width > 0 && r.height > 0) out.set(key, { left: r.left - layer.left, top: r.top - layer.top, width: r.width, height: r.height });
+  };
+  canvas.parentElement?.querySelectorAll<HTMLElement>('[data-chip]').forEach((el) => measure(el, el.dataset.chip));
+  canvas.parentElement?.querySelectorAll<HTMLElement>('[data-ink-row]').forEach((el) => measure(el, el.dataset.inkRow ? `row:${el.dataset.inkRow}` : undefined));
   return out;
+}
+
+// 동그라미·직선 판정 대상은 상품 칸뿐이다(줄은 제외).
+const chipTargets = (boxes: Map<string, Box>) => [...boxes].filter(([key]) => !isRowAnchor(key)).map(([id, box]) => ({ id, ...box }));
+
+// 다른 모니터에서 이 모니터로 복사해 온 획의 id(이 기기의 localStorage, 날짜·모니터별). 복사한 뒤 지운 획이 다시 복사되지 않게 한다.
+const migratedKey = (date: string, monitor: string) => `board-ink-migrated:${date}:${monitor}`;
+function loadMigrated(date: string, monitor: string): Set<string> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(migratedKey(date, monitor)) ?? '[]');
+    return new Set(Array.isArray(raw) ? raw.filter((id): id is string => typeof id === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+function saveMigrated(date: string, monitor: string, ids: string[]) {
+  try {
+    localStorage.setItem(migratedKey(date, monitor), JSON.stringify(ids.slice(-600)));
+  } catch {
+    // 저장이 막혀 있으면 기억하지 못한다(지운 획이 한 번 되살아날 수 있을 뿐이다)
+  }
 }
 
 interface Props {
@@ -131,9 +156,13 @@ interface Props {
   onActiveChange: (active: boolean) => void;
   // true면 그림만 보여 준다(PC): 버튼·입력 없이 캔버스가 터치·마우스를 그대로 통과시키고, 서버의 그림이 바뀌면 다시 읽어 그린다.
   viewOnly?: boolean;
+  // 줄 높이·줄 구성·열 폭이 바뀌면 달라지는 값. 바뀌면 줄에 붙은 필기를 바뀐 위치에 다시 그린다.
+  layoutKey?: string;
+  // 줄 위치를 다 쟀다(표 높이 측정이 끝났다). 이때부터 예전 방식(그림 층 비율)으로 저장된 필기를 줄에 붙인다.
+  ready?: boolean;
 }
 
-export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActiveChange, viewOnly = false }: Props) {
+export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActiveChange, viewOnly = false, layoutKey = '', ready = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<InkState>(() => ({ strokes: [], history: [] }));
@@ -251,13 +280,15 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     const layer = canvas.getBoundingClientRect();
     // 상품 칸에 붙은 획이 하나라도 있을 때만 칸 위치를 잰다(칸마다 위치를 재는 것은 강제 레이아웃이라, 낙서뿐일 때는 건너뛴다).
     const strokes = stateRef.current.strokes;
-    const boxes = strokes.some((stroke) => stroke.anchor !== undefined) ? chipBoxes(canvas) : new Map<string, Box>();
+    const boxes = strokes.some((stroke) => stroke.anchor !== undefined) ? anchorBoxes(canvas) : new Map<string, Box>();
+    // 배율이 걸린 기준 화면(PC)에서는 선 굵기도 같은 배율로 그려서 칠판과 같은 모양으로 보이게 한다(칠판은 배율 1).
+    const scale = canvas.offsetWidth > 0 ? layer.width / canvas.offsetWidth : 1;
     for (const stroke of strokes) {
       const points = resolvePoints(stroke, { width: layer.width, height: layer.height }, stroke.anchor !== undefined ? boxes.get(stroke.anchor) ?? null : undefined);
       if (!points || points.length < 2) continue; // 붙은 상품 칸이 지금 화면에 없으면 그리지 않고 보관만 한다
       ctx.strokeStyle = stroke.color;
       ctx.fillStyle = stroke.color;
-      ctx.lineWidth = stroke.width;
+      ctx.lineWidth = stroke.width * scale;
       drawPath(ctx, points);
     }
     // 쓰는 도중에 전체를 다시 그리면(데이터 갱신 등) 쓰던 획도 같이 지워지므로 그려 둔 구간까지 복원한다.
@@ -314,7 +345,62 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       return;
     }
     redraw();
-  }, [state.strokes, itemsKey, layoutTick]);
+  }, [state.strokes, itemsKey, layoutTick, layoutKey]);
+
+  // 그리는 쪽(칠판)이 필기를 정리한다. 줄 위치가 2초 동안 안정된 뒤 한 번에 처리해서 한 번만 저장한다.
+  // (1) 예전 방식(그림 층 비율)으로 저장된 필기를 지금 보이는 줄에 붙인다: 보이는 위치는 그대로이고 저장 방식만 바뀌어서, 그 뒤로는 줄이 커지거나 움직여도 따라간다. 줄 밖의 필기는 그대로 둔다.
+  // (2) 주문이 늘어 줄이 다른 모니터로 넘어오면(모니터 1의 줄 수가 늘면 모니터 2의 앞쪽 줄이 모니터 1로 온다) 그 줄에 붙은 필기는 다른 모니터의 저장본에 있어서 안 보인다.
+  //     줄 구성이 바뀔 때마다 다른 모니터의 저장본을 읽어, 지금 이 모니터에 보이는 줄·칸에 붙은 필기를 이 모니터의 저장본으로 복사한다.
+  //     한 번 복사한 획의 id는 이 기기에 기억해서, 그 뒤에 지운 획이 되살아나지 않게 한다. 다른 모니터의 저장본은 건드리지 않는다(칠판 두 대가 각자 자기 저장본만 쓴다).
+  // 칠판 화면이 기준이라 지금 보이는 위치가 곧 쓴 위치다.
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const mergedKeyRef = useRef<string | null>(null);
+  const otherMonitor = monitor === '1' ? '2' : monitor === '2' ? '1' : null;
+  useEffect(() => {
+    clearTimeout(settleTimer.current);
+    if (viewOnly || dry || !ready) return;
+    const needsLegacy = state.strokes.some((stroke) => stroke.anchor === undefined);
+    const needsMerge = otherMonitor !== null && mergedKeyRef.current !== layoutKey;
+    if (!needsLegacy && !needsMerge) return;
+    let cancelled = false;
+    const run = async () => {
+      if (cancelled || !canvasRef.current) return;
+      if (activeRef.current) {
+        settleTimer.current = setTimeout(() => void run(), 1000); // 쓰는 중이면 끝난 뒤에
+        return;
+      }
+      let foreign: InkStroke[] | null = null;
+      if (needsMerge && otherMonitor) foreign = (await fetchBoardInk(createClient(), date, otherMonitor))?.strokes ?? null;
+      const canvas = canvasRef.current;
+      if (cancelled || !canvas) return;
+      if (activeRef.current) {
+        settleTimer.current = setTimeout(() => void run(), 1000);
+        return;
+      }
+      const cur = stateRef.current;
+      const layer = canvas.getBoundingClientRect();
+      const boxes = anchorBoxes(canvas);
+      let next = anchorLegacyStrokes(cur.strokes, { width: layer.width, height: layer.height }, boxes);
+      if (foreign) {
+        mergedKeyRef.current = layoutKey;
+        const known = loadMigrated(date, monitor);
+        const own = new Set(next.map((stroke) => stroke.id));
+        const incoming = foreign.filter((stroke) => stroke.anchor !== undefined && boxes.has(stroke.anchor) && !own.has(stroke.id) && !known.has(stroke.id));
+        if (incoming.length > 0) {
+          next = [...next, ...incoming];
+          saveMigrated(date, monitor, [...known, ...incoming.map((stroke) => stroke.id)]);
+        }
+      }
+      if (next !== cur.strokes) commit({ strokes: next, history: cur.history });
+    };
+    settleTimer.current = setTimeout(() => void run(), LEGACY_SETTLE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(settleTimer.current);
+    };
+    // commit은 매 렌더 새로 만들어지지만 ref만 쓰므로 의존성에서 뺀다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.strokes, layoutTick, layoutKey, ready, viewOnly, dry, date, monitor, otherMonitor]);
 
   useEffect(() => {
     const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
@@ -394,7 +480,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
         continue;
       }
       changed = true;
-      if (stroke.anchor !== undefined) active.touched.add(stroke.anchor);
+      if (stroke.anchor !== undefined && !isRowAnchor(stroke.anchor)) active.touched.add(stroke.anchor);
       for (const piece of result.pieces) {
         const base = { id: newId(), color: stroke.color, width: stroke.width };
         next.push(stroke.anchor !== undefined && box ? toAnchoredStroke(base, piece, stroke.anchor, box) : toFreeStroke(base, piece, active.layer));
@@ -459,7 +545,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       cursor: startInk(p),
       tail: null,
       before: stateRef.current.strokes,
-      boxes: current === 'eraser' ? chipBoxes(canvas) : new Map<string, Box>(),
+      boxes: current === 'eraser' ? anchorBoxes(canvas) : new Map<string, Box>(),
       origin: { x: layerRect.left, y: layerRect.top },
       layer: { width: layerRect.width, height: layerRect.height },
       touched: new Set<string>(),
@@ -516,8 +602,8 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
   // 펜 획이 끝나면 동그라미·직선인지 판정한다. 맞으면 그 상품을 포장 완료로 올리고 획을 그 칸에 붙인다.
   const finishPenStroke = (active: ActiveStroke) => {
     const canvas = canvasRef.current;
-    const boxes = canvas ? chipBoxes(canvas) : active.boxes; // 상품 칸 위치는 펜을 뗀 지금 한 번만 잰다
-    const targets = [...boxes].map(([id, box]) => ({ id, ...box }));
+    const boxes = canvas ? anchorBoxes(canvas) : active.boxes; // 상품 칸·줄 위치는 펜을 뗀 지금 한 번만 잰다
+    const targets = chipTargets(boxes);
     const result = classifyStroke(active.points, targets);
     const base = { id: newId(), color: prefsRef.current.color, width: prefsRef.current.penWidth };
     const free = toFreeStroke(base, active.points, active.layer);
@@ -545,6 +631,12 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
           onPack(item.id);
         }
       }
+    }
+    // 상품 칸에 붙지 않은 획은 시작한 줄에 붙인다: 줄 높이가 바뀌거나 줄이 움직여도 필기가 그 줄을 따라간다. 줄 밖이면 그림 층 비율 그대로다.
+    if (stroke.anchor === undefined) {
+      const rowKey = pickRowAnchor(active.points, boxes);
+      const rowBox = rowKey ? boxes.get(rowKey) : undefined;
+      if (rowKey && rowBox) stroke = toAnchoredStroke(base, active.points, rowKey, rowBox);
     }
     const cur = stateRef.current;
     skipRedraw.current = true; // 방금 쓴 획은 이미 화면에 똑같이 그려져 있다 — 전체를 다시 그리지 않는다(획이 쌓일수록 느려지는 것을 막는다)
