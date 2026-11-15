@@ -34,7 +34,7 @@ export function commitFailureMessage(error: unknown, cleaned: CleanupResult, ite
   const reason = error instanceof Error ? error.message : '알 수 없는 오류';
   if (itemsSaved) return `새 상품은 저장됐지만 일부 기존 줄의 수정·취소·메모가 반영되지 않았습니다(${reason}). 같은 내용을 다시 확정하지 말고, 주문 목록에서 확인해 고쳐 주세요.`;
   if (cleaned.error) return `${reason} (이번에 만든 업체 카드 ${cleaned.attempted}개를 정리하지 못했습니다. 주문 목록에 상품 없는 업체가 남아 있으면 알려 주세요: ${cleaned.error})`;
-  return `${reason} — 저장하지 않았습니다. 같은 내용으로 다시 확정해 보세요.`;
+  return `${reason} — 저장하지 않았습니다.`;
 }
 
 // 작업을 size개씩 묶어 차례로 실행한다(묶음 안에서는 동시에). 쓰기 요청이 수백 건 한꺼번에 나가면 8초 제한에 걸려 일부가 끊긴다.

@@ -5,7 +5,7 @@ import { loadAppSettings } from '@/lib/settings-server';
 import { getOrderHistory } from '../actions';
 import { NewOrderClient } from './new-order-client';
 import { requireMenu } from '@/lib/permissions/access';
-import { todayKST } from '@/lib/order-date';
+import { todayKST, tomorrowKST } from '@/lib/order-date';
 
 export default async function NewOrderPage() {
   const accessCheck = requireMenu('orders'); // 권한 확인도 다른 조회와 같이 보낸다(보호는 await로 확정)
@@ -19,5 +19,5 @@ export default async function NewOrderPage() {
     readFile(path.join(process.cwd(), 'docs', 'kakao-message-format-guide.md'), 'utf-8'),
   ]);
 
-  return <NewOrderClient today={today} allowPast={settings.allowPastOrderEdit} initialHistory={initialHistory} guideMarkdown={guideMarkdown} />;
+  return <NewOrderClient today={today} tomorrow={tomorrowKST()} allowPast={settings.allowPastOrderEdit} initialHistory={initialHistory} guideMarkdown={guideMarkdown} />;
 }

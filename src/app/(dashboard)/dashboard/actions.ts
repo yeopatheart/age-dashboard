@@ -144,25 +144,16 @@ export async function renameDailyBusiness(dailyBusinessId: string, name: string)
   return { error: null };
 }
 
-export async function updateOrder(dailyBusinessId: string, businessName: string, terminalId: string | null): Promise<{ error: string | null }> {
+// 주문 수정은 터미널만 바꾼다. 고객명은 바꿀 수 없다 — 업체 마스터의 이름이 바뀌어 다른 날짜·1·2차 카드와 다음 날 주문 매칭에 영향을 준다(고객사 관리에서 바꾼다).
+export async function updateOrder(dailyBusinessId: string, terminalId: string | null): Promise<{ error: string | null }> {
   await requirePermission('dashboard:edit');
-  const nameInvalid = textError(businessName, '업체명', 60);
-  if (nameInvalid) return { error: nameInvalid };
   const supabase = await createClient();
   const guard = await dailyDateError(supabase, dailyBusinessId);
   if (guard) return { error: guard };
-  const { data: daily } = await supabase
-    .from('daily_businesses')
-    .select('business_id')
-    .eq('id', dailyBusinessId)
-    .maybeSingle();
-  if (!daily) return { error: '주문을 찾지 못했습니다.' };
   const { error: terminalError } = await supabase.from('daily_businesses').update({ terminal_id: terminalId }).eq('id', dailyBusinessId);
   if (terminalError) {
     return { error: terminalError.code === '23505' ? '같은 차수에 이 터미널의 같은 업체 주문이 이미 있습니다.' : terminalError.message };
   }
-  const { error: nameError } = await supabase.from('businesses').update({ name: businessName.trim() }).eq('id', daily.business_id);
-  if (nameError) return { error: nameError.code === '23505' ? '같은 이름의 업체가 이미 있습니다.' : nameError.message };
   revalidatePath('/dashboard');
   revalidatePath('/packing-log');
   return { error: null };

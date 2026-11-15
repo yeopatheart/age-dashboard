@@ -67,22 +67,23 @@ function DateStepper({
 }
 
 // 하루 단위(박스 할당·주문 입력·대시보드·주문 목록). 미래 날짜는 고를 수 없다.
-export function DateNav({ value, today, onChange, label = '날짜', grow = false }: { value: string; today: string; onChange: (date: string) => void; label?: string; grow?: boolean }) {
+// max: 고를 수 있는 마지막 날짜(기본은 오늘). 주문 입력·박스 할당은 내일까지 미리 할 수 있어 내일을 준다.
+export function DateNav({ value, today, max = today, onChange, label = '날짜', grow = false }: { value: string; today: string; max?: string; onChange: (date: string) => void; label?: string; grow?: boolean }) {
   const shift = (days: number) => {
     const d = new Date(`${value}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() + days);
     const next = d.toISOString().slice(0, 10);
-    if (next <= today) onChange(next);
+    if (next <= max) onChange(next);
   };
   return (
     <DateStepper
       text={value.replaceAll('-', '.')}
       pickValue={value}
-      max={today}
+      max={max}
       onPick={onChange}
       onPrev={() => shift(-1)}
       onNext={() => shift(1)}
-      nextDisabled={value >= today}
+      nextDisabled={value >= max}
       showToday={value !== today}
       onToday={() => onChange(today)}
       label={label}
