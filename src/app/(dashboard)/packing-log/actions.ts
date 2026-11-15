@@ -209,10 +209,9 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   if (eventError && missingTable(eventError.message) === null) console.error(`박스 제출 이력 저장 실패: ${eventError.message}`);
 
   // 박스 수가 줄었으면 번호가 넘는 옛 라벨 행을 정리한다(남겨 두면 상차 현황이 "2/3"에서 멈춘다 — 상차 화면은 라벨 행 수로 센다).
-  if (previous.snapshot) {
-    const { error: staleLabelError } = await supabase.from('box_labels').delete().eq('daily_business_id', daily.id).gt('seq', input.boxes.length);
-    if (staleLabelError) console.error(`남은 라벨 정리 실패: ${staleLabelError.message}`);
-  }
+  // 이전 제출 기록이 없어도 한다: 기록을 삭제한 뒤 박스를 줄여 다시 제출하면 기록은 없지만 옛 라벨 행은 남아 있다(2026-11-15 점검 B-1).
+  const { error: staleLabelError } = await supabase.from('box_labels').delete().eq('daily_business_id', daily.id).gt('seq', input.boxes.length);
+  if (staleLabelError) console.error(`남은 라벨 정리 실패: ${staleLabelError.message}`);
 
   revalidatePath('/packing-log');
   revalidatePath('/dashboard');

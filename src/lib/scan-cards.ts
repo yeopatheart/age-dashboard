@@ -6,6 +6,7 @@ import type { ScanCard } from '@/app/(dashboard)/scan/scan-client';
 import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { packageCounts } from '@/lib/scan-share-text';
+import { cardBoxes, loadSubmittedBoxCounts } from '@/lib/scan-boxes';
 
 export async function loadScanCards(supabase: SupabaseClient<Database>, orderDate: string): Promise<ScanCard[]> {
   const [{ data: dailies, error }, { data: businesses }, { data: terminals }] = await Promise.all([
@@ -20,12 +21,14 @@ export async function loadScanCards(supabase: SupabaseClient<Database>, orderDat
     ? await selectAll((from, to) => supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyIds).order('id').range(from, to), '라벨 조회 실패: ')
     : { data: [] };
 
+  const submittedBoxes = await loadSubmittedBoxCounts(supabase, dailyIds); // 전체 박스 수는 제출한 박스 수 기준이다(라벨 행 수가 아니라)
   const businessName = new Map((businesses ?? []).map((b) => [b.id, b.name]));
   const terminalName = new Map((terminals ?? []).map((t) => [t.id, t.name]));
   const split = businessIdsInBothRounds(dailyRows.map((d) => ({ businessId: d.business_id, round: d.round })));
   return dailyRows.flatMap((d) => {
     const own = (labels ?? []).filter((l) => l.daily_business_id === d.id);
     if (own.length === 0) return []; // 라벨을 출력한 적 없는 업체는 상차 현황에 올리지 않는다
+    const boxes = cardBoxes(own, submittedBoxes.get(d.id) ?? null);
     return [
       {
         id: d.id,
@@ -33,9 +36,9 @@ export async function loadScanCards(supabase: SupabaseClient<Database>, orderDat
         business: d.display_name ?? businessName.get(d.business_id) ?? '',
         roundLabel: split.has(d.business_id) ? roundLabel(d.round) : null,
         terminal: d.terminal_id ? terminalName.get(d.terminal_id) ?? '' : '',
-        loaded: own.filter((l) => l.loaded_at).length,
-        total: own.length,
-        packages: packageCounts(own.map((l) => ({ seq: l.seq, loaded: !!l.loaded_at })), d.merge_groups),
+        loaded: boxes.filter((b) => b.loaded).length,
+        total: boxes.length,
+        packages: packageCounts(boxes, d.merge_groups),
       },
     ];
   });

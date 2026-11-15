@@ -90,6 +90,8 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
   const controlsRef = useRef<{ stop: () => void } | null>(null);
   const last = useRef<{ code: string; at: number } | null>(null);
   const busy = useRef(false);
+  const inFlight = useRef<string | null>(null); // 지금 서버로 보내는 번호
+  const pending = useRef<string[]>([]); // 처리 중에 들어온 다른 번호(차례로 처리한다)
   const seq = useRef(0);
   const loadedCount = useRef(0);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -144,10 +146,9 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
     [beep, today],
   );
 
-  const submitCode = useCallback(
-    async (raw: string) => {
-      const code = normalizeBarcodeInput(raw);
-      if (!code || busy.current) return;
+  // 한 번호를 서버로 보내 결과를 화면에 알린다. 같은 박스를 계속 비추고 있는 동안의 재인식은 무시한다.
+  const scanOne = useCallback(
+    async (code: string) => {
       const now = Date.now();
       if (last.current && last.current.code === code) {
         const stillInView = now - last.current.at < DUPLICATE_IGNORE_MS;
@@ -158,18 +159,41 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       } else {
         last.current = { code, at: now };
       }
-      busy.current = true;
       try {
         handleResult(await scanBarcode(code));
       } catch {
         // 신호가 약한 적재칸 등에서 전송이 실패한 경우. 처리되지 않았다는 것을 분명히 알리고, 같은 박스를 바로 다시 스캔할 수 있게 한다.
         last.current = null;
         reportFailure();
-      } finally {
-        busy.current = false;
       }
     },
     [handleResult, reportFailure],
+  );
+
+  // 처리 중에 들어온 다른 번호는 버리지 않고 줄 세워 차례로 처리한다(블루투스 스캐너·수동 입력은 카메라와 달리 다시 읽어 주지 않아서,
+  // 버리면 그 박스가 상차되지 않은 채 넘어간다 — 2026-11-15 점검 B-3). 같은 번호가 이미 처리 중이거나 줄에 있으면 재인식이므로 한 번만 둔다.
+  const submitCode = useCallback(
+    async (raw: string) => {
+      const code = normalizeBarcodeInput(raw);
+      if (!code) return;
+      if (busy.current) {
+        if (inFlight.current !== code && !pending.current.includes(code)) pending.current.push(code);
+        return;
+      }
+      busy.current = true;
+      try {
+        let current: string | undefined = code;
+        while (current) {
+          inFlight.current = current;
+          await scanOne(current);
+          current = pending.current.shift();
+        }
+      } finally {
+        busy.current = false;
+        inFlight.current = null;
+      }
+    },
+    [scanOne],
   );
 
   const stopCamera = useCallback(() => {
