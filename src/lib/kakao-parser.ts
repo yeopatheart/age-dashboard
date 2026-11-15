@@ -288,10 +288,37 @@ function parseLine(line: string): ParsedBusinessLine {
   };
 }
 
+// 손으로 입력하다 생기는 흔한 실수를 바로잡는다(2026-11-15 형 입력 기준):
+// 전각 문자(３키로, ／, ，)는 일반 문자로, 소수점 쉼표(1,5키로)는 1.5키로로, 수량 앞의 마이너스(광어 -3미)는 뗀다 — 수량은 음수가 될 수 없다.
+export function fixInputTypos(line: string): string {
+  return (
+    line
+      // 전각 ASCII(！~～)와 전각 공백, ㎏
+      .replace(/[\uFF01-\uFF5E]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+      .replace(/\u3000/g, " ")
+      .replace(/㎏/g, "kg")
+      // 여러 모양의 마이너스/대시는 '-'로
+      .replace(/[\u2010-\u2015\u2212]/g, "-")
+      // 그램의 천 단위 쉼표(1,000g)는 쉼표만 뗀다
+      .replace(/(\d{1,3}),(\d{3})(?=\s*(?:g|그램)(?![a-zA-Z]))/gi, "$1$2")
+      // 소수점 쉼표(1,5키로 → 1.5키로). 상품 구분 쉼표는 앞이 숫자가 아니라서 건드리지 않는다.
+      .replace(/(\d),(\d+)(?=\s*(?:키로|kg|미|마리|g|그램|팩|개))/gi, "$1.$2")
+      // 수량 앞의 마이너스 제거(광어 -3미 → 광어 3미). "4-600", "6-8미"처럼 숫자 사이의 '-'는 건드리지 않는다.
+      .replace(/(^|[\s/,])-\s*(?=\d+(?:\.\d+)?\s*(?:키로|kg|미|마리|g|그램|팩|개))/gi, "$1")
+  );
+}
+
 export function parseKakaoMessage(rawText: string): ParsedBusinessLine[] {
   return rawText
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !DATE_HEADER_RE.test(line))
-    .map(parseLine);
+    .filter((line) => line.length > 0)
+    .map((original) => ({ original, fixed: fixInputTypos(original) }))
+    .filter(({ fixed }) => !DATE_HEADER_RE.test(fixed))
+    .map(({ original, fixed }) => {
+      const parsed = parseLine(fixed);
+      if (fixed === original) return parsed;
+      // 바로잡은 줄은 확인 화면에 "표준 형식으로 정리됨"(원문은 마우스를 올리면)으로 보이게 상품마다 원문을 남긴다.
+      return { ...parsed, raw: original, products: parsed.products.map((p) => ({ ...p, normalizedFrom: p.normalizedFrom ?? original })) };
+    });
 }
