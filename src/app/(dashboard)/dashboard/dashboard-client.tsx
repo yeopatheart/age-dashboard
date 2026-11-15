@@ -17,6 +17,7 @@ import { CustomerOrderPanel } from './customer-order-panel';
 import { BoxAssignModal } from './box-assign-modal';
 import { hiddenRowCount, rowLayout } from '@/lib/monitor-rows';
 import { BoardStage, type StageInfo } from './board-stage';
+import { BoardEnvReporter } from './board-env-reporter';
 import { packRows } from '@/lib/page-rows';
 import { useTouchDesktop } from '@/lib/use-touch-desktop';
 import { useHydrated } from '@/lib/use-hydrated';
@@ -2147,6 +2148,17 @@ export function DashboardClient({
         </div>
       )}
 
+      {/* 터치 기기(칠판)가 열면 펜 판정을 서버 로그에 남긴다(화면에는 아무것도 그리지 않는다). */}
+      <BoardEnvReporter
+        monitor={effectiveMonitorMode}
+        orderDate={orderDate}
+        today={today}
+        penParam={searchParams.get('pen')}
+        inkHidden={inkHidden}
+        stageScale={stage.scale}
+        inkWriter={inkWriter}
+        terms={{ penAvailable, isSplitMode, stageNative: stage.native, canEdit: can('dashboard:edit'), dateAllowsEdit: !(isPast && !allowPast) }}
+      />
       {overlays}
     </>
   );
