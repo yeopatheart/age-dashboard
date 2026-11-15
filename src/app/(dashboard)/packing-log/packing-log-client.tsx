@@ -596,7 +596,7 @@ export function PackingLogClient({
                 <div className="pk-work-head">
                   <div>
                     <div className="pk-title">{selected.businessName}{selected.roundLabel && ` (${selected.roundLabel})`}</div>
-                    <div className="ak-meta">{selected.terminal || '터미널 없음'} · 상품 {selected.items.length}개{selected.submitted ? ` · ${selected.submitted.submittedAt.slice(0, 16).replace('T', ' ')} 제출됨` : ''}</div>
+                    <div className="ak-meta">{selected.terminal || '터미널 없음'} · 상품 {selected.items.length}개{selected.submitted ? ` · ${new Date(selected.submitted.submittedAt).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 16)} 제출됨` : ''}</div>
                   </div>
                   <span className="ak-spacer" />
                   {selected.submitted && (

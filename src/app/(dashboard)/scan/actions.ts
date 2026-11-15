@@ -8,6 +8,7 @@ import { todayKST } from '@/lib/order-date';
 import { mergeGroupOf, normalizeMergeGroups } from '@/lib/box-merge';
 import { cancelledCardIds } from '@/lib/card-cancelled';
 import { requirePermission } from '@/lib/permissions/access';
+import { cardBoxes, loadSubmittedBoxCounts } from '@/lib/scan-boxes';
 
 // 스캔 결과 화면에 보여줄 박스 정보
 export interface ScannedBox {
@@ -36,8 +37,10 @@ export type ScanResult =
 async function describe(supabase: Awaited<ReturnType<typeof createClient>>, label: { id: string; daily_business_id: string; seq: number; barcode: string; loaded_at: string | null }): Promise<ScannedBox> {
   const [{ data: daily }, { data: siblings }] = await Promise.all([
     supabase.from('daily_businesses').select('business_id, terminal_id, display_name, merge_groups, order_date, round').eq('id', label.daily_business_id).maybeSingle(),
-    supabase.from('box_labels').select('loaded_at').eq('daily_business_id', label.daily_business_id),
+    supabase.from('box_labels').select('seq, loaded_at').eq('daily_business_id', label.daily_business_id),
   ]);
+  // 전체 박스 수는 제출한 박스 수 기준이다(라벨을 일부만 출력했거나 박스를 줄인 뒤에도 맞게). 제출 기록이 없으면 라벨 행 기준.
+  const submitted = (await loadSubmittedBoxCounts(supabase, [label.daily_business_id])).get(label.daily_business_id) ?? null;
   const [{ data: business }, { data: terminal }, { data: sameDay }] = await Promise.all([
     daily ? supabase.from('businesses').select('name').eq('id', daily.business_id).maybeSingle() : Promise.resolve({ data: null }),
     daily?.terminal_id ? supabase.from('terminals').select('name').eq('id', daily.terminal_id).maybeSingle() : Promise.resolve({ data: null }),
@@ -45,15 +48,15 @@ async function describe(supabase: Awaited<ReturnType<typeof createClient>>, labe
     daily ? supabase.from('daily_businesses').select('round').eq('order_date', daily.order_date).eq('business_id', daily.business_id) : Promise.resolve({ data: [] }),
   ]);
   const split = new Set((sameDay ?? []).map((r) => r.round)).size > 1;
-  const all = siblings ?? [];
+  const boxes = cardBoxes(siblings ?? [], submitted);
   return {
     labelId: label.id,
     barcode: label.barcode,
     business: nameWithRound(daily?.display_name ?? business?.name ?? '', daily?.round ?? 1, split),
     terminal: terminal?.name ?? '',
     boxNo: label.seq,
-    loadedCount: all.filter((l) => l.loaded_at).length,
-    totalCount: all.length,
+    loadedCount: boxes.filter((b) => b.loaded).length,
+    totalCount: boxes.length,
     loadedAt: label.loaded_at,
     mergedSeqs: mergeGroupOf(normalizeMergeGroups(daily?.merge_groups), label.seq) ?? [],
   };
