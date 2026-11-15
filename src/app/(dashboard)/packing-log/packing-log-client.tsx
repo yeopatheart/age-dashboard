@@ -683,22 +683,12 @@ export function PackingLogClient({
                       onClose={() => setPicked(null)}
                     />
                     <div className="pk-rows">
-                      {draft.boxes.length === 0 && <p className="pk-hint">아래에서 박스를 추가한 뒤, 상품을 눌러 박스에 담으세요.</p>}
+                      {draft.boxes.length === 0 && <p className="pk-hint">아래 [박스 추가] 버튼으로 박스를 추가한 뒤, 상품을 눌러 박스에 담으세요.</p>}
                       {draft.boxes.map((box, idx) => (
                         <BoxRow key={box.uid} box={box} index={idx + 1} items={selected.items} boxTypes={boxes} picked={activePick} onPick={(id) => togglePick(id, box.uid)} onChangeType={(boxId) => changeBoxType(box.uid, boxId)} onRemove={() => removeBox(box.uid)} onUnassign={(itemId) => unassign(itemId, box.uid)} />
                       ))}
                     </div>
                     {draft.boxes.length >= 2 && <MergeBar boxes={draft.boxes} groups={draft.mergeUids} onChange={changeMerge} />}
-                    <div className="pk-addrow">
-                      <label className="pk-add">
-                        <Package size={14} aria-hidden />
-                        <select className="ak-select" value="" aria-label="박스 추가" onChange={(e) => { const t = boxTypeById.get(e.target.value); if (t) addBox(t); }}>
-                          <option value="">+ 박스 추가…</option>
-                          {activeBoxes.map((b) => <option key={b.id} value={b.id}>{b.name}{b.is_mulbong_box ? ' (물봉)' : ''}{dimsOf(b) ? ` · ${dimsOf(b)}cm` : ''}</option>)}
-                        </select>
-                      </label>
-                      {activeBoxes.length === 0 && <span className="ak-muted">사용 중인 박스가 없습니다 (박스 관리)</span>}
-                    </div>
                   </div>
                 )}
 
@@ -706,9 +696,21 @@ export function PackingLogClient({
                   {error && <span className="ak-error">{error}</span>}
                   {notice && <span className="ak-notice">{notice}</span>}
                   {!error && !notice && submitHint && <span className="ak-muted">{submitHint}</span>}
+                  {!readOnly && activeBoxes.length === 0 && <span className="ak-muted">사용 중인 박스가 없습니다 (박스 관리)</span>}
                   <span className="ak-spacer" />
                   {!readOnly && (modified || (!selected.submitted && !selected.recommendation)) && (
                     <button className="pk-big" disabled={busy || !canAutoAssign} onClick={handleAutoAssign}>상품 자동으로 다시 나눠 담기</button>
+                  )}
+                  {/* 박스 추가는 제출 버튼 바로 옆에 크게 둔다(작은 선택칸이라 찾기 어렵다는 현장 의견, 2026-11-15). 눈에 보이는 큰 버튼 위에 투명한 선택칸을 겹쳐서, 누르면 박스 종류 목록이 열린다. */}
+                  {!readOnly && (
+                    <label className="pk-big pk-add-big" aria-label="박스 추가">
+                      <Package size={24} aria-hidden />
+                      <span>박스 추가</span>
+                      <select value="" disabled={busy || activeBoxes.length === 0} aria-label="박스 추가" onChange={(e) => { const t = boxTypeById.get(e.target.value); if (t) addBox(t); }}>
+                        <option value="">박스 종류 고르기</option>
+                        {activeBoxes.map((b) => <option key={b.id} value={b.id}>{b.name}{b.is_mulbong_box ? ' (물봉)' : ''}{dimsOf(b) ? ` · ${dimsOf(b)}cm` : ''}</option>)}
+                      </select>
+                    </label>
                   )}
                   {selected.submitted && !modified ? (
                     <span className="ak-muted">제출 완료 · 고치려면 상품이나 박스를 바꿔주세요</span>
@@ -845,9 +847,10 @@ export function PackingLogClient({
         .pk-qty { color: var(--muted-foreground); white-space: nowrap; }
         .pk-size { color: #0369a1; font-size: var(--fs-xs); white-space: nowrap; }
         .pk-hint { color: var(--muted-foreground); font-size: var(--fs-md); padding: 1.2rem 0; text-align: center; border: 2px dashed #e2e8f0; border-radius: 12px; }
-        .pk-addrow { display: flex; align-items: center; gap: 0.5rem; }
-        .pk-add { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted-foreground); }
-        .pk-add .ak-select { min-width: 12rem; }
+        .pk-add-big { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; border-color: var(--primary); color: var(--primary); }
+        .pk-add-big select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: var(--input-fs, 16px); }
+        .pk-add-big:has(select:disabled) { opacity: 0.45; }
+        .pk-add-big:has(select:disabled) select { cursor: not-allowed; }
         @media (max-width: 900px) { .pk-row { grid-template-columns: 2.8rem minmax(0, 1fr) auto; } .pk-row-chips { grid-column: 1 / -1; } }
         /* PC(901px 이상)에서만 압축한다: 제목 줄과 도구줄을 한 줄로, 작업 영역의 여백·높이를 줄여 업체를 골라도 스크롤이 거의 생기지 않게 한다. 휴대폰은 손으로 누르기 좋은 기존 크기를 쓴다. */
         .pk-top { display: flex; align-items: center; gap: 0.5rem 1rem; flex-wrap: wrap; }
