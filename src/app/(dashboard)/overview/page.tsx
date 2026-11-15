@@ -4,7 +4,7 @@ import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { todayKST } from '@/lib/order-date';
 import { buildOverviewCard, type LabelRow, type OverviewCardInput } from '@/lib/overview';
 import { normalizeMergeGroups } from '@/lib/box-merge';
-import { findChangedAfterPacking } from '@/lib/packing/server';
+import { findChangedAfterPackingIgnoringRenames } from '@/lib/packing/server';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { OverviewClient } from './overview-client';
 
@@ -50,7 +50,9 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     labelsByDaily.set(l.daily_business_id, list);
   }
   // 박스 구성을 정한 뒤 주문이 바뀐 고객(주문 목록의 "박스 재확인"과 같은 기준). 경고 표시만 한다.
-  const changedAfterPacking = findChangedAfterPacking(
+  // 상품 이름만 고친 업체는 박스를 다시 볼 필요가 없으므로 경고에서 뺀다.
+  const changedAfterPacking = await findChangedAfterPackingIgnoringRenames(
+    supabase,
     ids.map((id) => ({
       dailyBusinessId: id,
       items: (itemRows ?? [])

@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types/database';
 import { recommend, trainModel, type Confidence, type PackingItem, type PackingModel, type TrainingRecord } from './model';
 import { fetchAll } from '@/lib/supabase/fetch-all';
+import { isRenameOnly, type SubmittedBoxItem } from './rename-only';
 
 type Client = SupabaseClient<Database>;
 
@@ -302,6 +303,41 @@ export function findChangedAfterPacking(
   for (const o of orders) {
     const ref = reference.get(o.dailyBusinessId);
     if (ref && ref !== orderSignature(o.items)) changed.add(o.dailyBusinessId);
+  }
+  return changed;
+}
+
+// findChangedAfterPacking에서 "상품 이름만 바뀐" 업체를 뺀다. 지문이 달라진 업체 중 박스를 제출한 업체만, 제출한 박스에 담긴 줄과 지금 줄을 비교한다.
+// 읽지 못하면(오류) 경고를 빼지 않는다: 모를 때는 경고하는 쪽이 안전하다.
+export async function findChangedAfterPackingIgnoringRenames(
+  supabase: Client,
+  orders: { dailyBusinessId: string; items: LiveOrderItem[] }[],
+  records: { id: string; daily_business_id: string; order_signature: string | null }[],
+  recs: { daily_business_id: string; order_signature: string; created_at: string }[],
+): Promise<Set<string>> {
+  const changed = findChangedAfterPacking(orders, records, recs);
+  const candidates = records.filter((r) => changed.has(r.daily_business_id) && r.order_signature);
+  if (candidates.length === 0) return changed;
+  const recordIds = candidates.map((r) => r.id);
+  const { data: boxes, error: boxError } = await supabase.from('packing_boxes').select('id, record_id').in('record_id', recordIds);
+  if (boxError) return changed;
+  const boxIds = (boxes ?? []).map((b) => b.id);
+  if (boxIds.length === 0) return changed;
+  const { data: boxItems, error: itemError } = await supabase.from('packing_box_items').select('packing_box_id, order_item_id, unit, quantity').in('packing_box_id', boxIds);
+  if (itemError) return changed;
+  const recordOfBox = new Map((boxes ?? []).map((b) => [b.id, b.record_id]));
+  const submittedByRecord = new Map<string, SubmittedBoxItem[]>();
+  for (const it of boxItems ?? []) {
+    const recordId = recordOfBox.get(it.packing_box_id);
+    if (!recordId) continue;
+    const list = submittedByRecord.get(recordId) ?? [];
+    list.push({ orderItemId: it.order_item_id, unit: it.unit, quantity: Number(it.quantity) });
+    submittedByRecord.set(recordId, list);
+  }
+  const itemsByDaily = new Map(orders.map((o) => [o.dailyBusinessId, o.items]));
+  for (const r of candidates) {
+    const items = itemsByDaily.get(r.daily_business_id) ?? [];
+    if (isRenameOnly(items.map((i) => ({ id: i.id, unit: i.unit, quantity: i.quantity })), submittedByRecord.get(r.id) ?? [])) changed.delete(r.daily_business_id);
   }
   return changed;
 }
