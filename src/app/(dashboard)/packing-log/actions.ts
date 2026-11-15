@@ -12,6 +12,7 @@ import { normalizeMergeGroups } from '@/lib/box-merge';
 import { missingTable } from '@/lib/supabase/missing-table';
 import { loadPackingRows } from '@/lib/packing/load-rows';
 import type { PackingBoxType, PackingBusiness } from '@/lib/packing/types';
+import type { Database } from '@/lib/types/database';
 
 export interface PackingSubmission {
   dailyBusinessId: string;
@@ -115,8 +116,12 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
     })),
   );
 
-  // 이전 제출 기록은 지우고 새로 만든다(하위 박스·상품은 cascade로 함께 삭제).
-  await supabase.from('packing_records').delete().eq('daily_business_id', daily.id);
+  // 이전 제출 기록은 지우고 새로 만든다(하위 박스·상품은 cascade로 함께 삭제). 카드당 기록은 하나(unique)라 새 기록을 먼저 만들 수 없다.
+  // 그래서 지우기 전에 이전 기록을 읽어 두고, 새 저장이 중간에 실패하면 되돌려 넣는다(되돌리지 않으면 이미 제출·출력한 카드가 "미제출"이 된다).
+  const previous = await snapshotPackingRecord(supabase, daily.id);
+  if ('error' in previous) return { error: previous.error };
+  const { error: deleteError } = await supabase.from('packing_records').delete().eq('daily_business_id', daily.id);
+  if (deleteError) return { error: `이전 박스 기록을 바꾸지 못했습니다: ${deleteError.message}` };
 
   const { data: record, error: recordError } = await supabase
     .from('packing_records')
@@ -132,12 +137,9 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
     })
     .select('id')
     .single();
-  if (recordError || !record) return { error: recordError?.message ?? '박스 할당을 저장하지 못했습니다.' };
+  if (recordError || !record) return restorePrevious(supabase, previous.snapshot, null, recordError?.message ?? '박스 할당을 저장하지 못했습니다.');
 
-  const rollback = async (message: string) => {
-    await supabase.from('packing_records').delete().eq('id', record.id);
-    return { error: message };
-  };
+  const rollback = (message: string) => restorePrevious(supabase, previous.snapshot, record.id, message);
 
   const { data: createdBoxes, error: boxError } = await supabase
     .from('packing_boxes')
@@ -206,9 +208,59 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   });
   if (eventError && missingTable(eventError.message) === null) console.error(`박스 제출 이력 저장 실패: ${eventError.message}`);
 
+  // 박스 수가 줄었으면 번호가 넘는 옛 라벨 행을 정리한다(남겨 두면 상차 현황이 "2/3"에서 멈춘다 — 상차 화면은 라벨 행 수로 센다).
+  if (previous.snapshot) {
+    const { error: staleLabelError } = await supabase.from('box_labels').delete().eq('daily_business_id', daily.id).gt('seq', input.boxes.length);
+    if (staleLabelError) console.error(`남은 라벨 정리 실패: ${staleLabelError.message}`);
+  }
+
   revalidatePath('/packing-log');
   revalidatePath('/dashboard');
   return { error: null };
+}
+
+type PackingClient = Awaited<ReturnType<typeof createClient>>;
+interface PackingSnapshot {
+  record: Database['public']['Tables']['packing_records']['Row'];
+  boxes: Database['public']['Tables']['packing_boxes']['Row'][];
+  items: Database['public']['Tables']['packing_box_items']['Row'][];
+}
+
+// 카드의 이전 제출 기록(박스·상품 포함)을 읽어 둔다. 기록이 없으면 snapshot은 null.
+async function snapshotPackingRecord(supabase: PackingClient, dailyBusinessId: string): Promise<{ snapshot: PackingSnapshot | null } | { error: string }> {
+  const { data: record, error } = await supabase.from('packing_records').select('*').eq('daily_business_id', dailyBusinessId).maybeSingle();
+  if (error) return { error: `이전 박스 기록을 읽지 못했습니다: ${error.message}` };
+  if (!record) return { snapshot: null };
+  const { data: boxes, error: boxError } = await supabase.from('packing_boxes').select('*').eq('record_id', record.id);
+  if (boxError) return { error: `이전 박스 기록을 읽지 못했습니다: ${boxError.message}` };
+  const boxIds = (boxes ?? []).map((b) => b.id);
+  const { data: items, error: itemError } = boxIds.length ? await supabase.from('packing_box_items').select('*').in('packing_box_id', boxIds) : { data: [], error: null };
+  if (itemError) return { error: `이전 박스 기록을 읽지 못했습니다: ${itemError.message}` };
+  return { snapshot: { record, boxes: boxes ?? [], items: items ?? [] } };
+}
+
+// 새 저장이 실패했을 때: 만들다 만 새 기록을 지우고 이전 기록을 같은 id로 되돌려 넣는다. 되돌리기까지 실패하면 그 사실을 알린다.
+async function restorePrevious(supabase: PackingClient, snapshot: PackingSnapshot | null, newRecordId: string | null, message: string): Promise<{ error: string }> {
+  if (newRecordId) await supabase.from('packing_records').delete().eq('id', newRecordId);
+  if (!snapshot) return { error: message };
+  const failures: string[] = [];
+  const { error: recordError } = await supabase.from('packing_records').insert(snapshot.record);
+  if (recordError) failures.push(recordError.message);
+  else {
+    if (snapshot.boxes.length > 0) {
+      const { error } = await supabase.from('packing_boxes').insert(snapshot.boxes);
+      if (error) failures.push(error.message);
+    }
+    if (snapshot.items.length > 0) {
+      const { error } = await supabase.from('packing_box_items').insert(snapshot.items);
+      if (error) failures.push(error.message);
+    }
+  }
+  if (failures.length > 0) {
+    console.error('[submitPacking] restore failed', failures);
+    return { error: `${message} (이전 제출 기록도 되돌리지 못했습니다. 같은 내용으로 다시 제출해 주세요.)` };
+  }
+  return { error: `${message} — 이전 제출 기록은 그대로 유지했습니다.` };
 }
 
 // 수정 중인 박스 구성(박스 종류 목록)에 상품을 모델 규칙으로 자동으로 나눠 담은 결과를 돌려준다. 저장은 하지 않는다.

@@ -43,13 +43,18 @@ export function LabelPanel({ dailyBusinessId, boxCount, boxTypes }: { dailyBusin
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const result = await getCardLabels(dailyBusinessId);
-      if (cancelled) return;
-      setInfos(result.infos);
-      setPendingSeqs(result.pendingSeqs);
-      setSource({ template: result.template, base: result.base });
-      setGroups(result.base?.mergeGroups ?? []);
-      setLoaded(true);
+      try {
+        const result = await getCardLabels(dailyBusinessId);
+        if (cancelled) return;
+        setInfos(result.infos);
+        setPendingSeqs(result.pendingSeqs);
+        setSource({ template: result.template, base: result.base });
+        setGroups(result.base?.mergeGroups ?? []);
+        setLoaded(true);
+      } catch {
+        // 일시적인 연결 오류. 던진 채로 두면 라벨 상태 자리가 계속 '…'로만 보인다.
+        if (!cancelled) setError('라벨 상태를 읽지 못했습니다. 연결을 확인하고 이 업체를 다시 눌러 주세요.');
+      }
     })();
     return () => {
       cancelled = true;
@@ -62,11 +67,15 @@ export function LabelPanel({ dailyBusinessId, boxCount, boxTypes }: { dailyBusin
     if (!waiting) return;
     let cancelled = false;
     const timer = setInterval(async () => {
-      const result = await getCardLabels(dailyBusinessId);
-      if (cancelled) return;
-      setInfos(result.infos);
-      setPendingSeqs(result.pendingSeqs);
-      if (result.pendingSeqs.length === 0) router.refresh();
+      try {
+        const result = await getCardLabels(dailyBusinessId);
+        if (cancelled) return;
+        setInfos(result.infos);
+        setPendingSeqs(result.pendingSeqs);
+        if (result.pendingSeqs.length === 0) router.refresh();
+      } catch {
+        // 확인 대기 중 읽기 한 번 실패는 다음 5초에 다시 읽으면 된다.
+      }
     }, 5000);
     return () => {
       cancelled = true;
@@ -78,8 +87,16 @@ export function LabelPanel({ dailyBusinessId, boxCount, boxTypes }: { dailyBusin
     if (targetSeqs.length === 0 || busyKey) return;
     setBusyKey(key);
     setError(null);
-    const payload = await prepareLabelPrint({ dailyBusinessId, seqs: targetSeqs });
-    setBusyKey(null);
+    let payload: Awaited<ReturnType<typeof prepareLabelPrint>>;
+    try {
+      payload = await prepareLabelPrint({ dailyBusinessId, seqs: targetSeqs });
+    } catch {
+      // 연결이 한 번 끊겨도 '처리 중' 표시가 풀려야 한다(풀리지 않으면 이 업체의 출력 버튼이 새로고침 전까지 잠긴다).
+      setError('라벨을 준비하지 못했습니다. 연결을 확인하고 다시 눌러 주세요.');
+      return;
+    } finally {
+      setBusyKey(null);
+    }
     if (payload.error || !payload.template) return setError(payload.error ?? '라벨을 준비하지 못했습니다.');
     setInfos(payload.infos);
     setPendingSeqs(payload.pendingSeqs);
@@ -91,8 +108,15 @@ export function LabelPanel({ dailyBusinessId, boxCount, boxTypes }: { dailyBusin
     if (busyKey) return;
     setBusyKey('merge');
     setError(null);
-    const result = await saveMergeGroups(dailyBusinessId, next);
-    setBusyKey(null);
+    let result: Awaited<ReturnType<typeof saveMergeGroups>>;
+    try {
+      result = await saveMergeGroups(dailyBusinessId, next);
+    } catch {
+      setError('합포장을 저장하지 못했습니다. 연결을 확인하고 다시 눌러 주세요.');
+      return;
+    } finally {
+      setBusyKey(null);
+    }
     if (result.error) return setError(result.error);
     // 합포장 표시가 달라진 박스(묶음이 생기거나 바뀌거나 없어진 박스) 중 이미 출력한 것
     const changed = new Set<number>();

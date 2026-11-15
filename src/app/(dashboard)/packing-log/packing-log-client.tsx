@@ -358,7 +358,9 @@ export function PackingLogClient({
       const n = parseFloat(raw);
       weights[item.id] = Number.isFinite(n) && n > 0 ? n : null;
     }
-    const result = await submitPacking({
+    let result: Awaited<ReturnType<typeof submitPacking>>;
+    try {
+      result = await submitPacking({
       dailyBusinessId: selected.id,
       boxes: draft.boxes.map((b) => ({ boxId: b.boxId as string, items: b.items })),
       weights,
@@ -366,8 +368,14 @@ export function PackingLogClient({
       itemsVerified: modified && draft.source === 'manual',
       // 합포장은 이 화면에서 바꿨을 때만 보낸다(라벨 영역에서 따로 바꾼 묶음을 덮어쓰지 않으려고).
       mergeGroups: draftMergeKey(draft) !== baseMergeKey(selected, draft.baseRank) ? seqGroupsFromUid(draft.boxes.map((b) => b.uid), draft.mergeUids) : undefined,
-    });
-    setBusy(false);
+      });
+    } catch {
+      // 연결 오류로 던져져도 '처리 중'이 풀려야 한다. 작성 중인 박스 배치(draft)는 그대로 두어 다시 제출할 수 있게 한다.
+      setError('박스 할당을 제출하지 못했습니다. 작성한 내용은 그대로 있습니다. 연결을 확인하고 다시 제출해 주세요.');
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (result.error) return setError(result.error);
     setDrafts((prev) => {
       const next = { ...prev };
@@ -391,8 +399,16 @@ export function PackingLogClient({
   const handleDeleteRecord = async () => {
     if (!selected) return;
     setBusy(true);
-    const result = await deletePackingRecord(selected.id);
-    setBusy(false);
+    let result: Awaited<ReturnType<typeof deletePackingRecord>>;
+    try {
+      result = await deletePackingRecord(selected.id);
+    } catch {
+      setError('박스 할당을 삭제하지 못했습니다. 연결을 확인하고 다시 눌러 주세요.');
+      setConfirmDelete(false);
+      return;
+    } finally {
+      setBusy(false);
+    }
     setConfirmDelete(false);
     if (result.error) return setError(result.error);
     setDrafts((prev) => {
@@ -428,8 +444,15 @@ export function PackingLogClient({
     if (!selected || !draft || busy) return;
     setBusy(true);
     setError(null);
-    const result = await assignItemsToBoxes({ dailyBusinessId: selected.id, boxIds: draft.boxes.map((b) => b.boxId as string) });
-    setBusy(false);
+    let result: Awaited<ReturnType<typeof assignItemsToBoxes>>;
+    try {
+      result = await assignItemsToBoxes({ dailyBusinessId: selected.id, boxIds: draft.boxes.map((b) => b.boxId as string) });
+    } catch {
+      setError('자동 배정을 하지 못했습니다. 연결을 확인하고 다시 눌러 주세요.');
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (result.error) return setError(result.error);
     updateDraft((d) => ({ ...d, boxes: d.boxes.map((b, i) => ({ ...b, items: result.boxes[i]?.items ?? [] })), moveQty: {}, source: 'auto' }));
   };
@@ -467,8 +490,15 @@ export function PackingLogClient({
     if (!window.confirm(`아직 출력하지 않은 라벨 ${batchLabels}장(${batchTargets.length}곳)을 업체 번호순으로 한꺼번에 출력합니다.${warn}\n\n${labelConfirmMode === 'spooler' ? '프린터 PC가 인쇄 완료를 확인한 라벨만 "출력"으로 기록됩니다.' : '인쇄 창을 닫거나 취소해도 "출력함"으로 기록됩니다.'} 계속할까요?`)) return;
     setBatchBusy(true);
     setError(null);
-    const payload = await prepareBatchLabelPrint(orderDate);
-    setBatchBusy(false);
+    let payload: Awaited<ReturnType<typeof prepareBatchLabelPrint>>;
+    try {
+      payload = await prepareBatchLabelPrint(orderDate);
+    } catch {
+      setError('라벨을 준비하지 못했습니다. 연결을 확인하고 다시 눌러 주세요.');
+      return;
+    } finally {
+      setBatchBusy(false);
+    }
     if (payload.error || !payload.template) return setError(payload.error ?? '라벨을 준비하지 못했습니다.');
     if (payload.skipped.length > 0) setError(`일부 업체의 라벨은 준비하지 못했습니다: ${payload.skipped.join(' / ')}`);
     else setNotice(`${payload.businesses}곳 · 라벨 ${payload.labels.length}장을 출력합니다.`);
