@@ -15,7 +15,7 @@ import { InkLayer, type InkItem } from './ink-layer';
 import { ProductCustomersPopover } from './product-customers-popover';
 import { CustomerOrderPanel } from './customer-order-panel';
 import { BoxAssignModal } from './box-assign-modal';
-import { rowLayout } from '@/lib/monitor-rows';
+import { hiddenRowCount, rowLayout } from '@/lib/monitor-rows';
 import { BoardStage, type StageInfo } from './board-stage';
 import { packRows } from '@/lib/page-rows';
 import { useTouchDesktop } from '@/lib/use-touch-desktop';
@@ -1076,6 +1076,7 @@ export function DashboardClient({
   const rowHeight = layoutRows.rowHeight;
   const ownCapacity = layoutRows.capacity;
   const startIndex = effectiveMonitorMode === '2' ? ownCapacity : 0;
+  const hiddenRows = hiddenRowCount(effectiveMonitorMode, rows.length, ownCapacity);
   // 화면에 다 못 들어가는 줄은 이 화면에 표시하지 않고 다음 모니터로 넘긴다.
   const monitorSlice = isSplitMode ? rows.slice(startIndex, startIndex + ownCapacity) : rows;
   const displayedRows = monitorSlice;
@@ -1631,9 +1632,9 @@ export function DashboardClient({
             ))}
           </div>
           {/* 모니터 2에 가장 촘촘한 높이로도 다 못 들어가는 주문이 있으면 조용히 사라지지 않게 알린다(전체보기에서는 모두 보인다). */}
-          {isSplitMode && rows.length > startIndex + ownCapacity && (
-            <span className="flex-shrink-0 rounded-md bg-red-600 px-2 py-1 text-xs font-black leading-none text-white" title="이 화면에 다 들어가지 않는 주문이 있습니다. 전체보기에서 확인하세요.">
-              {rows.length - startIndex - ownCapacity}건 안 보임
+          {hiddenRows > 0 && (
+            <span className="flex-shrink-0 rounded-md bg-red-600 px-2 py-1 text-xs font-black leading-none text-white" title="어느 모니터에도 다 들어가지 않는 주문이 있습니다. 전체보기에서 확인하세요.">
+              {hiddenRows}건 안 보임
             </span>
           )}
         </div>
