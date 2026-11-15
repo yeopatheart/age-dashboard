@@ -23,3 +23,8 @@ export function rowLayout(rowCount: number, availHeight: number, fallbackCapacit
   const tier = ROW_HEIGHT_TIERS.find((h) => MONITOR_COUNT * Math.floor(availHeight / h) >= rowCount) ?? MIN_ROW_HEIGHT;
   return fitRowHeight(availHeight, tier, MIN_ROW_HEIGHT, maxShrink);
 }
+
+// 모니터 2에 가장 촘촘한 높이로도 다 못 들어가 어느 화면에도 안 나오는 줄 수. 모니터 1에서 모니터 2로 넘어간 줄은 안 보이는 것이 아니므로 모니터 2에서만 센다.
+export function hiddenRowCount(mode: string, rowCount: number, capacity: number): number {
+  return mode === '2' ? Math.max(0, rowCount - 2 * capacity) : 0;
+}

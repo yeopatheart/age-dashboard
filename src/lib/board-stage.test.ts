@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STAGE_H, STAGE_W, stageLayout } from './board-stage.ts';
-import { rowLayout } from './monitor-rows.ts';
+import { hiddenRowCount, rowLayout } from './monitor-rows.ts';
 import { fitRowHeight } from './row-fit.ts';
 import { anchorLegacyStrokes, pickRowAnchor, rowAnchor } from './ink/row-anchor.ts';
 import { resolvePoints, toAnchoredStroke, toFreeStroke, type Box, type InkStroke } from './ink/store.ts';
@@ -136,4 +136,12 @@ test('붙일 것이 없으면 같은 배열을 돌려준다(불필요한 저장�
   const outside: InkStroke = toFreeStroke({ id: 'o', color: '#dc2626', width: 3 }, [{ x: 600, y: 400 }, { x: 650, y: 420 }], layer);
   const list = [outside];
   assert.equal(anchorLegacyStrokes(list, layer, rows), list);
+});
+
+test('"안 보임" 표시는 모니터 2에서 두 모니터에 다 못 담는 줄만 센다(모니터 1에서 모니터 2로 넘어간 줄은 세지 않는다)', () => {
+  assert.equal(hiddenRowCount('1', 34, 19), 0); // 11/16 사진: 34줄 중 19줄이 모니터 1, 15줄은 모니터 2에 정상
+  assert.equal(hiddenRowCount('2', 34, 19), 0);
+  assert.equal(hiddenRowCount('2', 41, 20), 1);
+  assert.equal(hiddenRowCount('2', 50, 20), 10);
+  assert.equal(hiddenRowCount('all', 50, 20), 0);
 });
