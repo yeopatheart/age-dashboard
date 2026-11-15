@@ -25,7 +25,10 @@ export function parseSizeSpec(raw: string | null | undefined, cfg: AppSettings):
     if (max != null) spec.maxG = spec.maxG == null ? max : Math.min(spec.maxG, max);
   };
 
-  for (const token of raw.split(',').map((t) => t.trim()).filter(Boolean)) {
+  // "대 : 선별"처럼 ':'로 이은 표기는 각각을 따로 읽는다(사이즈 "대" + 등급 "선별").
+  // 단위: g(그램) · kg · 키로. 단위가 없으면 g로 본다(예: "300이상").
+  const grams = (value: string, unit: string | undefined) => (unit === 'kg' || unit === '키로' ? Math.round(parseFloat(value) * 1000) : parseFloat(value));
+  for (const token of raw.split(/[,，]/).flatMap((t) => t.split(/[:：]/)).map((t) => t.trim()).filter(Boolean)) {
     const t = token.replace(/\s+/g, '');
     let m: RegExpMatchArray | null;
 
@@ -33,8 +36,8 @@ export function parseSizeSpec(raw: string | null | undefined, cfg: AppSettings):
     else if (cfg.optionalKeywords.some((k) => k.replace(/\s+/g, '') === t)) spec.optional = true;
     else if (GRADES.includes(t)) spec.grade = t;
     else if (HANDLING.includes(t)) spec.handling.push(t);
-    else if (/^(큰거|큰것)$/.test(t)) spec.relative = 'large';
-    else if (/^(작은거|작은것)$/.test(t)) spec.relative = 'small';
+    else if (/^(큰거|큰것|대)$/.test(t)) spec.relative = 'large';
+    else if (/^(작은거|작은것|소)$/.test(t)) spec.relative = 'small';
     // 4-600 → 400~600g, 6-800 → 600~800g (앞 숫자는 백 단위)
     else if ((m = t.match(/^(\d{1,2})-(\d{3})$/))) widen(parseInt(m[1], 10) * 100, parseInt(m[2], 10));
     // 키로 3미 / 키로6-8미 / 키로 6미급 → 킬로당 N마리 = 마리당 1000/N g
@@ -49,16 +52,16 @@ export function parseSizeSpec(raw: string | null | undefined, cfg: AppSettings):
     }
     // 1kg대 / 1kg급 → 1.0 ~ 2.0kg (이상 이하가 아니라 해당 대역)
     else if ((m = t.match(/^(\d+(?:\.\d+)?)(?:kg|키로)(?:대|급)$/))) widen(Math.round(parseFloat(m[1]) * 1000), Math.round((parseFloat(m[1]) + 1) * 1000));
-    // 2.5kg내외 → ±허용 오차%
-    else if ((m = t.match(/^(\d+(?:\.\d+)?)(kg|키로)?내외$/))) {
-      const center = m[2] ? parseFloat(m[1]) * 1000 : parseFloat(m[1]);
+    // 2.5kg내외 / 200g내외 / 200g / 1kg → ±허용 오차%. 단위만 쓴 "200g"·"1kg"(현장에서 마리당 크기를 이렇게 적는다)도 같은 뜻으로 읽는다.
+    else if ((m = t.match(/^(\d+(?:\.\d+)?)(kg|키로|g)?내외$/)) || (m = t.match(/^(\d+(?:\.\d+)?)(kg|키로|g)$/))) {
+      const center = grams(m[1], m[2]);
       widen(Math.round(center * (1 - cfg.sizeTolerancePct / 100)), Math.round(center * (1 + cfg.sizeTolerancePct / 100)));
     }
     // 3kg초반 → 3.0 ~ 3.0+설정 폭
     else if ((m = t.match(/^(\d+(?:\.\d+)?)(?:kg|키로)초반$/))) widen(Math.round(parseFloat(m[1]) * 1000), Math.round((parseFloat(m[1]) + cfg.earlyRangeKg) * 1000));
-    // 2kg이상 / 300이상(단위 없으면 g)
-    else if ((m = t.match(/^(\d+(?:\.\d+)?)(kg|키로)?이상$/))) widen(m[2] ? Math.round(parseFloat(m[1]) * 1000) : parseFloat(m[1]), null);
-    else if ((m = t.match(/^(\d+(?:\.\d+)?)(kg|키로)?이하$/))) widen(null, m[2] ? Math.round(parseFloat(m[1]) * 1000) : parseFloat(m[1]));
+    // 2kg이상 / 600g이상 / 300이상(단위 없으면 g)
+    else if ((m = t.match(/^(\d+(?:\.\d+)?)(kg|키로|g)?이상$/))) widen(grams(m[1], m[2]), null);
+    else if ((m = t.match(/^(\d+(?:\.\d+)?)(kg|키로|g)?이하$/))) widen(null, grams(m[1], m[2]));
     else spec.unparsed.push(token);
   }
   return spec;
