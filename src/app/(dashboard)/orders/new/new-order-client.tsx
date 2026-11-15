@@ -183,12 +183,18 @@ export function NewOrderClient({
       const result = await commitOrderLines(orderDate, round, decisions, rawText);
       if (!result.ok) {
         setError(result.error);
+        if (result.itemsSaved) {
+          // 새 줄은 저장됐다. 분석 화면을 그대로 두면 같은 내용을 다시 확정해 새 줄이 중복되므로 비우고 기록을 새로 읽는다.
+          setSuggestions(null);
+          setRawText('');
+          await loadHistory(orderDate).catch(() => undefined);
+        }
         return;
       }
       setDone(true);
       setSuggestions(null);
       setRawText('');
-      await loadHistory(orderDate);
+      await loadHistory(orderDate).catch(() => undefined); // 기록을 새로 읽지 못해도 확정은 성공했다 — 실패로 보이게 하지 않는다
     } catch (e) {
       setError(e instanceof Error ? e.message : '확정에 실패했습니다.');
     } finally {

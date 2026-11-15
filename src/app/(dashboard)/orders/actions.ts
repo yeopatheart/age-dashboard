@@ -6,7 +6,7 @@ import { assignBusinessNumber, dailyKey, separateTerminalIds } from '@/lib/busin
 import { colorComboKey, pickUnusedColor } from '@/lib/color-palette';
 import { loadAppSettings } from '@/lib/settings-server';
 import { newOrderItemRow } from '@/lib/order-item-row';
-import { commitFailureMessage, deleteCreatedCards, isFrameworkSignal, type CleanupResult } from '@/lib/commit-failure';
+import { commitFailureMessage, deleteCreatedCards, firstResultError, isFrameworkSignal, runInChunks, type CleanupResult } from '@/lib/commit-failure';
 import { editableDateError } from '@/lib/order-date';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { parseKakaoMessage, normalizeUnit, type ParsedBusinessLine, type ParsedProduct } from '@/lib/kakao-parser';
@@ -392,7 +392,8 @@ interface CommitState {
   itemsSaved: boolean;
 }
 
-export type CommitResult = { ok: true } | { ok: false; error: string };
+// itemsSaved: 새 상품 줄은 이미 저장된 뒤의 실패다(같은 내용을 다시 확정하면 새 줄이 중복된다).
+export type CommitResult = { ok: true } | { ok: false; error: string; itemsSaved: boolean };
 
 // 실패하면 던지지 않고 원인 문구를 값으로 돌려준다(운영에서는 던진 오류의 문구가 가려져 "Minified React error #441"로만 보였다).
 // 상품 줄이 저장되기 전에 실패하면 이번에 만든 업체 카드를 지워서 "고객사만 남은" 반쪽 상태를 만들지 않는다(2026-11-15).
@@ -410,7 +411,7 @@ export async function commitOrderLines(orderDate: string, round: OrderRound, dec
       cleaned = await deleteCreatedCards(state.createdDailyIds, (ids) => supabase.from('daily_businesses').delete().in('id', ids));
       if (cleaned.error) console.error('[commitOrderLines] cleanup failed', cleaned.error);
     }
-    return { ok: false, error: commitFailureMessage(error, cleaned) };
+    return { ok: false, error: commitFailureMessage(error, cleaned, state.itemsSaved), itemsSaved: state.itemsSaved };
   }
 }
 
@@ -626,10 +627,14 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
   }
   state.itemsSaved = true;
   const productNames = [...new Set(resolved.map((r) => r.decision.product.productName))];
-  const results = await Promise.all([...updates.map((run) => run()), registerNewProducts(supabase, productNames)]);
-  for (const result of results) {
-    const error = (result as { error?: { message: string } | null } | null | undefined)?.error;
-    if (error) throw new Error(`주문 반영 중 일부 저장 실패: ${error.message}`);
+  // 기존 줄 수정·취소·메모는 10건씩 차례로 보낸다(오후 추가 입력은 수백 건이 되는데 쓰기는 8초 제한이 있고 다시 시도하지 않는다).
+  // 여기서 실패해도 새 줄은 이미 저장됐으므로 메시지 기록·화면 갱신은 끝까지 하고, 마지막에 실패를 알린다.
+  let partialError: string | null = null;
+  try {
+    partialError = firstResultError(await runInChunks(updates, 10));
+    await registerNewProducts(supabase, productNames);
+  } catch (e) {
+    partialError ??= e instanceof Error ? e.message : String(e);
   }
 
   // 메시지 기록은 주문이 모두 저장된 뒤에 남긴다. 기록은 보관용이라 실패해도 저장된 주문을 되돌리거나 다시 입력하게 하지 않는다.
@@ -643,4 +648,6 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
   revalidatePath('/terminals');
   revalidatePath('/businesses');
   revalidatePath('/products');
+
+  if (partialError) throw new Error(`주문 반영 중 일부 저장 실패: ${partialError}`);
 }
