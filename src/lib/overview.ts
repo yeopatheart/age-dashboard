@@ -84,7 +84,7 @@ export function stageDetail(stage: Stage, c: { parcel: boolean; boxStates: BoxSt
 
 export interface OverviewCardInput {
   id: string;
-  number: number;
+  number: string; // 화면에 보이는 번호(목록 순서의 번호, src/lib/card-number.ts)
   name: string;
   terminal: string;
   separate: boolean; // 별도 주문 터미널
