@@ -45,7 +45,7 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
     .eq('id', input.dailyBusinessId)
     .maybeSingle();
   if (!daily) return { error: '업체 주문을 찾지 못했습니다.' };
-  const dateError = editableDateError(daily.order_date, (await loadAppSettings(supabase)).allowPastOrderEdit);
+  const dateError = editableDateError(daily.order_date, (await loadAppSettings(supabase)).allowPastOrderEdit, { allowTomorrow: true }); // 박스 할당은 내일 주문까지 미리 할 수 있다
   if (dateError) return { error: dateError };
 
   const [{ data: business }, { data: items }, { data: boxRows }] = await Promise.all([
@@ -319,7 +319,7 @@ export async function deletePackingRecord(dailyBusinessId: string): Promise<{ er
   const supabase = await createClient();
   const { data: daily } = await supabase.from('daily_businesses').select('order_date').eq('id', dailyBusinessId).maybeSingle();
   if (daily) {
-    const dateError = editableDateError(daily.order_date, (await loadAppSettings(supabase)).allowPastOrderEdit);
+    const dateError = editableDateError(daily.order_date, (await loadAppSettings(supabase)).allowPastOrderEdit, { allowTomorrow: true });
     if (dateError) return { error: dateError };
   }
   const { error } = await supabase.from('packing_records').delete().eq('daily_business_id', dailyBusinessId);

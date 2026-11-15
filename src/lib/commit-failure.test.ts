@@ -39,7 +39,7 @@ test('Next.js의 redirect 신호는 화면 문구로 바꾸지 않는다', () =>
 
 test('실패 문구는 원인을 그대로 보여 주고, 정리 실패는 따로 알린다', () => {
   const ok = commitFailureMessage(new Error('상품 저장 실패: x'), { attempted: 2, error: null });
-  assert.match(ok, /^상품 저장 실패: x — 저장하지 않았습니다/);
+  assert.match(ok, /^상품 저장 실패: x — 저장하지 않았습니다\.$/);
   const bad = commitFailureMessage(new Error('상품 저장 실패: x'), { attempted: 2, error: 'denied' });
   assert.match(bad, /정리하지 못했습니다/);
   assert.match(bad, /2개/);

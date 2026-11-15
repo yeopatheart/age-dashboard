@@ -6,6 +6,7 @@ import { assignBusinessNumber, dailyKey, separateTerminalIds } from '@/lib/busin
 import { colorComboKey, pickUnusedColor } from '@/lib/color-palette';
 import { loadAppSettings } from '@/lib/settings-server';
 import { newOrderItemRow } from '@/lib/order-item-row';
+import { stripGluedOrderNumber } from '@/lib/glued-order-number';
 import { commitFailureMessage, deleteCreatedCards, firstResultError, isFrameworkSignal, runInChunks, type CleanupResult } from '@/lib/commit-failure';
 import { editableDateError } from '@/lib/order-date';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
@@ -131,7 +132,7 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
 
   // 서로 의존하지 않는 조회는 한 번에 보낸다(DB 왕복이 곧 대기 시간).
   const settings = await loadAppSettings(supabase);
-  const dateError = editableDateError(orderDate, settings.allowPastOrderEdit);
+  const dateError = editableDateError(orderDate, settings.allowPastOrderEdit, { allowTomorrow: true });
   if (dateError) throw new Error(dateError);
   const [{ data: allBusinesses }, { data: registeredTerminals }, { data: dailyBusinesses }, knownProducts] = await Promise.all([
 
@@ -173,6 +174,9 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
     resolvedLines = parsedLines.map((line) => ({ line, source: 'regex' as const }));
   }
 
+  // 번호가 터미널 이름에 붙어 온 줄("20남부")은 새 터미널로 만들지 않고 번호와 등록된 터미널로 나눈다.
+  resolvedLines = resolvedLines.map(({ line, source }) => ({ line: stripGluedOrderNumber(line, terminalNameSet), source }));
+
   const dailyRows = dailyBusinesses ?? [];
   // 같은 업체도 터미널이 다르면 다른 카드다(0029) — "남부"로 보내는 날과 "택배"로 보내는 날, 또는 한 차수 안의 두 터미널.
   const dailyIdByKey = new Map(dailyRows.map((d) => [dailyKey(d.business_id, d.terminal_id), d.id]));
@@ -202,9 +206,9 @@ export async function suggestOrderLines(rawText: string, orderDate: string, roun
     // 서로 다른 업체라서, 비슷하다고 자동으로 합치면 다른 업체의 주문이 섞인다.
     const matched = businessList.find((b) => b.name === line.businessName);
     const catalogBusinessId = matched?.id ?? null;
-    // 줄에 터미널을 적었으면 그 터미널의 카드, 안 적었으면 업체 기본 터미널의 카드를 갱신 대상으로 본다.
+    // 줄에 터미널을 적었으면 그 터미널의 카드, 안 적었으면 터미널 "미지정" 카드를 갱신 대상으로 본다(업체 기본 터미널로 보내지 않는다 — 2026-11-15 결정).
     // 등록되지 않은 터미널이면 아직 카드가 없다.
-    const lineTerminalId = line.terminalName ? terminalIdByName.get(line.terminalName) ?? null : matched?.terminal_id ?? null;
+    const lineTerminalId = line.terminalName ? terminalIdByName.get(line.terminalName) ?? null : null;
     const lineTerminalUnknown = line.terminalName !== '' && !lineTerminalId;
     const dailyBusinessId = catalogBusinessId && !lineTerminalUnknown ? dailyIdByKey.get(dailyKey(catalogBusinessId, lineTerminalId)) ?? null : null;
     const existingItems = dailyBusinessId ? existingItemsByDailyBusiness.get(dailyBusinessId) ?? [] : [];
@@ -438,7 +442,7 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
     loadAppSettings(supabase),
   ]);
   const userId = access.userId;
-  const dateError = editableDateError(orderDate, settings.allowPastOrderEdit);
+  const dateError = editableDateError(orderDate, settings.allowPastOrderEdit, { allowTomorrow: true });
   if (dateError) throw new Error(dateError);
 
   // 그날 첫 입력(로그가 아직 없음)으로 들어오는 상품은 "최초주문"(none), 이후 입력으로 새로 들어오는
@@ -497,18 +501,13 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
       for (const b of created ?? []) businessIdByName.set(b.name, b.id);
     }
   }
-  // 줄에 터미널이 없으면 업체 기본 터미널을 쓴다(방금 만든 업체는 위에서 줄의 터미널로 만들어졌다).
+  // 줄에 터미널이 없으면 터미널 "미지정"(null) 카드로 만든다. 업체 기본 터미널로 보내지 않는다.
   const resolvedBase = lines.flatMap((d) => {
     const businessId = d.matchedBusinessId ?? businessIdByName.get(d.businessNameRaw);
     return businessId ? [{ decision: d, businessId }] : [];
   });
-  const defaultTerminalIdByBusiness = new Map<string, string | null>();
-  if (resolvedBase.length > 0) {
-    const { data: defaults } = await supabase.from('businesses').select('id, terminal_id').in('id', [...new Set(resolvedBase.map((r) => r.businessId))]);
-    for (const b of defaults ?? []) defaultTerminalIdByBusiness.set(b.id, b.terminal_id);
-  }
   const resolved = resolvedBase.map((r) => {
-    const terminalId = r.decision.terminalName ? terminalIdByName.get(r.decision.terminalName) ?? null : defaultTerminalIdByBusiness.get(r.businessId) ?? null;
+    const terminalId = r.decision.terminalName ? terminalIdByName.get(r.decision.terminalName) ?? null : null;
     return { ...r, terminalId, key: dailyKey(r.businessId, terminalId) };
   });
 

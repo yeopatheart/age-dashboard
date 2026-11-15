@@ -99,6 +99,7 @@ const newUid = () => `box-${Date.now()}-${uidCounter++}`;
 export function PackingLogClient({
   orderDate,
   today,
+  tomorrow = today,
   allowPast,
   rows: allRows,
   boxes,
@@ -108,6 +109,7 @@ export function PackingLogClient({
 }: {
   orderDate: string;
   today: string;
+  tomorrow?: string; // 고를 수 있는 마지막 날짜(기본은 오늘, 박스 할당 화면은 내일)
   allowPast: boolean;
   rows: PackingBusiness[];
   boxes: BoxType[];
@@ -123,7 +125,7 @@ export function PackingLogClient({
   // 과거 날짜는 설정에서 "과거 날짜 편집"을 켰을 때만 제출·삭제할 수 있다(서버도 같은 규칙으로 막는다).
   // 제출 권한이 없는 계정은 조회 전용이다. 기록 삭제·라벨 출력은 각각 별도 권한이다.
   const can = useCan();
-  const readOnly = (orderDate !== today && !allowPast) || !can('packing:submit');
+  const readOnly = (orderDate < today && !allowPast) || !can('packing:submit'); // 내일 주문은 미리 할당할 수 있다
   const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
   const [onlyPending, setOnlyPending] = useState(false);
   // 업체를 오가도 작성 중인 내용이 사라지지 않게 업체별로 보관한다(제출 전까지는 이 화면 메모리에만 있다).
@@ -525,7 +527,7 @@ export function PackingLogClient({
         </div>
 
         <div className="ak-toolbar">
-          <DateNav value={orderDate} today={today} onChange={go} label="박스 할당 날짜" />
+          <DateNav value={orderDate} today={today} max={tomorrow} onChange={go} label="박스 할당 날짜" />
           <span className="ak-count">업체 {rows.length}곳 · 제출 {doneCount}곳</span>
           <span className="ak-spacer" />
           {can('packing:print') && (

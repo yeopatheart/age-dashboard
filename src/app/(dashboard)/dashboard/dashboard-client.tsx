@@ -506,9 +506,11 @@ function OrderFormModal({
               handleSave();
             }}
             placeholder={isEdit ? '고객명' : '고객명 검색 (예: 스시)'}
-            autoFocus
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:border-[#003057] focus:ring-1 focus:ring-[#003057] focus:outline-none"
+            autoFocus={!isEdit}
+            readOnly={isEdit}
+            className={`w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:border-[#003057] focus:ring-1 focus:ring-[#003057] focus:outline-none ${isEdit ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
           />
+          {isEdit && <p className="mt-1 text-[11px] text-slate-500">고객명은 여기서 바꿀 수 없습니다. 고객사 관리에서 바꿉니다.</p>}
           {/* 검색 결과는 입력창 아래에 겹쳐 뜨는 드롭다운이다 — 팝업의 다른 항목 배치는 그대로 두고, 5줄까지만 보이고 넘으면 안에서 스크롤한다. */}
           {!isEdit && (
             <div className="relative">
@@ -1340,7 +1342,7 @@ export function DashboardClient({
 
   const handleSaveOrder = async (data: { businessName: string; terminalId: string | null; round: OrderRound }): Promise<string | null> => {
     if (editOrderModal) {
-      const { error } = await updateOrder(editOrderModal.dailyBusinessId, data.businessName, data.terminalId);
+      const { error } = await updateOrder(editOrderModal.dailyBusinessId, data.terminalId);
       if (error) return error;
       setEditOrderModal(null);
     } else {

@@ -9,6 +9,7 @@ import { useCan } from '@/components/permissions-context';
 import { DateNav } from '@/components/date-nav';
 import { Segmented } from '@/components/segmented';
 import { useIsMobile } from '@/lib/use-is-mobile';
+import { COMMIT_UNKNOWN_MESSAGE, commitErrorMessage, isTransportError, previewErrorMessage } from '@/lib/order-error-message';
 import {
   suggestOrderLines,
   commitOrderLines,
@@ -38,11 +39,13 @@ function formatTime(iso: string) {
 // 가려지는 일이 없게 하기 위함(docs/decisions 참고). 권한으로 가리는 대신 페이지 분리로 해결한다.
 export function NewOrderClient({
   today,
+  tomorrow,
   allowPast,
   initialHistory,
   guideMarkdown,
 }: {
   today: string;
+  tomorrow: string; // 주문 입력은 내일까지 미리 할 수 있다
   allowPast: boolean;
   initialHistory: OrderHistoryEntry[];
   guideMarkdown: string;
@@ -82,7 +85,7 @@ export function NewOrderClient({
   };
 
   const handleOrderDateChange = (date: string) => {
-    if (!date || date > today) return;
+    if (!date || date > tomorrow) return;
     setOrderDate(date);
     setSuggestions(null); // 다른 날짜 기준으로 만든 미리보기는 쓸 수 없다
     setDone(false);
@@ -111,7 +114,8 @@ export function NewOrderClient({
       setExcluded(new Set());
       setEditingKey(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '미리보기에 실패했습니다.');
+      setSuggestions(null); // 새 미리보기를 만들지 못했으면 이전 미리보기와 확정 버튼을 남기지 않는다(지금 글과 다른 내용을 확정하게 된다)
+      setError(previewErrorMessage(e));
     } finally {
       setAnalyzing(false);
     }
@@ -196,20 +200,35 @@ export function NewOrderClient({
       setRawText('');
       await loadHistory(orderDate).catch(() => undefined); // 기록을 새로 읽지 못해도 확정은 성공했다 — 실패로 보이게 하지 않는다
     } catch (e) {
-      setError(e instanceof Error ? e.message : '확정에 실패했습니다.');
+      if (isTransportError(e)) {
+        // 응답이 유실됐을 뿐 서버는 저장을 마쳤을 수 있다. 같은 미리보기를 다시 확정하면 새 줄이 두 번 들어가므로, 글은 그대로 두고
+        // 미리보기를 서버 상태 기준으로 다시 읽는다(이미 저장된 줄은 "변경 없음"으로 나온다).
+        setSuggestions(null);
+        try {
+          const result = await suggestOrderLines(rawText, orderDate, round);
+          setSuggestions(result);
+          setExcluded(new Set());
+          setEditingKey(null);
+          setError(COMMIT_UNKNOWN_MESSAGE);
+        } catch (again) {
+          setError(`연결이 끊겨 저장됐는지 확인하지 못했습니다. 연결이 돌아오면 미리보기를 다시 눌러 확인한 뒤 확정하세요. (${previewErrorMessage(again)})`);
+        }
+      } else {
+        setError(commitErrorMessage(e));
+      }
     } finally {
       setCommitting(false);
     }
   };
 
-  const dateError = editableDateError(orderDate, allowPast);
+  const dateError = editableDateError(orderDate, allowPast, { allowTomorrow: true });
 
   return (
     <div className="new-order-root">
       <div className="page-header">
         <div className="page-header-icon"><Sparkles size={20} /></div>
         <h1 className="page-title">주문 입력</h1>
-        <DateNav value={orderDate} today={today} onChange={handleOrderDateChange} label="주문 입력 날짜" />
+        <DateNav value={orderDate} today={today} max={tomorrow} onChange={handleOrderDateChange} label="주문 입력 날짜" />
         <Segmented label="주문 차수" value={String(round) as '1' | '2'} items={[{ key: '1', label: '1차' }, { key: '2', label: '2차' }]} onSelect={(r) => handleRoundChange(Number(r) as 1 | 2)} />
         <button className="guide-btn" onClick={() => setGuideOpen(true)}>
           <BookOpen size={15} /> 입력 가이드
@@ -225,6 +244,12 @@ export function NewOrderClient({
             </div>
             <div className="guide-modal-body"><MarkdownView source={guideMarkdown} /></div>
           </div>
+        </div>
+      )}
+
+      {orderDate > today && (
+        <div role="status" style={{ margin: '0 0 var(--space-inner)', padding: '8px 12px', borderRadius: 'var(--radius-input)', background: '#fef3c7', color: '#92400e', fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
+          내일({orderDate}) 주문을 미리 입력하는 중입니다. 오늘 주문은 날짜를 &ldquo;오늘&rdquo;로 되돌린 뒤 입력하세요.
         </div>
       )}
 
