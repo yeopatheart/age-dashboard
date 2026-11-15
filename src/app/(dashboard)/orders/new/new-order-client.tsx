@@ -13,7 +13,10 @@ import { COMMIT_UNKNOWN_MESSAGE, commitErrorMessage, isTransportError, previewEr
 import {
   suggestOrderLines,
   commitOrderLines,
+  getLastOrderInput,
   getOrderHistory,
+  undoLastOrderInput,
+  type LastOrderInput,
   type SuggestedLine,
   type OrderHistoryEntry,
 } from '../actions';
@@ -42,12 +45,14 @@ export function NewOrderClient({
   tomorrow,
   allowPast,
   initialHistory,
+  initialLastInput,
   guideMarkdown,
 }: {
   today: string;
   tomorrow: string; // 주문 입력은 내일까지 미리 할 수 있다
   allowPast: boolean;
   initialHistory: OrderHistoryEntry[];
+  initialLastInput: LastOrderInput | null;
   guideMarkdown: string;
 }) {
   const canEdit = useCan()('orders:edit');
@@ -75,12 +80,42 @@ export function NewOrderClient({
   const [history, setHistory] = useState(initialHistory);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // 마지막 입력 되돌리기: 그 날짜에서 아직 되돌리지 않은 가장 최근 입력(없으면 null). 되돌릴 때는 먼저 확인을 받는다.
+  const [lastInput, setLastInput] = useState<LastOrderInput | null>(initialLastInput);
+  const [undoConfirm, setUndoConfirm] = useState(false);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [undoMessage, setUndoMessage] = useState<{ tone: 'ok' | 'error'; text: string; conflicts?: string[] } | null>(null);
+
   const loadHistory = async (date: string) => {
     setHistoryLoading(true);
     try {
-      setHistory(await getOrderHistory(date));
+      const [entries, last] = await Promise.all([getOrderHistory(date), getLastOrderInput(date).catch(() => null)]);
+      setHistory(entries);
+      setLastInput(last);
     } finally {
       setHistoryLoading(false);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!lastInput) return;
+    setUndoBusy(true);
+    setUndoMessage(null);
+    try {
+      const result = await undoLastOrderInput(lastInput.id);
+      if (result.ok) {
+        const s = result.summary;
+        const parts = [s.newItems > 0 ? `새 상품 ${s.newItems}건 취소` : '', s.modifiedItems > 0 ? `수정 ${s.modifiedItems}건 원래대로` : '', s.cancelledItems > 0 ? `취소 ${s.cancelledItems}건 복구` : ''].filter(Boolean);
+        setUndoMessage({ tone: 'ok', text: `마지막 입력을 되돌렸습니다${parts.length ? ` (${parts.join(', ')})` : ''}. 주문 목록에 반영됩니다.` });
+      } else {
+        setUndoMessage({ tone: 'error', text: result.error, conflicts: result.conflicts });
+      }
+    } catch {
+      setUndoMessage({ tone: 'error', text: '연결이 불안정해서 결과를 확인하지 못했습니다. 주문 목록을 확인한 뒤 다시 시도해 주세요.' });
+    } finally {
+      setUndoBusy(false);
+      setUndoConfirm(false);
+      await loadHistory(orderDate).catch(() => undefined);
     }
   };
 
@@ -421,6 +456,43 @@ export function NewOrderClient({
             {historyLoading && <Loader2 size={14} className="spin history-date-loading" />}
             <span className="history-count">{history.length}건</span>
           </div>
+          {canEdit && lastInput && (
+            <div className="undo-bar">
+              <div className="undo-bar-text">
+                <strong>마지막 입력</strong> {formatTime(lastInput.createdAt)}
+                {lastInput.createdByName ? ` · ${lastInput.createdByName}` : ''} — 새 상품 {lastInput.summary.newItems}건
+                {lastInput.summary.modifiedItems > 0 ? `, 수정 ${lastInput.summary.modifiedItems}건` : ''}
+                {lastInput.summary.cancelledItems > 0 ? `, 취소 ${lastInput.summary.cancelledItems}건` : ''}
+              </div>
+              {undoConfirm ? (
+                <div className="undo-bar-actions">
+                  <span className="undo-bar-warn">새 상품은 &ldquo;취소&rdquo; 상태가 되어 주문 목록에 취소로 남습니다. 되돌릴까요?</span>
+                  <button type="button" className="btn-primary" disabled={undoBusy} onClick={handleUndo}>
+                    {undoBusy ? <Loader2 size={14} className="spin" /> : null} 되돌리기
+                  </button>
+                  <button type="button" className="row-btn" disabled={undoBusy} onClick={() => setUndoConfirm(false)}>
+                    그만두기
+                  </button>
+                </div>
+              ) : (
+                <button type="button" className="row-btn" onClick={() => { setUndoMessage(null); setUndoConfirm(true); }}>
+                  마지막 입력 되돌리기
+                </button>
+              )}
+            </div>
+          )}
+          {undoMessage && (
+            <div className={undoMessage.tone === 'ok' ? 'undo-msg undo-msg-ok' : 'undo-msg undo-msg-error'}>
+              <p>{undoMessage.text}</p>
+              {undoMessage.conflicts && (
+                <ul>
+                  {undoMessage.conflicts.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           <div className="history-list">
             {history.length === 0 && !historyLoading && <p className="empty-text">이 날짜에 입력된 메시지가 없습니다.</p>}
             {history.map((h) => {
@@ -472,6 +544,13 @@ export function NewOrderClient({
           font-weight: 700;
           color: var(--foreground);
         }
+        .undo-bar { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--muted, #f8fafc); font-size: var(--fs-sm); }
+        .undo-bar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+        .undo-bar-warn { flex-basis: 100%; color: #b45309; font-weight: 600; }
+        .undo-msg { padding: 0.6rem 0.7rem; border-radius: var(--radius); font-size: var(--fs-sm); line-height: 1.5; }
+        .undo-msg ul { margin: 0.3rem 0 0 1.1rem; padding: 0; }
+        .undo-msg-ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+        .undo-msg-error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
         .history-count { margin-left: auto; font-size: var(--fs-xs); font-weight: 600; color: var(--muted-foreground); }
         .history-date-input {
           border: 1px solid var(--border);

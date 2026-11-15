@@ -15,6 +15,8 @@ import { repairFailedLine } from '@/lib/kakao-ai-repair';
 import { prepOf, type OrderRound } from '@/lib/orders';
 import { similarProductNames, suspiciousNameReason } from '@/lib/product-name-check';
 import { requirePermission } from '@/lib/permissions/access';
+import { emptyEffects, hasEffects, parseEffects, planUndo, summarizeEffects, type EffectsSummary, type InputEffects, type ItemBefore } from '@/lib/order-input-undo';
+import { missingTable } from '@/lib/supabase/missing-table';
 import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { isIsoDate, nonNegativeNumberError, textError } from '@/lib/validate';
 
@@ -394,7 +396,12 @@ async function registerNewProducts(supabase: Awaited<ReturnType<typeof createCli
 interface CommitState {
   createdDailyIds: string[];
   itemsSaved: boolean;
+  // 이번 입력이 한 일(되돌리기용 기록, order_input_batches). 새 줄·수정·취소·메모를 모으고 상품 저장이 끝난 뒤 한 번에 남긴다.
+  effects: InputEffects;
 }
+
+// 수정·취소하기 전의 값을 읽을 열(되돌릴 때 이 값으로 돌린다).
+const BEFORE_COLUMNS = 'id, product_name_raw, quantity, unit, secondary_weight_kg, size_request, size_spec, is_mulbong, has_aerator, mulbong_box_count, has_ice_pack, from_stock, change_status, needs_review, review_reason, unshipped_quantity';
 
 // itemsSaved: 새 상품 줄은 이미 저장된 뒤의 실패다(같은 내용을 다시 확정하면 새 줄이 중복된다).
 export type CommitResult = { ok: true } | { ok: false; error: string; itemsSaved: boolean };
@@ -402,7 +409,7 @@ export type CommitResult = { ok: true } | { ok: false; error: string; itemsSaved
 // 실패하면 던지지 않고 원인 문구를 값으로 돌려준다(운영에서는 던진 오류의 문구가 가려져 "Minified React error #441"로만 보였다).
 // 상품 줄이 저장되기 전에 실패하면 이번에 만든 업체 카드를 지워서 "고객사만 남은" 반쪽 상태를 만들지 않는다(2026-11-15).
 export async function commitOrderLines(orderDate: string, round: OrderRound, decisions: LineDecision[], rawText?: string): Promise<CommitResult> {
-  const state: CommitState = { createdDailyIds: [], itemsSaved: false };
+  const state: CommitState = { createdDailyIds: [], itemsSaved: false, effects: emptyEffects() };
   try {
     await commitOrderLinesInto(state, orderDate, round, decisions, rawText);
     return { ok: true };
@@ -454,6 +461,45 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
     .filter((d) => d.kind === 'cancel_line' && d.existingOrderItemId)
     .map((d) => d.existingOrderItemId as string);
   const lines = active.filter((d) => d.kind !== 'cancel_line');
+
+  // 수정·취소할 줄의 이전 값을 먼저 읽어 둔다(되돌리기용). 아무것도 바꾸기 전에 읽으므로 읽지 못하면 여기서 멈춘다.
+  const updateIds = lines.filter((d) => d.kind === 'update_line' && d.existingOrderItemId).map((d) => d.existingOrderItemId as string);
+  const touchedIds = [...new Set([...updateIds, ...cancelIds])];
+  const beforeById = new Map<string, ItemBefore & { product_name_raw: string }>();
+  if (touchedIds.length > 0) {
+    const { data: beforeRows, error: beforeError } = await supabase.from('order_items').select(BEFORE_COLUMNS).in('id', touchedIds);
+    if (beforeError) throw new Error(`수정할 상품의 이전 값을 읽지 못했습니다: ${beforeError.message}`);
+    for (const r of beforeRows ?? []) {
+      beforeById.set(r.id, {
+        product_name_raw: r.product_name_raw,
+        quantity: Number(r.quantity),
+        unit: r.unit,
+        secondary_weight_kg: r.secondary_weight_kg == null ? null : Number(r.secondary_weight_kg),
+        size_request: r.size_request,
+        size_spec: r.size_spec,
+        is_mulbong: r.is_mulbong,
+        has_aerator: r.has_aerator,
+        mulbong_box_count: r.mulbong_box_count == null ? null : Number(r.mulbong_box_count),
+        has_ice_pack: r.has_ice_pack,
+        from_stock: r.from_stock,
+        change_status: r.change_status,
+        needs_review: r.needs_review,
+        review_reason: r.review_reason,
+        unshipped_quantity: Number(r.unshipped_quantity ?? 0),
+      });
+    }
+  }
+  const recordChange = (id: string, kind: 'modified' | 'cancelled', after: { quantity: number; unit: string }) => {
+    const before = beforeById.get(id);
+    if (!before || state.effects.changedItems.some((c) => c.id === id)) return;
+    if (kind === 'cancelled' && before.change_status === 'cancelled') return; // 이미 취소된 줄은 되돌릴 것이 없다
+    const { product_name_raw: productName, ...rest } = before;
+    state.effects.changedItems.push({ id, kind, productName, before: rest, after });
+  };
+  for (const id of cancelIds) {
+    const before = beforeById.get(id);
+    if (before) recordChange(id, 'cancelled', { quantity: before.quantity, unit: before.unit });
+  }
 
   const cancelPromise = cancelIds.length
     ? supabase.from('order_items').update({ change_status: 'cancelled' }).in('id', cancelIds)
@@ -555,6 +601,7 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
     const { product } = decision;
     const existingId = decision.existingOrderItemId; // 나중에 실행하는 함수 안에서도 null이 아님을 유지하려고 값으로 꺼낸다
     if (decision.kind === 'update_line' && existingId) {
+      recordChange(existingId, 'modified', { quantity: product.quantity, unit: product.unit });
       // 주문 수량이 미출고 수량보다 작아지면 미출고 수량도 맞춘다(필터가 맞을 때만 실행되는 조건부 갱신).
       updates.push(
         () => Promise.resolve(
@@ -592,6 +639,15 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
     }
   }
 
+  if (memoByDaily.size > 0) {
+    const { data: memoRows, error: memoError } = await supabase.from('daily_businesses').select('id, memo').in('id', [...memoByDaily.keys()]);
+    if (memoError) throw new Error(`메모의 이전 값을 읽지 못했습니다: ${memoError.message}`);
+    const beforeMemo = new Map((memoRows ?? []).map((r) => [r.id, r.memo]));
+    for (const [dailyBusinessId, memo] of memoByDaily) {
+      if (state.createdDailyIds.includes(dailyBusinessId)) continue; // 이번 입력이 만든 카드의 메모는 되돌릴 이전 값이 없다
+      state.effects.memos.push({ dailyBusinessId, before: beforeMemo.get(dailyBusinessId) ?? null, after: memo });
+    }
+  }
   for (const [dailyBusinessId, memo] of memoByDaily) {
     updates.push(() => Promise.resolve(supabase.from('daily_businesses').update({ memo }).eq('id', dailyBusinessId)));
   }
@@ -621,8 +677,11 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
   const newRows = newRowGroups.flat();
   if (newRows.length > 0) {
     // 줄마다 열 조합이 달라도 빠진 열은 NULL이 아니라 DB 기본값을 쓰게 한다(newOrderItemRow가 같은 열을 주지만 이중으로 막는다).
-    const { error } = await supabase.from('order_items').insert(newRows, { defaultToNull: false });
+    const { data: inserted, error } = await supabase.from('order_items').insert(newRows, { defaultToNull: false }).select('id, daily_business_id, product_name_raw, quantity, unit');
     if (error) throw new Error(`상품 저장 실패: ${error.message}`);
+    for (const r of inserted ?? []) {
+      state.effects.createdItems.push({ id: r.id, dailyBusinessId: r.daily_business_id, productName: r.product_name_raw, quantity: Number(r.quantity), unit: r.unit });
+    }
   }
   state.itemsSaved = true;
   const productNames = [...new Set(resolved.map((r) => r.decision.product.productName))];
@@ -634,6 +693,14 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
     await registerNewProducts(supabase, productNames);
   } catch (e) {
     partialError ??= e instanceof Error ? e.message : String(e);
+  }
+
+  // 되돌리기용 기록(이 입력이 한 일). 마이그레이션 0066 전이거나 실패해도 저장된 주문은 그대로 두고 되돌리기만 못 한다.
+  if (hasEffects(state.effects)) {
+    const { error } = await supabase
+      .from('order_input_batches')
+      .insert({ order_date: orderDate, round, raw_text: rawText ?? null, effects: { ...state.effects, createdCardIds: state.createdDailyIds }, created_by: userId });
+    if (error && !missingTable(error.message)) console.error('[commitOrderLines] order_input_batches insert failed', error.message);
   }
 
   // 메시지 기록은 주문이 모두 저장된 뒤에 남긴다. 기록은 보관용이라 실패해도 저장된 주문을 되돌리거나 다시 입력하게 하지 않는다.
@@ -649,4 +716,130 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
   revalidatePath('/products');
 
   if (partialError) throw new Error(`주문 반영 중 일부 저장 실패: ${partialError}`);
+}
+
+// ─── 마지막 입력 되돌리기 ──────────────────────────────────────────────────
+export interface LastOrderInput {
+  id: string;
+  createdAt: string;
+  createdByName: string | null;
+  round: OrderRound;
+  summary: EffectsSummary;
+}
+
+// 그 날짜에서 아직 되돌리지 않은 가장 최근 입력(마지막 입력만 되돌릴 수 있다). 기록 테이블이 없거나(마이그레이션 0066 전) 읽지 못하면 null.
+export async function getLastOrderInput(orderDate: string): Promise<LastOrderInput | null> {
+  await requirePermission('orders:view');
+  if (!isIsoDate(orderDate)) return null;
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('order_input_batches')
+    .select('id, round, effects, created_at, created_by')
+    .eq('order_date', orderDate)
+    .is('undone_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    if (!missingTable(error.message)) console.error('[getLastOrderInput]', error.message);
+    return null;
+  }
+  const effects = data ? parseEffects(data.effects) : null;
+  if (!data || !effects) return null;
+  let createdByName: string | null = null;
+  if (data.created_by) {
+    const { data: profile } = await supabase.from('profiles').select('display_name').eq('id', data.created_by).maybeSingle();
+    createdByName = profile?.display_name ?? null;
+  }
+  return { id: data.id, createdAt: data.created_at, createdByName, round: data.round === 2 ? 2 : 1, summary: summarizeEffects(effects) };
+}
+
+export type UndoResult = { ok: true; summary: EffectsSummary } | { ok: false; error: string; conflicts?: string[] };
+
+// 마지막 입력을 되돌린다: 새로 만든 상품 줄은 "취소" 상태로, 수정·취소한 줄은 이전 값으로. 그 뒤에 바뀐 줄이 있으면 아무것도 바꾸지 않고 알린다.
+export async function undoLastOrderInput(batchId: string): Promise<UndoResult> {
+  const access = await requirePermission('orders:edit');
+  const supabase = await createClient();
+  try {
+    const { data: batch, error: batchError } = await supabase.from('order_input_batches').select('id, order_date, effects, undone_at').eq('id', batchId).maybeSingle();
+    if (batchError) return { ok: false, error: `입력 기록을 읽지 못했습니다: ${batchError.message}` };
+    if (!batch) return { ok: false, error: '입력 기록을 찾을 수 없습니다. 화면을 새로고침해 주세요.' };
+    if (batch.undone_at) return { ok: false, error: '이미 되돌린 입력입니다. 화면을 새로고침해 주세요.' };
+    const effects = parseEffects(batch.effects);
+    if (!effects) return { ok: false, error: '이 입력의 기록 형식을 읽을 수 없어 되돌릴 수 없습니다.' };
+
+    const settings = await loadAppSettings(supabase);
+    const dateError = editableDateError(batch.order_date, settings.allowPastOrderEdit, { allowTomorrow: true });
+    if (dateError) return { ok: false, error: dateError };
+
+    // 마지막 입력만 되돌린다: 이 날짜에서 아직 되돌리지 않은 더 최근 입력이 있으면 그것부터 되돌려야 한다.
+    const { data: latest, error: latestError } = await supabase
+      .from('order_input_batches')
+      .select('id')
+      .eq('order_date', batch.order_date)
+      .is('undone_at', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestError) return { ok: false, error: `최근 입력을 확인하지 못했습니다: ${latestError.message}` };
+    if (latest?.id !== batch.id) return { ok: false, error: '이 입력보다 나중에 입력한 것이 있습니다. 마지막 입력만 되돌릴 수 있습니다. 화면을 새로고침해 주세요.' };
+
+    const itemIds = [...new Set([...effects.createdItems.map((c) => c.id), ...effects.changedItems.map((c) => c.id)])];
+    const dailyIds = [...new Set(effects.memos.map((m) => m.dailyBusinessId))];
+    const [itemsResult, memosResult] = await Promise.all([
+      itemIds.length ? supabase.from('order_items').select('id, product_name_raw, quantity, unit, change_status, is_packed, unshipped_quantity').in('id', itemIds) : Promise.resolve({ data: [], error: null }),
+      dailyIds.length ? supabase.from('daily_businesses').select('id, memo').in('id', dailyIds) : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (itemsResult.error) return { ok: false, error: `상품을 읽지 못했습니다: ${itemsResult.error.message}` };
+    if (memosResult.error) return { ok: false, error: `메모를 읽지 못했습니다: ${memosResult.error.message}` };
+    const currentItems = new Map((itemsResult.data ?? []).map((r) => [r.id, { id: r.id, product_name_raw: r.product_name_raw, quantity: Number(r.quantity), unit: r.unit, change_status: r.change_status, is_packed: r.is_packed, unshipped_quantity: Number(r.unshipped_quantity ?? 0) }]));
+    const currentMemos = new Map((memosResult.data ?? []).map((r) => [r.id, { dailyBusinessId: r.id, memo: r.memo }]));
+
+    const plan = planUndo(effects, currentItems, currentMemos);
+    if (plan.conflicts.length > 0) {
+      return { ok: false, error: '그 뒤에 바뀐 상품이 있어 되돌리지 않았습니다. 아래 상품은 주문 목록에서 직접 고쳐 주세요.', conflicts: plan.conflicts };
+    }
+
+    // 실행: 모두 같은 결과로 다시 해도 되는 갱신이라, 중간에 실패해도 다시 누르면 이어서 끝난다.
+    if (plan.cancelItemIds.length > 0) {
+      const { error } = await supabase.from('order_items').update({ change_status: 'cancelled' }).in('id', plan.cancelItemIds);
+      if (error) return { ok: false, error: `새 상품을 취소하지 못했습니다: ${error.message}` };
+    }
+    for (const r of plan.restoreItems) {
+      const { error } = await supabase
+        .from('order_items')
+        .update({
+          quantity: r.before.quantity,
+          unit: r.before.unit,
+          secondary_weight_kg: r.before.secondary_weight_kg,
+          size_request: r.before.size_request,
+          size_spec: r.before.size_spec as never,
+          is_mulbong: r.before.is_mulbong,
+          has_aerator: r.before.has_aerator,
+          mulbong_box_count: r.before.mulbong_box_count,
+          has_ice_pack: r.before.has_ice_pack,
+          from_stock: r.before.from_stock,
+          change_status: r.before.change_status as 'none' | 'new' | 'modified' | 'cancelled',
+          needs_review: r.before.needs_review,
+          review_reason: r.before.review_reason,
+          unshipped_quantity: r.before.unshipped_quantity,
+        })
+        .eq('id', r.id);
+      if (error) return { ok: false, error: `상품을 이전 값으로 돌리지 못했습니다(다시 누르면 이어서 합니다): ${error.message}` };
+    }
+    for (const m of plan.restoreMemos) {
+      const { error } = await supabase.from('daily_businesses').update({ memo: m.memo }).eq('id', m.dailyBusinessId);
+      if (error) return { ok: false, error: `메모를 이전 값으로 돌리지 못했습니다(다시 누르면 이어서 합니다): ${error.message}` };
+    }
+
+    const { error: markError } = await supabase.from('order_input_batches').update({ undone_at: new Date().toISOString(), undone_by: access.userId }).eq('id', batch.id).is('undone_at', null);
+    if (markError) return { ok: false, error: `되돌림 표시를 남기지 못했습니다(다시 누르면 이어서 합니다): ${markError.message}` };
+
+    revalidatePath('/dashboard');
+    return { ok: true, summary: summarizeEffects(effects) };
+  } catch (error) {
+    if (isFrameworkSignal(error)) throw error;
+    console.error('[undoLastOrderInput] failed', error);
+    return { ok: false, error: '되돌리는 중 오류가 났습니다. 주문 목록을 확인하고 다시 시도해 주세요.' };
+  }
 }

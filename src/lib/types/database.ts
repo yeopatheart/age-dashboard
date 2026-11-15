@@ -269,6 +269,18 @@ type PackingBoxItem = {
   needs_mulbong: boolean;
 };
 
+type OrderInputBatch = {
+  id: string;
+  order_date: string;
+  round: number;
+  raw_text: string | null;
+  effects: unknown; // src/lib/order-input-undo.ts의 InputEffects (0066)
+  created_by: string | null;
+  created_at: string;
+  undone_at: string | null;
+  undone_by: string | null;
+};
+
 type KakaoMessageLog = {
   id: string;
   order_date: string;
@@ -520,6 +532,18 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+        }
+      >;
+      order_input_batches: TableDef<
+        OrderInputBatch,
+        Pick<OrderInputBatch, "order_date" | "effects"> & {
+          id?: string;
+          round?: number;
+          raw_text?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          undone_at?: string | null;
+          undone_by?: string | null;
         }
       >;
       kakao_message_log: TableDef<
