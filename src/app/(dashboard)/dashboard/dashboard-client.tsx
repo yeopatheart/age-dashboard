@@ -2077,7 +2077,7 @@ export function DashboardClient({
                   >
                     {(handle) => (
                     <>
-                    <div className="border-r border-slate-100 px-2 flex items-center justify-center text-xs font-bold text-slate-400 bg-slate-50">
+                    <div className="border-r border-slate-100 px-2 flex items-center justify-center text-xs font-bold whitespace-nowrap text-slate-400 bg-slate-50">
                       {handle ? (
                         <div
                           ref={handle.ref}
