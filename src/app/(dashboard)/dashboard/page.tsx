@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import type { OrderItem, OrderRow } from '@/lib/orders';
-import { findChangedAfterPacking } from '@/lib/packing/server';
+import { findChangedAfterPackingIgnoringRenames } from '@/lib/packing/server';
 import { normalizeMergeGroups } from '@/lib/box-merge';
 import { boxStatesOf, type LabelRow } from '@/lib/overview';
 import { DashboardClient } from './dashboard-client';
@@ -138,7 +138,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     list.push({ id: r.id, name: r.product_name_raw, unit: r.unit, quantity, mulbongFlag: r.is_mulbong });
     liveItemsByDaily.set(r.daily_business_id, list);
   }
-  const changedAfterPacking = findChangedAfterPacking(
+  // 상품 이름만 고친 업체는 박스를 다시 볼 필요가 없으므로 경고에서 뺀다.
+  const changedAfterPacking = await findChangedAfterPackingIgnoringRenames(
+    supabase,
     dailyBusinessIds.map((id) => ({ dailyBusinessId: id, items: liveItemsByDaily.get(id) ?? [] })),
     packingRecordRows ?? [],
     recommendationRows ?? [],
