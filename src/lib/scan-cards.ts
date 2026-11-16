@@ -7,6 +7,7 @@ import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { packageCounts } from '@/lib/scan-share-text';
 import { cardBoxes, loadSubmittedBoxCounts } from '@/lib/scan-boxes';
+import { cancelledCardIds } from '@/lib/card-cancelled';
 
 export async function loadScanCards(supabase: SupabaseClient<Database>, orderDate: string): Promise<ScanCard[]> {
   const [{ data: dailies, error }, { data: businesses }, { data: terminals }] = await Promise.all([
@@ -21,6 +22,9 @@ export async function loadScanCards(supabase: SupabaseClient<Database>, orderDat
     ? await selectAll((from, to) => supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyIds).order('id').range(from, to), '라벨 조회 실패: ')
     : { data: [] };
 
+  // 라벨을 낸 뒤 주문이 모두 취소된 업체는 스캔해도 상차되지 않으므로(scanBarcode) 현황·퀵기사 글의 "미상차"에 올리지 않는다. 이미 상차된 박스가 있으면 실제로 실린 것이라 남긴다.
+  const labeledIds = [...new Set((labels ?? []).map((l) => l.daily_business_id))];
+  const cancelled = await cancelledCardIds(supabase, labeledIds);
   const submittedBoxes = await loadSubmittedBoxCounts(supabase, dailyIds); // 전체 박스 수는 제출한 박스 수 기준이다(라벨 행 수가 아니라)
   const businessName = new Map((businesses ?? []).map((b) => [b.id, b.name]));
   const terminalName = new Map((terminals ?? []).map((t) => [t.id, t.name]));
@@ -28,6 +32,7 @@ export async function loadScanCards(supabase: SupabaseClient<Database>, orderDat
   return dailyRows.flatMap((d) => {
     const own = (labels ?? []).filter((l) => l.daily_business_id === d.id);
     if (own.length === 0) return []; // 라벨을 출력한 적 없는 업체는 상차 현황에 올리지 않는다
+    if (cancelled.has(d.id) && !own.some((l) => l.loaded_at)) return []; // 주문이 모두 취소됐고 상차된 박스도 없는 업체
     const boxes = cardBoxes(own, submittedBoxes.get(d.id) ?? null);
     return [
       {

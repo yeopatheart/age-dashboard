@@ -10,6 +10,8 @@ import { printableSeqError } from '@/lib/packing/box-rules';
 import { unprintedSeqs } from '@/lib/label-status';
 import { cancelledCardIds } from '@/lib/card-cancelled';
 import { isIsoDate } from '@/lib/validate';
+import { editableDateError } from '@/lib/order-date';
+import { loadAppSettings } from '@/lib/settings-server';
 import { missingTable } from '@/lib/supabase/missing-table';
 import { LABEL_ACTIVE_DESIGN_KEY, LABEL_MARGIN_KEY, LABEL_ROTATE_KEY, clampLabelMargin, loadCardLabelBase, loadCardLabels, loadLabelConfirmMode, loadLabelDesigns, loadLabelRotate, loadLabelTemplate, loadPendingLabelSeqs, loadSubmittedBoxTypes, type CardLabelBase, type CardLabelInfo, type LabelDesign } from '@/lib/labels/server';
 import { LABEL_CONFIRM_KEY, normalizeConfirmMode, type LabelConfirmMode, type PrintJobItem } from '@/lib/labels/print-job';
@@ -252,11 +254,24 @@ async function createPrintJob(supabase: Supabase, userId: string | null, items: 
   return { error: null, jobId: data.id };
 }
 
+// 라벨 출력·합포장 저장의 날짜 규칙: 박스 할당과 같다(내일 주문까지 미리, 과거는 설정이 켜졌을 때만). 서버에서 강제한다. 과거 날짜의 "다시 출력"도 설정이 꺼져 있으면 막힌다(과거 라벨은 상차 스캔이 받지 않는다).
+async function labelDateError(supabase: Awaited<ReturnType<typeof createClient>>, orderDate: string): Promise<string | null> {
+  return editableDateError(orderDate, (await loadAppSettings(supabase)).allowPastOrderEdit, { allowTomorrow: true });
+}
+
+async function dailyLabelDateError(supabase: Awaited<ReturnType<typeof createClient>>, dailyBusinessId: string): Promise<string | null> {
+  const { data } = await supabase.from('daily_businesses').select('order_date').eq('id', dailyBusinessId).maybeSingle();
+  if (!data) return '업체 주문을 찾지 못했습니다.';
+  return labelDateError(supabase, data.order_date);
+}
+
 export async function prepareLabelPrint(input: { dailyBusinessId: string; seqs: number[] }): Promise<LabelPrintPayload> {
   const access = await requirePermission('packing:print');
   const fail = (error: string): LabelPrintPayload => ({ error, template: null, labels: [], infos: [], rotated: false, jobId: null, pendingSeqs: [] });
   const supabase = await createClient();
   const userId = access.userId;
+  const dateProblem = await dailyLabelDateError(supabase, input.dailyBusinessId);
+  if (dateProblem) return fail(dateProblem);
   const [template, rotated, mode] = await Promise.all([loadLabelTemplate(supabase), loadLabelRotate(supabase), loadLabelConfirmMode(supabase)]);
   const result = await prepareCardLabels(supabase, userId, input.dailyBusinessId, input.seqs, template, mode);
   if (result.error !== null) return fail(result.error);
@@ -292,6 +307,8 @@ export async function prepareBatchLabelPrint(orderDate: string): Promise<BatchLa
   if (!isIsoDate(orderDate)) return fail('날짜 형식이 올바르지 않습니다.');
   const supabase = await createClient();
   const userId = access.userId;
+  const dateProblem = await labelDateError(supabase, orderDate);
+  if (dateProblem) return fail(dateProblem);
 
   const { data: dailies, error: dailyError } = await supabase
     .from('daily_businesses')
@@ -359,6 +376,8 @@ export async function saveMergeGroups(dailyBusinessId: string, groups: MergeGrou
   await requirePermission('packing:submit');
   const normalized = normalizeMergeGroups(groups);
   const supabase = await createClient();
+  const dateProblem = await dailyLabelDateError(supabase, dailyBusinessId);
+  if (dateProblem) return { error: dateProblem, groups: normalized };
   const { error } = await supabase.from('daily_businesses').update({ merge_groups: normalized }).eq('id', dailyBusinessId);
   if (error) return { error: error.message, groups: normalized };
   revalidatePath('/packing-log');

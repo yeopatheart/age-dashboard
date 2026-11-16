@@ -13,6 +13,7 @@ import { DashboardMobile } from './dashboard-mobile';
 import { DashboardSound } from './dashboard-sound';
 import { InkLayer, type InkItem } from './ink-layer';
 import { ProductCustomersPopover } from './product-customers-popover';
+import { orderDeleteMessage } from '@/lib/order-delete-warning';
 import { CustomerOrderPanel } from './customer-order-panel';
 import { BoxAssignModal } from './box-assign-modal';
 import { hiddenRowCount, rowLayout } from '@/lib/monitor-rows';
@@ -33,6 +34,7 @@ import {
   updateOrder,
   renameDailyBusiness,
   deleteDailyBusiness,
+  getOrderDeleteImpact,
   addOrderItemManual,
   updateOrderItemManual,
   cancelOrderItem,
@@ -765,7 +767,7 @@ function ItemFormModal({
 function ConfirmModal({ message, onConfirm, onClose }: { message: string; onConfirm: () => void; onClose: () => void }) {
   return (
     <Modal title="삭제 확인" onClose={onClose}>
-      <p className="text-sm text-slate-700 mb-6">{message}</p>
+      <p className="text-sm text-slate-700 mb-6 whitespace-pre-line">{message}</p>
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors">취소</button>
         <button
@@ -880,7 +882,18 @@ export function DashboardClient({
   const [addItemModal, setAddItemModal] = useState<{ row: OrderRow; prefillProductName?: string; prefillUnit?: string } | null>(null);
   const [editItemModal, setEditItemModal] = useState<OrderItem | null>(null);
   const [unshippedModal, setUnshippedModal] = useState<OrderItem | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ type: 'order' | 'item'; dailyBusinessId?: string; itemId?: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ type: 'order' | 'item'; dailyBusinessId?: string; itemId?: string; message?: string } | null>(null);
+
+  // 주문 삭제는 박스 기록·라벨·상차 기록까지 함께 지우므로, 확인창에 지워질 기록을 보여 주려고 먼저 조회한다. 조회에 실패해도 삭제를 막지는 않고 "확인하지 못했다"고 알린다.
+  const askDeleteOrder = async (dailyBusinessId: string) => {
+    let impact = null;
+    try {
+      impact = (await getOrderDeleteImpact(dailyBusinessId)).impact;
+    } catch {
+      impact = null;
+    }
+    setConfirmDelete({ type: 'order', dailyBusinessId, message: orderDeleteMessage(impact) });
+  };
 
   const terminalColors: TerminalColorMap = Object.fromEntries(allTerminals.map((t) => [t.name, { fill: t.fill_color, border: t.border_color }]));
   // 택배·직배송처럼 "별도 주문"으로 표시한 터미널은 기본 주문표에서 빼고, 별도 주문 보기에서만 모아 본다.
@@ -1485,7 +1498,7 @@ export function DashboardClient({
           onClose={closeCustomerPanel}
           onAddItem={fromPanel(() => setAddItemModal({ row: panelRow }))}
           onEditOrder={fromPanel(() => setEditOrderModal(panelRow))}
-          onDeleteOrder={fromPanel(() => setConfirmDelete({ type: 'order', dailyBusinessId: panelRow.dailyBusinessId }))}
+          onDeleteOrder={fromPanel(() => void askDeleteOrder(panelRow.dailyBusinessId))}
           onEditItem={(item) => fromPanel(() => setEditItemModal(item))()}
           onUnshipped={(item) => fromPanel(() => setUnshippedModal(item))()}
           onCancelItem={(item) => void handleCancelItem(item)}
@@ -1549,7 +1562,7 @@ export function DashboardClient({
         <ConfirmModal
           message={
             confirmDelete.type === 'order'
-              ? '이 날짜의 주문을 완전히 삭제하시겠습니까? 등록된 상품도 모두 함께 삭제됩니다. (고객사 관리의 고객사는 삭제되지 않습니다.)'
+              ? confirmDelete.message ?? orderDeleteMessage(null)
               : '이 상품을 주문에서 삭제하시겠습니까? 취소 상태로만 변경하려면 "×" 버튼을 이용하세요.'
           }
           onConfirm={async () => {
@@ -1588,7 +1601,7 @@ export function DashboardClient({
           onCancelItem={(item) => void handleCancelItem(item)}
           onDeleteItem={(item) => setConfirmDelete({ type: 'item', itemId: item.id })}
           onEditOrder={(row) => setEditOrderModal(row)}
-          onDeleteOrder={(row) => setConfirmDelete({ type: 'order', dailyBusinessId: row.dailyBusinessId })}
+          onDeleteOrder={(row) => void askDeleteOrder(row.dailyBusinessId)}
           onReorder={handleMobileReorder}
           onAddOrder={() => setAddOrderModal(true)}
         />

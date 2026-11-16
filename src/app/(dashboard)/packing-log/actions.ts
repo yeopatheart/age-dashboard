@@ -185,7 +185,9 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   const weightUpdates = Object.entries(input.weights)
     .filter(([id]) => itemById.has(id))
     .map(([id, kg]) => supabase.from('order_items').update({ measured_weight_kg: kg }).eq('id', id));
-  await Promise.all(weightUpdates);
+  const weightResults = await Promise.all(weightUpdates);
+  const weightError = weightResults.find((r) => r.error)?.error;
+  if (weightError) return rollback(weightError.message);
 
   // daily_businesses.total_boxes(운영 시간 리포트의 박스 수 등이 읽는다)를 제출한 박스 수에 맞춰 둔다.
   // 합포장은 화면에서 건드렸을 때만 함께 저장한다(박스 수를 넘는 번호는 뺀다).

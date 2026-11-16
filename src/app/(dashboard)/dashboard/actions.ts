@@ -13,6 +13,8 @@ import { missingTable, migrationsFor } from '@/lib/supabase/missing-table';
 import { parseBoardEnv } from '@/lib/board-env';
 import { isIsoDate, nonNegativeNumberError, positiveNumberError, textError } from '@/lib/validate';
 import { fetchAll } from '@/lib/supabase/fetch-all';
+import { loadSubmittedBoxCounts } from '@/lib/scan-boxes';
+import type { OrderDeleteImpact } from '@/lib/order-delete-warning';
 import type { Database } from '@/lib/types/database';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -158,6 +160,25 @@ export async function updateOrder(dailyBusinessId: string, terminalId: string | 
   revalidatePath('/dashboard');
   revalidatePath('/packing-log');
   return { error: null };
+}
+
+// 주문 삭제 확인창에 보여 줄 "함께 지워지는 기록": 제출한 박스 수, 발급된 라벨 수, 그중 상차 완료 수. 읽기만 한다.
+export async function getOrderDeleteImpact(dailyBusinessId: string): Promise<{ impact: OrderDeleteImpact | null; error: string | null }> {
+  await requirePermission('dashboard:delete');
+  const supabase = await createClient();
+  try {
+    const [boxCounts, { data: labels, error }] = await Promise.all([
+      loadSubmittedBoxCounts(supabase, [dailyBusinessId]),
+      supabase.from('box_labels').select('loaded_at').eq('daily_business_id', dailyBusinessId),
+    ]);
+    if (error) return { impact: null, error: error.message };
+    return {
+      impact: { submittedBoxes: boxCounts.get(dailyBusinessId) ?? 0, labels: (labels ?? []).length, loadedLabels: (labels ?? []).filter((l) => l.loaded_at).length },
+      error: null,
+    };
+  } catch (e) {
+    return { impact: null, error: e instanceof Error ? e.message : '박스·라벨 기록을 확인하지 못했습니다.' };
+  }
 }
 
 // order_items는 daily_businesses에 on delete cascade로 걸려있어(0003) 함께 삭제된다.

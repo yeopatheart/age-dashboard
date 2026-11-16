@@ -32,6 +32,7 @@ interface Banner {
   count?: number; // 이번 접속에서 상차한 박스 수(성공했을 때만)
   progress?: { loaded: number; total: number }; // 이 업체의 상차 현황(박스를 찾았을 때만)
   done?: boolean; // 방금 이 업체의 마지막 박스까지 상차됨
+  warning?: string; // 상차는 됐지만 확인이 필요한 경우의 안내(박스 구성을 정한 뒤 주문이 바뀐 박스)
 }
 
 // 최근 스캔 목록의 한 줄. 카메라가 켜져 있을 때는 맨 위 줄에서 방금 스캔을 되돌린다(labelId·box·seq는 되돌리기용).
@@ -117,7 +118,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       let next: Banner;
       if (result.status === 'loaded') {
         const b = result.box;
-        next = { tone: 'ok', title: `${b.business} ${b.boxNo}번`, detail: `${b.terminal || '터미널 없음'}${b.mergedSeqs.length ? ` · 합포장 ${b.mergedSeqs.join('·')}번 함께 상차` : ''}`, labelId: b.labelId, box: { business: b.business, boxNo: b.boxNo, mergedSeqs: b.mergedSeqs }, progress: { loaded: b.loadedCount, total: b.totalCount }, done: b.loadedCount >= b.totalCount };
+        next = { tone: 'ok', title: `${b.business} ${b.boxNo}번`, detail: `${b.terminal || '터미널 없음'}${b.mergedSeqs.length ? ` · 합포장 ${b.mergedSeqs.join('·')}번 함께 상차` : ''}`, labelId: b.labelId, box: { business: b.business, boxNo: b.boxNo, mergedSeqs: b.mergedSeqs }, progress: { loaded: b.loadedCount, total: b.totalCount }, done: b.loadedCount >= b.totalCount, warning: result.packingChanged ? '⚠ 박스를 정한 뒤 주문이 바뀐 고객입니다. 박스 내용을 확인하세요' : undefined };
       } else if (result.status === 'duplicate') {
         const b = result.box;
         const at = b.loadedAt ? new Date(b.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
@@ -359,6 +360,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
                   <div className="sc-flash-text">
                     <div className="sc-title">{banner.title}</div>
                     {banner.done && <div className="sc-detail">이 업체 상차 완료</div>}
+                    {banner.warning && <div className="sc-detail">{banner.warning}</div>}
                   </div>
                   {banner.progress && <strong className="sc-flash-prog">{banner.progress.loaded}/{banner.progress.total}</strong>}
                 </div>
@@ -396,6 +398,7 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
               </div>
             )}
             <div className="sc-detail">{banner.detail}</div>
+            {banner.warning && <div className="sc-detail">{banner.warning}</div>}
             {banner.count !== undefined && <div className="sc-count">이번 접속 {banner.count}번째 상차</div>}
             {banner.labelId && canUndo && (
               <button className="sc-undo" onClick={() => void undo(banner)}><Undo2 size={16} /> {banner.tone === 'dup' ? (armedSeq === banner.seq ? '정말 취소할까요? 한 번 더 누르세요' : '상차를 취소할래요') : '잘못 스캔했어요 (되돌리기)'}</button>
