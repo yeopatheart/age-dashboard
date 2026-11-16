@@ -44,9 +44,9 @@ import {
   type ManualItemFields,
 } from './actions';
 
-// 행 높이 규칙은 src/lib/monitor-rows.ts(단계 40→36→32→30px, 예전 규칙 그대로).
+// 행 높이·모니터별 줄 수 규칙은 src/lib/monitor-rows.ts(주문 수와 무관하게 모니터 1이 37줄 고정, 75~80건은 40줄 고정 — 2026-11-17).
 const ROW_FIT_MAX_SHRINK = 6; // 하단 자투리에 한 행을 더 넣으려고 행을 줄일 수 있는 최대 높이(px)
-const INITIAL_ROW_CAPACITY = 30; // 측정 전(첫 렌더) 임시값
+const INITIAL_ROW_CAPACITY = 37; // 측정 전(첫 렌더) 임시값. 고정 줄 수(monitor-rows.ts FIXED_CAPACITY)와 같아야 첫 렌더에서 모니터 경계가 흔들리지 않는다
 const SEP_REF_VIEWPORT_H = 720; // 칠판의 창 높이(CSS px). 별도 주문 팝업의 쪽 나눔 기준
 
 // 헤더와 각 본문 행이 전부 독립된 flexbox였을 때는 같은 칸이라도 행마다 내용에 따라 폭이
@@ -1071,13 +1071,12 @@ export function DashboardClient({
     void document.fonts?.ready.then(measure);
   }, [terminalSignature]);
 
-  // 줄 높이·모니터별 줄 수는 예전 규칙 그대로(src/lib/monitor-rows.ts)다. 달라진 것은 availHeight가 기준 화면(board-stage)의 높이라서
-  // 어느 기기에서 열어도 칠판과 같은 줄이 같은 모니터에 나온다는 점이다. 모니터 2는 모니터 1이 가져간 줄 수 다음부터 시작한다.
-  const layoutRows = rowLayout(rows.length, availHeight, INITIAL_ROW_CAPACITY, ROW_FIT_MAX_SHRINK);
+  // 줄 높이·모니터별 줄 수는 src/lib/monitor-rows.ts가 정한다: 주문 수와 무관하게 모니터 1이 37줄(75~80건은 40줄) 고정이라 줄이 모니터를 옮기지 않는다(2026-11-17).
+  // availHeight는 기준 화면(board-stage)의 높이라서 어느 기기에서 열어도 칠판과 같은 줄이 같은 모니터에 나온다. 모니터 2는 모니터 1이 가져간 줄 수 다음부터 시작한다.
+  const layoutRows = rowLayout(rows.length, availHeight, INITIAL_ROW_CAPACITY, ROW_FIT_MAX_SHRINK, isSplitMode);
   const rowHeight = layoutRows.rowHeight;
   const ownCapacity = layoutRows.capacity;
-  // 주문이 40건을 넘어 줄이 30px 미만이면(2026-11-17: 51건 중 11건이 안 보이던 장애) 칸 여백·테두리 모서리·왼쪽 칸 글자를 줄여 상품 글자가 최대한 남게 한다.
-  // 30px 이상(40건 이하)은 예전과 완전히 같다.
+  // 줄이 30px 미만이면(칠판 606px에서는 모니터 37줄 = 16px, 40줄 = 15px) 칸 여백·테두리 모서리·왼쪽 칸 글자를 줄여 상품 글자가 최대한 남게 한다.
   const dense = rowHeight < 30;
   const nameFontPx = dense ? Math.min(11, rowHeight - 7) : 12; // 업체명 글자 크기(열 폭 측정과 표시가 같은 값을 쓴다)
 
