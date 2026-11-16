@@ -6,10 +6,10 @@
 // - 목록 순서(sort_order)대로 센다: 끌어서 순서를 바꾸면 번호도 따라 바뀐다.
 // - 상품이 모두 취소된 카드도 목록에 보이는 한 센다(드문 경우라 따로 빼지 않는다).
 // - 1·2차는 목록에서 별개 줄이라 각각 센다.
-// - 별도 주문(택배·직배송 등)은 일반 주문과 따로 센다. 이 버전에서는 별도 주문을 발급 번호 그대로 보여 준다.
+// - 별도 주문(택배·직배송 등)은 일반 주문과 따로 세고 "별1, 별2…"로 보여 준다(발급 번호는 501부터라 화면에서는 쓰지 않는다, 2026-11-16 사용자 결정).
 export interface NumberedCard {
   id: string;
-  businessNumber: number; // 발급 번호(라벨·QR의 번호)
+  businessNumber: number; // 발급 번호(라벨·QR의 번호). 화면 번호에는 쓰지 않는다(호출하는 쪽이 번호가 없는 곳에서 대신 보여 주는 값)
   separate: boolean; // 별도 주문 터미널의 카드
 }
 
@@ -17,8 +17,9 @@ export interface NumberedCard {
 export function cardNumberLabels(cards: readonly NumberedCard[]): Map<string, string> {
   const labels = new Map<string, string>();
   let general = 0;
+  let separate = 0;
   for (const card of cards) {
-    labels.set(card.id, card.separate ? String(card.businessNumber) : String(++general));
+    labels.set(card.id, card.separate ? `별${++separate}` : String(++general));
   }
   return labels;
 }

@@ -205,7 +205,7 @@ export function OverviewClient({ orderDate, today, cards }: { orderDate: string;
         .ov-row { display: flex; flex-direction: column; gap: 0.5rem; border: 1px solid var(--border); border-radius: 12px; padding: 0.6rem 0.75rem; min-width: 0; }
         .ov-row-done { background: #f7fef9; border-color: #bbf7d0; }
         .ov-row-top { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
-        .ov-no { flex: none; width: 1.6rem; height: 1.6rem; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: var(--fs-xs); font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+        .ov-no { flex: none; min-width: 1.6rem; padding: 0 0.3rem; height: 1.6rem; border-radius: 999px; background: #f1f5f9; color: #475569; font-size: var(--fs-xs); font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
         .ov-name { flex: 1; display: flex; align-items: baseline; gap: 0.45rem; min-width: 0; }
         .ov-name strong { font-size: var(--fs-md); font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; line-height: 1.5; }
         .ov-name em { flex: none; font-style: normal; font-size: var(--fs-xs); font-weight: 800; color: #b45309; background: #fef3c7; border-radius: 999px; padding: 0.05rem 0.5rem; }
