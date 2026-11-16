@@ -7,21 +7,21 @@ import { useEffect } from 'react';
 const FIRST_RETRY_MS = 3_000;
 const AUTO_RETRY_MS = 10_000;
 
-export default function DashboardError({ error, unstable_retry }: { error: Error & { digest?: string }; unstable_retry: () => void }) {
+export default function DashboardError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
   useEffect(() => {
     // 첫 재시도는 3초 뒤(일시적 오류는 대개 그 안에 지나간다), 그 뒤로는 10초마다.
     let timer: ReturnType<typeof setTimeout>;
     let attempt = 0;
     const schedule = () => {
       timer = setTimeout(() => {
-        if (document.visibilityState === 'visible') unstable_retry();
+        if (document.visibilityState === 'visible') retry();
         attempt++;
         schedule();
       }, attempt === 0 ? FIRST_RETRY_MS : AUTO_RETRY_MS);
     };
     schedule();
     return () => clearTimeout(timer);
-  }, [unstable_retry]);
+  }, [retry]);
   return (
     <div role="alert" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '3rem 1rem', textAlign: 'center' }}>
       <h2 style={{ fontSize: '1.125rem', fontWeight: 800 }}>화면을 불러오지 못했습니다</h2>
@@ -31,7 +31,7 @@ export default function DashboardError({ error, unstable_retry }: { error: Error
       {error.digest && <code style={{ fontSize: '0.75rem', color: '#94a3b8' }}>오류 번호: {error.digest}</code>}
       <button
         type="button"
-        onClick={() => unstable_retry()}
+        onClick={() => retry()}
         style={{ padding: '0.5rem 1.25rem', borderRadius: 10, background: '#003057', color: '#fff', fontWeight: 700, fontSize: '0.875rem' }}
       >
         다시 시도

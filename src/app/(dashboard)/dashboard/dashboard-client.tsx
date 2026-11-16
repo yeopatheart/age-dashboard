@@ -905,6 +905,8 @@ export function DashboardClient({
   // 다른 쪽의 행도 화면 밖에 숨겨 둔 채 렌더해서 높이를 재고(펜 그림은 이 행들의 칸을 무시한다), 쪽마다 그림을 따로 저장한다(monitor s1·s2…).
   const [sepPage, setSepPage] = useState(0);
   const [sepHeights, setSepHeights] = useState<Record<string, number>>({});
+  // 가장 최근에 반영한 행 높이. 아래 측정이 "달라졌을 때만" 상태를 바꾸려고 상태와 따로 들고 있다.
+  const sepHeightsRef = useRef(sepHeights);
   const sepListRef = useRef<HTMLDivElement>(null);
   // 별도 주문 팝업의 쪽 나눔은 창 높이가 칠판(720px)보다 커도 칠판 높이로 계산한다: 큰 PC 창에서도 칠판과 같은 주문이 같은 쪽에 나온다(필기도 쪽마다 저장된다).
   // 칠판보다 낮은 창은 그 높이에 맞춘다(팝업이 창 밖으로 넘치지 않게).
@@ -955,10 +957,15 @@ export function DashboardClient({
       list.querySelectorAll<HTMLElement>('[data-sep-row]').forEach((el) => {
         next[el.dataset.sepRow as string] = Math.ceil(el.getBoundingClientRect().height);
       });
-      setSepHeights((prev) => {
-        const keys = Object.keys(next);
-        return keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k]) ? prev : next;
-      });
+      // 달라졌을 때만 상태를 바꾼다. 이 효과는 렌더마다 돌므로, 같은 값이어도 setState(함수)를 부르면 React가 "바뀔 수 있다"고 보고 다시 그린다.
+      // 펜으로 포장 완료를 올리는 동안(전환이 진행 중이라 React가 같은 값 확인을 건너뛴다) 그 재렌더가 끝없이 이어져
+      // "Maximum update depth exceeded"로 화면이 "화면을 불러오지 못했습니다"로 바뀌었다(2026-11-16 현장).
+      const prev = sepHeightsRef.current;
+      const keys = Object.keys(next);
+      if (!(keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k]))) {
+        sepHeightsRef.current = next;
+        setSepHeights(next);
+      }
       // 방금 잰 높이로 한 쪽에 다 들어가는지 본다. 안 들어가고 더 줄일 수 있으면 한 단계 더 촘촘하게(다음 렌더에서 다시 잰다).
       const heights = separateRows.map((r) => next[r.dailyBusinessId] ?? 56);
       if (packRows(heights, sepAvail, SEP_ROW_GAP).length > 1 && sepDensity < SEP_DENSITIES.length - 1) setSepFit({ key: sepFitKey, level: sepDensity + 1 });
