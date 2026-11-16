@@ -3,7 +3,7 @@ import '@/components/admin/admin.css';
 import { useMemo, useState } from 'react';
 import { RotateCcw, Settings as SettingsIcon } from 'lucide-react';
 import { AdminHeader, Toggle, useNotice } from '@/components/admin/admin-kit';
-import { DEFAULT_SETTINGS, type AppSettings } from '@/lib/app-settings';
+import { BOARD_INK_SNAPSHOT_MINUTES_MAX, BOARD_INK_SNAPSHOT_MINUTES_MIN, DEFAULT_SETTINGS, type AppSettings } from '@/lib/app-settings';
 import { shareTemplateError, type ScanShareTemplate } from '@/lib/scan-share-template';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { reapplySizeSpecs, saveSettings } from './actions';
@@ -23,6 +23,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
     unshippedReasons: initial.unshippedReasons.join(', '),
     companyName: initial.companyName,
     contactPhone: initial.contactPhone,
+    boardInkSnapshotMinutes: String(initial.boardInkSnapshotMinutes),
   });
   const [allowPast, setAllowPast] = useState(initial.allowPastOrderEdit);
   const [scanShare, setScanShare] = useState<ScanShareTemplate>(initial.scanShare);
@@ -43,6 +44,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       companyName: form.companyName.trim(),
       contactPhone: form.contactPhone.trim(),
       scanShare,
+      boardInkSnapshotMinutes: parseFloat(form.boardInkSnapshotMinutes),
     }),
     [form, allowPast, scanShare],
   );
@@ -59,6 +61,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const numbersValid = [draft.sizeTolerancePct, draft.earlyRangeKg, draft.perKgTolerancePct].every((n) => Number.isFinite(n) && n >= 0);
   const shareValid = shareTemplateError(scanShare) === null; // 모르는 변수 등이 있으면 저장 버튼을 막는다(이유는 카드에 표시)
+  const snapshotValid = Number.isInteger(draft.boardInkSnapshotMinutes) && draft.boardInkSnapshotMinutes >= BOARD_INK_SNAPSHOT_MINUTES_MIN && draft.boardInkSnapshotMinutes <= BOARD_INK_SNAPSHOT_MINUTES_MAX;
 
   const save = async () => {
     setBusy(true);
@@ -79,6 +82,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       unshippedReasons: DEFAULT_SETTINGS.unshippedReasons.join(', '),
       companyName: DEFAULT_SETTINGS.companyName,
       contactPhone: DEFAULT_SETTINGS.contactPhone,
+      boardInkSnapshotMinutes: String(DEFAULT_SETTINGS.boardInkSnapshotMinutes),
     });
     setAllowPast(DEFAULT_SETTINGS.allowPastOrderEdit);
     setScanShare(DEFAULT_SETTINGS.scanShare);
@@ -176,6 +180,16 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       <ScanShareCard value={scanShare} onChange={setScanShare} disabled={!canEdit} />
 
       <section className="st-card">
+        <h2 className="st-title">칠판 필기 백업</h2>
+        <p className="st-desc">칠판 필기가 지워져도 되찾을 수 있게, 필기를 이 간격으로 서버에 이력으로 남깁니다. 필기가 한 번에 크게 줄었을 때(지우개로 크게 쓸거나 전체 지우기)는 간격과 상관없이 직전 상태를 남깁니다. 이력은 7일 동안 보관됩니다. 저장하면 바로 적용됩니다.</p>
+        <label className="ak-field">
+          <span>이력을 남기는 간격 (분)</span>
+          <input className="ak-input" type="number" inputMode="numeric" min={BOARD_INK_SNAPSHOT_MINUTES_MIN} max={BOARD_INK_SNAPSHOT_MINUTES_MAX} step="5" value={form.boardInkSnapshotMinutes} onChange={set('boardInkSnapshotMinutes')} disabled={!canEdit} />
+          <small>{snapshotValid ? `${BOARD_INK_SNAPSHOT_MINUTES_MIN}~${BOARD_INK_SNAPSHOT_MINUTES_MAX}분. 짧을수록 되찾을 수 있는 시점이 촘촘해지지만 저장 공간을 더 씁니다. 기본 ${DEFAULT_SETTINGS.boardInkSnapshotMinutes}분.` : `${BOARD_INK_SNAPSHOT_MINUTES_MIN}~${BOARD_INK_SNAPSHOT_MINUTES_MAX} 사이의 정수(분)로 입력해 주세요.`}</small>
+        </label>
+      </section>
+
+      <section className="st-card">
         <h2 className="st-title">과거 날짜 편집</h2>
         <p className="st-desc">켜면 오늘 이전 날짜의 주문도 오늘과 똑같이 입력·수정·취소·삭제할 수 있고, 박스 할당도 고칠 수 있습니다. 주문 입력 화면에는 날짜 선택칸이 생깁니다. 미래 날짜는 항상 막힙니다.</p>
         <div className="st-row">
@@ -190,7 +204,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
         <span className="ak-spacer" />
         {error && <span className="ak-error">{error}</span>}
         {notice && <span className="ak-notice">{notice}</span>}
-        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !numbersValid || !shareValid}>저장</button>
+        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !numbersValid || !shareValid || !snapshotValid}>저장</button>
       </div>
 
       <style>{`
