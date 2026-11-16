@@ -16,6 +16,7 @@ import { ProductCustomersPopover } from './product-customers-popover';
 import { CustomerOrderPanel } from './customer-order-panel';
 import { BoxAssignModal } from './box-assign-modal';
 import { hiddenRowCount, rowLayout } from '@/lib/monitor-rows';
+import { cardNumberLabels } from '@/lib/card-number';
 import { BoardStage, type StageInfo } from './board-stage';
 import { BoardEnvReporter } from './board-env-reporter';
 import { packRows } from '@/lib/page-rows';
@@ -896,6 +897,8 @@ export function DashboardClient({
   const roundOf = (row: OrderRow): OrderRound | null => (splitBusinessIds.has(row.businessId) ? row.round : null);
   const separateRows = allRows.filter((r) => separateNames.has(r.terminal));
   const mainRows = allRows.filter((r) => !separateNames.has(r.terminal));
+  // 화면에 보이는 번호는 발급 번호가 아니라 목록 순서의 번호다(src/lib/card-number.ts). 끌어서 순서를 바꾸면 바로 따라 바뀐다.
+  const numberLabels = cardNumberLabels(allRows.map((r) => ({ id: r.dailyBusinessId, businessNumber: r.businessNumber, separate: separateNames.has(r.terminal) })));
   const rows = mainRows;
   const [separateOpen, setSeparateOpen] = useState(false);
   // 별도 주문 팝업은 스크롤 없이 주문 목록의 모니터 1·2처럼 모니터(쪽)로 나눠 본다: 행 높이를 재서 팝업 높이에 들어가는 만큼씩 한 쪽에 둔다.
@@ -1882,11 +1885,11 @@ export function DashboardClient({
                           className="relative w-full h-full flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none"
                           title="끌어서 순서 변경"
                         >
-                          <span className="group-hover/row:invisible">{row.businessNumber}</span>
+                          <span className="group-hover/row:invisible">{numberLabels.get(row.dailyBusinessId) ?? row.businessNumber}</span>
                           <GripVertical className="absolute w-4 h-4 text-slate-500 invisible group-hover/row:visible" />
                         </div>
                       ) : (
-                        row.businessNumber
+                        numberLabels.get(row.dailyBusinessId) ?? row.businessNumber
                       )}
                     </div>
                     {/* 터미널 칸은 칩만 보인다. 주문 수정·삭제는 고객명을 눌러 여는 패널에 있다(고객명 칸에는 아무것도 겹치지 않는다, 2026-11-14). */}
@@ -2083,11 +2086,11 @@ export function DashboardClient({
                           className={`relative w-full h-full ${density.no} flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none`}
                           title="끌어서 순서 변경"
                         >
-                          <span className="group-hover/row:invisible">{row.businessNumber}</span>
+                          <span className="group-hover/row:invisible">{numberLabels.get(row.dailyBusinessId) ?? row.businessNumber}</span>
                           <GripVertical className="absolute w-4 h-4 text-slate-500 invisible group-hover/row:visible" />
                         </div>
                       ) : (
-                        row.businessNumber
+                        numberLabels.get(row.dailyBusinessId) ?? row.businessNumber
                       )}
                     </div>
                     <div className="border-r border-slate-100 px-2 flex items-center justify-center">

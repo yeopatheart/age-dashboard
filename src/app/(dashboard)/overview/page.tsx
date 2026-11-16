@@ -6,6 +6,7 @@ import { buildOverviewCard, type LabelRow, type OverviewCardInput } from '@/lib/
 import { normalizeMergeGroups } from '@/lib/box-merge';
 import { findChangedAfterPackingIgnoringRenames } from '@/lib/packing/server';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
+import { cardNumberLabels } from '@/lib/card-number';
 import { OverviewClient } from './overview-client';
 
 // 대시보드(진행 현황): 오늘 주문이 몇 곳이고 포장·박스·라벨·상차가 어디까지 왔는지. 읽기만 한다.
@@ -18,7 +19,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
 
   const [, { data: dailies, error }, businesses, { data: terminals }] = await Promise.all([
     accessCheck,
-    supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id, display_name, merge_groups').eq('order_date', orderDate).order('sort_order'),
+    supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id, display_name, merge_groups').eq('order_date', orderDate).order('sort_order').order('business_number'),
     fetchAll((from, to) => supabase.from('businesses').select('id, name').order('id').range(from, to), '업체 조회 실패: '),
     supabase.from('terminals').select('id, name, is_separate, is_parcel'),
   ]);
@@ -66,11 +67,12 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const businessName = new Map(businesses.map((b) => [b.id, b.name]));
   const terminalById = new Map((terminals ?? []).map((t) => [t.id, t]));
   const split = businessIdsInBothRounds(dailyRows.map((d) => ({ businessId: d.business_id, round: d.round })));
+  const numberLabels = cardNumberLabels(dailyRows.map((d) => ({ id: d.id, businessNumber: d.business_number, separate: d.terminal_id ? terminalById.get(d.terminal_id)?.is_separate ?? false : false })));
   const cards = dailyRows.map((d) => {
     const terminal = d.terminal_id ? terminalById.get(d.terminal_id) : undefined;
     const input: OverviewCardInput = {
       id: d.id,
-      number: d.business_number, // 박스 라벨·QR의 업체 번호와 같은 번호(화면 순서가 아니다)
+      number: numberLabels.get(d.id) ?? String(d.business_number), // 화면에 보이는 번호는 목록 순서의 번호다(라벨·QR의 발급 번호와 다르다)
       name: d.display_name ?? businessName.get(d.business_id) ?? '',
       terminal: terminal?.name ?? '',
       separate: terminal?.is_separate ?? false,
