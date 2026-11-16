@@ -8,6 +8,12 @@ test('일시적 인증 오류: 네트워크·서버 오류와 요청 한도만 �
   assert.equal(isTransientAuthError({ name: 'AuthApiError', status: 429 }), true);
 });
 
+test('같은 세션 토큰을 동시에 갱신해 생긴 충돌(409 conflict)은 일시적 오류다', () => {
+  assert.equal(isTransientAuthError({ name: 'AuthApiError', status: 409, code: 'conflict' }), true);
+  assert.equal(isTransientAuthError({ name: 'AuthApiError', status: 409 }), true);
+  assert.equal(isTransientAuthError({ name: 'AuthApiError', code: 'conflict' }), true);
+});
+
 test('세션 없음·폐기된 토큰·잘못된 JWT는 일시적 오류가 아니다(로그인 화면으로 보낸다)', () => {
   assert.equal(isTransientAuthError(null), false);
   assert.equal(isTransientAuthError(undefined), false);
