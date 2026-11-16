@@ -10,6 +10,7 @@ import { Segmented } from '@/components/segmented';
 import { STAGES, STAGE_COLOR, STAGE_LABEL, stageDetail, stageOf, type Stage } from '@/lib/overview';
 import { terminalBadgeProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { useAutoRefresh } from '@/lib/realtime/use-live-refresh';
+import { cardNumberLabels } from '@/lib/card-number';
 
 // 휴대폰(768px 이하)용 대시보드. PC의 "고객 × 상품" 표를 가로로 밀어 보는 대신, 고객 한 곳이 카드 하나다.
 //  - 맨 위(고정): 날짜 이동, 전체 진행 요약, 터미널 칩(필터), 상태 필터. 기본은 "미완료"만 보인다.
@@ -117,6 +118,11 @@ export function DashboardMobile(props: DashboardMobileProps) {
   const refreshedAt = useAutoRefresh(30_000);
 
   const segmentRows = segment === 'main' ? mainRows : separateRows;
+  // 화면에 보이는 번호는 발급 번호가 아니라 목록 순서의 번호다(src/lib/card-number.ts). 필터와 상관없이 전체 목록 기준이다.
+  const numberLabels = cardNumberLabels([
+    ...mainRows.map((r) => ({ id: r.dailyBusinessId, businessNumber: r.businessNumber, separate: false })),
+    ...separateRows.map((r) => ({ id: r.dailyBusinessId, businessNumber: r.businessNumber, separate: true })),
+  ]);
   const itemsByRow = new Map<string, OrderItem[]>();
   for (const i of items) itemsByRow.set(i.dailyBusinessId, [...(itemsByRow.get(i.dailyBusinessId) ?? []), i]);
   for (const list of itemsByRow.values()) list.sort((a, b) => a.productSequence - b.productSequence);
@@ -306,7 +312,7 @@ export function DashboardMobile(props: DashboardMobileProps) {
                 <>
                 <div className="dm-card-top">
                   <button className="dm-card-head" onClick={() => toggleOpen(row.dailyBusinessId)} aria-expanded={open}>
-                    <span className="dm-no">{row.businessNumber}</span>
+                    <span className="dm-no">{numberLabels.get(row.dailyBusinessId) ?? row.businessNumber}</span>
                     <span className="dm-title">
                       <span className={`dm-term ${badge.className}`} style={badge.style}>{row.terminal || '-'}</span>
                       <span className="dm-name">
