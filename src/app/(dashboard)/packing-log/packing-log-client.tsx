@@ -693,15 +693,7 @@ export function PackingLogClient({
                 )}
 
                 <div className="pk-foot">
-                  {error && <span className="ak-error">{error}</span>}
-                  {notice && <span className="ak-notice">{notice}</span>}
-                  {!error && !notice && submitHint && <span className="ak-muted">{submitHint}</span>}
-                  {!readOnly && activeBoxes.length === 0 && <span className="ak-muted">사용 중인 박스가 없습니다 (박스 관리)</span>}
-                  <span className="ak-spacer" />
-                  {!readOnly && (modified || (!selected.submitted && !selected.recommendation)) && (
-                    <button className="pk-big" disabled={busy || !canAutoAssign} onClick={handleAutoAssign}>상품 자동으로 다시 나눠 담기</button>
-                  )}
-                  {/* 박스 추가는 제출 버튼 바로 옆에 크게 둔다(작은 선택칸이라 찾기 어렵다는 현장 의견, 2026-11-15). 눈에 보이는 큰 버튼 위에 투명한 선택칸을 겹쳐서, 누르면 박스 종류 목록이 열린다. */}
+                  {/* 박스 추가는 이 줄의 왼쪽 끝에 크게 둔다(작은 선택칸이라 찾기 어렵다는 현장 의견 2026-11-15, 왼쪽 정렬 요청 2026-11-16). 눈에 보이는 큰 버튼 위에 투명한 선택칸을 겹쳐서, 누르면 박스 종류 목록이 열린다. */}
                   {!readOnly && (
                     <label className="pk-big pk-add-big" aria-label="박스 추가">
                       <Package size={24} aria-hidden />
@@ -711,6 +703,14 @@ export function PackingLogClient({
                         {activeBoxes.map((b) => <option key={b.id} value={b.id}>{b.name}{b.is_mulbong_box ? ' (물봉)' : ''}{dimsOf(b) ? ` · ${dimsOf(b)}cm` : ''}</option>)}
                       </select>
                     </label>
+                  )}
+                  {error && <span className="ak-error">{error}</span>}
+                  {notice && <span className="ak-notice">{notice}</span>}
+                  {!error && !notice && submitHint && <span className="ak-muted">{submitHint}</span>}
+                  {!readOnly && activeBoxes.length === 0 && <span className="ak-muted">사용 중인 박스가 없습니다 (박스 관리)</span>}
+                  <span className="ak-spacer" />
+                  {!readOnly && (modified || (!selected.submitted && !selected.recommendation)) && (
+                    <button className="pk-big" disabled={busy || !canAutoAssign} onClick={handleAutoAssign}>상품 자동으로 다시 나눠 담기</button>
                   )}
                   {selected.submitted && !modified ? (
                     <span className="ak-muted">제출 완료 · 고치려면 상품이나 박스를 바꿔주세요</span>
@@ -851,7 +851,17 @@ export function PackingLogClient({
         .pk-add-big select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: var(--input-fs, 16px); }
         .pk-add-big:has(select:disabled) { opacity: 0.45; }
         .pk-add-big:has(select:disabled) select { cursor: not-allowed; }
-        @media (max-width: 900px) { .pk-row { grid-template-columns: 2.8rem minmax(0, 1fr) auto; } .pk-row-chips { grid-column: 1 / -1; } }
+        @media (max-width: 900px) {
+          /* 폰: 1줄 = 번호·박스 종류·박스 ✕, 2줄 = 상품 칩들. 박스 ✕는 격자 네 번째 칸이라 아래 줄로 밀려 칩 밑에 혼자 떨어져 있었다(2026-11-16). */
+          .pk-row { grid-template-columns: 2.8rem minmax(0, 1fr) auto; row-gap: 0.4rem; }
+          .pk-row > .pk-x, .pk-row > span:last-child { grid-column: 3; grid-row: 1; }
+          .pk-row-chips { grid-column: 1 / -1; grid-row: 2; gap: 0.4rem; align-items: stretch; }
+          /* 칩과 빼기 ✕를 한 알약으로 묶어서 한 줄에 여러 개가 이어지게 한다(칩마다 ✕가 따로 떨어져 한 줄에 하나씩만 놓였다). */
+          .pk-chipwrap { gap: 0; background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; }
+          .pk-chipwrap .pk-chip, .pk-chipwrap .pk-chip-sel { border: 0; border-radius: 0; background: transparent; padding: 0.35rem 0.6rem; }
+          .pk-chipwrap:has(.pk-chip-sel) { border-color: var(--primary); background: var(--primary-light); box-shadow: 0 0 0 1px var(--primary); }
+          .pk-chipwrap .pk-chip-x { border-left: 1px solid #e2e8f0; border-radius: 0; min-width: 40px; align-self: stretch; }
+        }
         /* PC(901px 이상)에서만 압축한다: 제목 줄과 도구줄을 한 줄로, 작업 영역의 여백·높이를 줄여 업체를 골라도 스크롤이 거의 생기지 않게 한다. 휴대폰은 손으로 누르기 좋은 기존 크기를 쓴다. */
         .pk-top { display: flex; align-items: center; gap: 0.5rem 1rem; flex-wrap: wrap; }
         .pk-top .page-header { flex: 1 1 22rem; min-width: 0; align-items: center; }
