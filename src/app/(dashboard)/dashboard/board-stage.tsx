@@ -9,6 +9,9 @@ export interface StageInfo {
 
 interface Props {
   enabled: boolean; // 모니터 1·2일 때만 기준 화면으로 그린다(전체보기·휴대폰은 창을 그대로 쓴다)
+  // false면 창이 기준 크기와 달라도 배율을 걸지 않고 창을 그대로 쓴다. 펜으로 쓰는 기기(칠판)는 항상 false다:
+  // 칠판의 창 크기가 추정과 어긋나 배율이 걸리면 펜이 막히고 PC 화면처럼 바뀌어서 현장에서 쓸 수 없었다(2026-11-16).
+  allowScale: boolean;
   onChange: (info: StageInfo) => void;
   children: React.ReactNode;
 }
@@ -16,7 +19,7 @@ interface Props {
 // 모니터 1·2의 도구줄과 표를 칠판 크기의 기준 화면(src/lib/board-stage.ts)에 그리고, 창이 다르면 통째로 확대·축소한다.
 // 같은 줄이 같은 모니터에 나오고 필기가 같은 위치에 보이게 하려는 것이다. 모달·팝업은 이 안에 넣지 않는다(화면 좌표로 위치를 잡는다).
 // 바깥 영역은 항상 같은 요소로 두어서 모니터를 바꿔도 안쪽 표가 다시 만들어지지 않는다.
-export function BoardStage({ enabled, onChange, children }: Props) {
+export function BoardStage({ enabled, allowScale, onChange, children }: Props) {
   const outerRef = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState<StageLayout | null>(null);
   const reported = useRef<StageInfo>({ native: true, scale: 1 });
@@ -34,7 +37,7 @@ export function BoardStage({ enabled, onChange, children }: Props) {
     return () => observer.disconnect();
   }, []);
 
-  const scaled = enabled && layout !== null && !layout.native;
+  const scaled = enabled && allowScale && layout !== null && !layout.native;
   const info: StageInfo = scaled && layout ? { native: false, scale: layout.scale } : { native: true, scale: 1 };
   useLayoutEffect(() => {
     if (reported.current.native === info.native && reported.current.scale === info.scale) return;

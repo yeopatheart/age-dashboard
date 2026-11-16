@@ -1595,7 +1595,7 @@ export function DashboardClient({
     // (12px/16px) — 여기서 음수 마진으로 상쇄하는 방식은 main-content의 overflow-y:auto가
     // overflow-x까지 auto로 끌어올리는 CSS 규칙과 부딪혀 표 오른쪽이 잘려 보이는 버그가 있었다.
     <>
-    <BoardStage enabled={isSplitMode} onChange={setStage}>
+    <BoardStage enabled={isSplitMode} allowScale={!penAvailable} onChange={setStage}>
     <div className="flex flex-col h-full w-full gap-2">
       <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm flex-shrink-0 flex-nowrap">
         <div className="flex gap-2 items-center flex-1 min-w-0">
