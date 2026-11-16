@@ -9,6 +9,7 @@ import { mergeGroupOf, normalizeMergeGroups } from '@/lib/box-merge';
 import { cancelledCardIds } from '@/lib/card-cancelled';
 import { requirePermission } from '@/lib/permissions/access';
 import { cardBoxes, loadSubmittedBoxCounts } from '@/lib/scan-boxes';
+import { findChangedAfterPackingIgnoringRenames } from '@/lib/packing/server';
 
 // 스캔 결과 화면에 보여줄 박스 정보
 export interface ScannedBox {
@@ -26,7 +27,7 @@ export interface ScannedBox {
 }
 
 export type ScanResult =
-  | { status: 'loaded'; box: ScannedBox } // 방금 상차 완료로 처리됨
+  | { status: 'loaded'; box: ScannedBox; packingChanged: boolean } // 방금 상차 완료로 처리됨. packingChanged = 박스 구성을 정한 뒤 주문이 바뀐 고객(경고만 한다)
   | { status: 'duplicate'; box: ScannedBox } // 이미 상차 완료된 박스를 다시 스캔함
   | { status: 'invalid'; code: string; reason: BarcodeProblem } // 우리 바코드가 아님: format = 숫자 12자리가 아님, check = 확인 숫자가 맞지 않음
   | { status: 'unknown'; code: string } // 형식은 맞지만 발급된 적 없는 번호
@@ -66,6 +67,24 @@ async function describe(supabase: Awaited<ReturnType<typeof createClient>>, labe
 async function mergedSeqsOf(supabase: Awaited<ReturnType<typeof createClient>>, dailyBusinessId: string, seq: number): Promise<number[]> {
   const { data } = await supabase.from('daily_businesses').select('merge_groups').eq('id', dailyBusinessId).maybeSingle();
   return mergeGroupOf(normalizeMergeGroups(data?.merge_groups), seq) ?? [];
+}
+
+// 박스 구성을 정한 뒤 주문이 바뀐 고객인지(주문 목록의 "박스 재확인"과 같은 기준). 경고 표시용이라 읽지 못해도 상차를 막지 않는다.
+async function packingChangedOf(supabase: Awaited<ReturnType<typeof createClient>>, dailyBusinessId: string): Promise<boolean> {
+  try {
+    const [{ data: items }, { data: records }, { data: recs }] = await Promise.all([
+      supabase.from('order_items').select('id, product_name_raw, quantity, unit, unshipped_quantity, is_mulbong, change_status').eq('daily_business_id', dailyBusinessId),
+      supabase.from('packing_records').select('id, daily_business_id, order_signature').eq('daily_business_id', dailyBusinessId),
+      supabase.from('packing_recommendations').select('daily_business_id, order_signature, created_at').eq('daily_business_id', dailyBusinessId).order('created_at'),
+    ]);
+    const live = (items ?? [])
+      .filter((r) => r.change_status !== 'cancelled' && Number(r.quantity) - Number(r.unshipped_quantity ?? 0) > 0)
+      .map((r) => ({ id: r.id, name: r.product_name_raw, unit: r.unit, quantity: Number(r.quantity) - Number(r.unshipped_quantity ?? 0), mulbongFlag: r.is_mulbong }));
+    const changed = await findChangedAfterPackingIgnoringRenames(supabase, [{ dailyBusinessId, items: live }], records ?? [], recs ?? []);
+    return changed.has(dailyBusinessId);
+  } catch {
+    return false;
+  }
 }
 
 // 바코드를 스캔해서 상차 완료로 처리한다. 같은 박스를 다시 스캔하면 상태를 바꾸지 않고 "이미 상차됨"으로 알려준다.
@@ -112,12 +131,13 @@ export async function scanBarcode(raw: string): Promise<ScanResult> {
     ? await supabase.from('box_labels').update({ loaded_at: loadedAt, loaded_by: userId }).eq('daily_business_id', label.daily_business_id).in('seq', merged).is('loaded_at', null).select('id')
     : { data: [] };
   // 이력 기록과 결과 화면용 조회는 서로 무관해서 같이 보낸다.
-  const [, box] = await Promise.all([
+  const [, box, packingChanged] = await Promise.all([
     supabase.from('box_label_events').insert([label.id, ...(mates ?? []).map((m) => m.id)].map((label_id) => ({ label_id, event: 'scan' as const, created_by: userId }))),
     describe(supabase, { ...label, loaded_at: loadedAt }),
+    packingChangedOf(supabase, label.daily_business_id),
   ]);
   revalidatePath('/scan');
-  return { status: 'loaded', box };
+  return { status: 'loaded', box, packingChanged };
 }
 
 // 잘못 스캔한 박스를 상차 전 상태로 되돌린다.
