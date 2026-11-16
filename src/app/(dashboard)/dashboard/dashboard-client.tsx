@@ -132,9 +132,10 @@ function ProductSummaryPanel({
 }
 
 // 같은 고객사가 1차·2차에 모두 있을 때만 업체명 앞에 붙는 작은 배지 — 행 높이를 키우지 않도록 업체명 줄 안에 인라인으로 흐른다.
-function RoundBadge({ round }: { round: OrderRound }) {
+// dense: 줄 높이가 30px 미만(주문 40건 초과)일 때의 작은 배지.
+function RoundBadge({ round, dense = false }: { round: OrderRound; dense?: boolean }) {
   return (
-    <span className={`inline-block align-middle mr-1 px-1 rounded border text-[10px] font-bold leading-[14px] ${round === 1 ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-violet-50 text-violet-700 border-violet-200'}`}>
+    <span className={`inline-block align-middle mr-1 px-1 rounded border font-bold ${dense ? 'text-[9px] leading-[10px]' : 'text-[10px] leading-[14px]'} ${round === 1 ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-violet-50 text-violet-700 border-violet-200'}`}>
       {roundLabel(round)}
     </span>
   );
@@ -207,18 +208,18 @@ function EditableCardName({ row, readOnly, onOpen }: { row: OrderRow; readOnly: 
 }
 
 // 업체의 모든 상품이 끝났을 때 업체명 앞에 붙는 표시 — 업체명 줄 안에 인라인으로 흐르므로 행 높이를 키우지 않는다.
-function DoneBadge() {
+function DoneBadge({ dense = false }: { dense?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-0.5 align-middle mr-1 px-1 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold leading-[14px]" title="이 업체의 모든 상품이 완료되었습니다">
-      <Check className="w-2.5 h-2.5" strokeWidth={4} />완료
+    <span className={`inline-flex items-center gap-0.5 align-middle mr-1 px-1 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 font-extrabold ${dense ? 'text-[9px] leading-[10px]' : 'text-[10px] leading-[14px]'}`} title="이 업체의 모든 상품이 완료되었습니다">
+      <Check className={dense ? 'w-2 h-2' : 'w-2.5 h-2.5'} strokeWidth={4} />완료
     </span>
   );
 }
 
 // 주문 상품이 모두 취소된 고객사 표시. 이 고객사는 박스 할당·라벨 출력·상차가 필요 없다.
-function CancelledBadge() {
+function CancelledBadge({ dense = false }: { dense?: boolean }) {
   return (
-    <span className="inline-flex items-center align-middle mr-1 px-1 rounded border border-rose-300 bg-rose-100 text-rose-700 text-[10px] font-extrabold leading-[14px]" title="이 업체의 모든 주문이 취소되었습니다 — 박스 할당·라벨 출력·상차가 필요 없습니다">
+    <span className={`inline-flex items-center align-middle mr-1 px-1 rounded border border-rose-300 bg-rose-100 text-rose-700 font-extrabold ${dense ? 'text-[9px] leading-[10px]' : 'text-[10px] leading-[14px]'}`} title="이 업체의 모든 주문이 취소되었습니다 — 박스 할당·라벨 출력·상차가 필요 없습니다">
       취소
     </span>
   );
@@ -1162,7 +1163,11 @@ export function DashboardClient({
   // 잘림은 팁 테두리에서만 일어나므로, 두 줄이 팁 안에 "글자 모양(descender 포함)까지" 들어가는 크기를 고른다.
   // 크기는 가장 큰 크기부터 1px씩 줄인 단계를 준비하고, 어느 단계가 필요한지는 그려진 결과(넘침)를 보고 아래 효과에서 팁마다 정한다.
   // 팁 안쪽 높이 = 행 높이 − 테두리 1 − 칸 여백 2 − 팁 테두리 2. (칸 여백을 4 → 2px로 줄여 글자를 키웠다, 2026-11-14 현장 요청)
-  const pillInnerHeight = rowHeight - 5;
+  // 주문이 40건을 넘어 줄이 30px 미만이면(2026-11-17: 51건 중 11건이 안 보이던 장애) 칸 여백·테두리 모서리·왼쪽 칸 글자를 줄여 상품 글자가 최대한 남게 한다.
+  // 30px 이상(40건 이하)은 예전과 완전히 같다.
+  const dense = rowHeight < 30;
+  const pillInnerHeight = rowHeight - (dense ? 3 : 5);
+  const pillSlack = dense ? 1 : 3;
 
   // 열 개수는 "이 화면에 실제로 보이는 행" 중 상품이 가장 많은 업체 기준 + 1(추가 버튼 열)이다.
   // 모니터마다 다른 업체가 보이므로 전체 기준이 아니라 화면에 표시되는 행 기준으로 센다.
@@ -1217,7 +1222,7 @@ export function DashboardClient({
     if (!root) return;
     const dirty: { el: HTMLElement; key: string }[] = [];
     for (const el of root.querySelectorAll<HTMLElement>('[data-pill]')) {
-      const key = `${el.innerHTML}|${el.dataset.sizes ?? ''}|${pillInnerHeight}|${el.clientWidth}|${fontEpoch}`;
+      const key = `${el.innerHTML}|${el.dataset.sizes ?? ''}|${pillInnerHeight}|${pillSlack}|${el.clientWidth}|${fontEpoch}`;
       if (el.dataset.fitKey !== key) dirty.push({ el, key });
     }
     for (const { el, key } of dirty) {
@@ -1231,7 +1236,7 @@ export function DashboardClient({
       };
       el.style.setProperty('--pshift', '0px');
       apply(step);
-      while (el.scrollHeight > pillInnerHeight - 3 && step < steps.length - 1) apply(++step);
+      while (el.scrollHeight > pillInnerHeight - pillSlack && step < steps.length - 1) apply(++step);
       // 옵션이 둘째 줄로 내려간 칩은 첫 줄의 큰 수량과 둘째 줄의 작은 옵션의 글자 상자 차이 때문에 글자가 칩 가운데보다 0.5~0.7px 위에 놓인다
       // (옵션이 7px까지 작아지면서 세로 중앙 점검에서 위·아래 여백이 1.1px 어긋났다, 2026-11-14). 크기가 정해진 뒤에 그만큼만 내려 맞춘다.
       const option = el.querySelector<HTMLElement>('[data-pill-opt]');
@@ -1897,7 +1902,7 @@ export function DashboardClient({
                   >
                     {(handle) => (
                     <>
-                    <div className="border-r border-slate-100 px-2 flex items-center justify-center text-xs font-bold text-slate-400 bg-slate-50">
+                    <div className={`border-r border-slate-100 px-2 flex items-center justify-center font-bold text-slate-400 bg-slate-50 ${dense ? 'text-[11px] leading-none' : 'text-xs'}`}>
                       {handle ? (
                         <div
                           ref={handle.ref}
@@ -1914,7 +1919,7 @@ export function DashboardClient({
                     </div>
                     {/* 터미널 칸은 칩만 보인다. 주문 수정·삭제는 고객명을 눌러 여는 패널에 있다(고객명 칸에는 아무것도 겹치지 않는다, 2026-11-14). */}
                     <div className="relative border-r border-slate-100 px-2 flex items-center justify-center">
-                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>
+                      <span className={`inline-block whitespace-nowrap px-2 rounded-md border font-bold ${dense ? '' : 'py-0.5 text-[11px]'} ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={{ ...terminalBadgeProps(row.terminal, terminalColors).style, ...(dense ? { fontSize: Math.min(11, rowHeight - 5), lineHeight: `${rowHeight - 5}px` } : {}) }}>
                         {row.terminal || '-'}
                       </span>
                     </div>
@@ -1935,7 +1940,7 @@ export function DashboardClient({
                           })}
                     >
                       {/* 업체명은 현장에서 정확히 보여야 하므로 말줄임 없이 전체 폭을 쓴다(최대 2줄, 행 높이 고정). */}
-                      <span className={`text-xs font-bold leading-[1.15] break-keep line-clamp-2 ${isCardCancelled(rowItems) ? 'text-rose-700 line-through decoration-rose-400' : 'text-slate-700'}`} title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge />}{isCardCancelled(rowItems) && <CancelledBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}{row.businessName}</span>
+                      <span className={`font-bold leading-[1.15] break-keep line-clamp-2 ${dense ? '' : 'text-xs'} ${isCardCancelled(rowItems) ? 'text-rose-700 line-through decoration-rose-400' : 'text-slate-700'}`} style={dense ? { fontSize: Math.min(12, rowHeight - 4) } : undefined} title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge dense={dense} />}{isCardCancelled(rowItems) && <CancelledBadge dense={dense} />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} dense={dense} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
                     </div>
                     {/* 박스 구성을 정한 뒤 주문이 바뀌면 이 칸이 붉게 바뀌고 경고 아이콘이 붙는다. 고객명 칸에는 아무것도 붙이지 않는다(이름은 절대 가려지면 안 된다, 2026-11-14). */}
@@ -1951,9 +1956,9 @@ export function DashboardClient({
                           }
                         : {})}
                     >
-                      <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null || isCardCancelled(rowItems) ? 'text-slate-300' : row.packingChanged ? 'text-rose-700' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{isCardCancelled(rowItems) ? '-' : (row.totalBoxes ?? '-')}</span>
-                      {row.packingChanged && !isCardCancelled(rowItems) && <TriangleAlert className="w-3.5 h-3.5 shrink-0 text-rose-600" strokeWidth={2.5} aria-label="박스 재확인 필요" />}
-                      {row.mergeGroups.length > 0 && <span className="rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`} aria-label="합포장">합</span>}
+                      <span className={`font-bold tabular-nums ${dense ? 'text-xs leading-none' : 'text-sm'} ${row.totalBoxes == null || isCardCancelled(rowItems) ? 'text-slate-300' : row.packingChanged ? 'text-rose-700' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{isCardCancelled(rowItems) ? '-' : (row.totalBoxes ?? '-')}</span>
+                      {row.packingChanged && !isCardCancelled(rowItems) && <TriangleAlert className={`shrink-0 text-rose-600 ${dense ? 'w-3 h-3' : 'w-3.5 h-3.5'}`} strokeWidth={2.5} aria-label="박스 재확인 필요" />}
+                      {row.mergeGroups.length > 0 && <span className={`rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800 ${dense ? 'leading-[10px]' : ''}`} title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`} aria-label="합포장">합</span>}
                     </div>
 
                     {Array.from({ length: productSlotCount }).map((_, slotIndex) => {
@@ -1967,9 +1972,9 @@ export function DashboardClient({
                             <div
                               key={slotIndex}
                               className="px-2 flex items-center text-[11px] font-bold leading-[1.15] text-amber-700 bg-amber-50/60 line-clamp-2 overflow-hidden"
-                              style={{ gridColumn: `span ${productSlotCount - slotIndex}` }}
+                              style={{ gridColumn: `span ${productSlotCount - slotIndex}`, ...(dense ? { fontSize: Math.min(11, rowHeight - 5) } : {}) }}
                             >
-                              <span className="line-clamp-2">메모: {row.memo}</span>
+                              <span className={dense ? 'line-clamp-1' : 'line-clamp-2'}>메모: {row.memo}</span>
                             </div>
                           );
                         }
@@ -1988,8 +1993,8 @@ export function DashboardClient({
                       const suffix = suffixParts.length ? ` (${suffixParts.join(', ')})` : '';
 
                       return (
-                        <div key={item.id} className="border-r border-slate-100 last:border-r-0 p-[1px] flex min-w-0">
-                          <div data-chip={item.id} className={`relative w-full flex items-center justify-start px-1.5 rounded-lg border overflow-hidden ${bg} ${border} group shadow-sm`}>
+                        <div key={item.id} className={`border-r border-slate-100 last:border-r-0 flex min-w-0 ${dense ? '' : 'p-[1px]'}`}>
+                          <div data-chip={item.id} className={`relative w-full flex items-center justify-start ${dense ? 'px-1 rounded' : 'px-1.5 rounded-lg'} border overflow-hidden ${bg} ${border} group shadow-sm`}>
                             {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
                               <span
                                 className="absolute top-0 left-0 z-20 text-[9px] font-bold leading-none px-1 py-[2px] rounded-br bg-amber-500 text-white"
@@ -2114,15 +2119,15 @@ export function DashboardClient({
                       )}
                     </div>
                     <div className="border-r border-slate-100 px-2 flex items-center justify-center">
-                      <span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-md border text-[11px] font-bold ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal || '-'}</span>
+                      <span className={`inline-block whitespace-nowrap px-2 rounded-md border font-bold ${dense ? '' : 'py-0.5 text-[11px]'} ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={{ ...terminalBadgeProps(row.terminal, terminalColors).style, ...(dense ? { fontSize: Math.min(11, rowHeight - 5), lineHeight: `${rowHeight - 5}px` } : {}) }}>{row.terminal || '-'}</span>
                     </div>
                     <div className={`border-r border-slate-100 px-3 ${density.name} flex flex-col justify-center gap-0.5 min-w-0 ${isCardComplete(rowItems) ? 'bg-emerald-50' : cancelledCard ? 'bg-rose-50' : ''}`}>
                       <span className={`text-sm font-bold break-keep leading-tight ${cancelledCard ? 'text-rose-700' : 'text-slate-800'}`}>{isCardComplete(rowItems) && <DoneBadge />}{cancelledCard && <CancelledBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} onOpen={(el) => openCustomerPanel(row.dailyBusinessId, el)} /></span>
                       {row.memo && <span className="text-[11px] font-bold leading-tight text-amber-700">메모: {row.memo}</span>}
                     </div>
                     <div className="border-r border-slate-100 px-1 flex items-center justify-center gap-1 whitespace-nowrap bg-slate-50/60">
-                      <span className={`text-sm font-bold tabular-nums ${row.totalBoxes == null || cancelledCard ? 'text-slate-300' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{cancelledCard ? '-' : (row.totalBoxes ?? '-')}</span>
-                      {row.mergeGroups.length > 0 && <span className="rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`} aria-label="합포장">합</span>}
+                      <span className={`font-bold tabular-nums ${dense ? 'text-xs leading-none' : 'text-sm'} ${row.totalBoxes == null || cancelledCard ? 'text-slate-300' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{cancelledCard ? '-' : (row.totalBoxes ?? '-')}</span>
+                      {row.mergeGroups.length > 0 && <span className={`rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800 ${dense ? 'leading-[10px]' : ''}`} title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`} aria-label="합포장">합</span>}
                     </div>
                     {Array.from({ length: sepSlotCount }).map((_, slotIndex) => {
                       const item = rowItems[slotIndex];
