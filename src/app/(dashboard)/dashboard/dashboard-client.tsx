@@ -211,7 +211,7 @@ function EditableCardName({ row, readOnly, onOpen }: { row: OrderRow; readOnly: 
 function DoneBadge({ dense = false }: { dense?: boolean }) {
   return (
     <span className={`inline-flex items-center gap-0.5 align-middle mr-1 px-1 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 font-extrabold ${dense ? 'text-[9px] leading-[10px]' : 'text-[10px] leading-[14px]'}`} title="이 업체의 모든 상품이 완료되었습니다">
-      <Check className={dense ? 'w-2 h-2' : 'w-2.5 h-2.5'} strokeWidth={4} />완료
+      <Check className={dense ? 'w-2 h-2' : 'w-2.5 h-2.5'} strokeWidth={4} />{dense ? null : '완료'}
     </span>
   );
 }
@@ -220,7 +220,7 @@ function DoneBadge({ dense = false }: { dense?: boolean }) {
 function CancelledBadge({ dense = false }: { dense?: boolean }) {
   return (
     <span className={`inline-flex items-center align-middle mr-1 px-1 rounded border border-rose-300 bg-rose-100 text-rose-700 font-extrabold ${dense ? 'text-[9px] leading-[10px]' : 'text-[10px] leading-[14px]'}`} title="이 업체의 모든 주문이 취소되었습니다 — 박스 할당·라벨 출력·상차가 필요 없습니다">
-      취소
+      {dense ? '×' : '취소'}
     </span>
   );
 }
@@ -1071,6 +1071,16 @@ export function DashboardClient({
     void document.fonts?.ready.then(measure);
   }, [terminalSignature]);
 
+  // 줄 높이·모니터별 줄 수는 예전 규칙 그대로(src/lib/monitor-rows.ts)다. 달라진 것은 availHeight가 기준 화면(board-stage)의 높이라서
+  // 어느 기기에서 열어도 칠판과 같은 줄이 같은 모니터에 나온다는 점이다. 모니터 2는 모니터 1이 가져간 줄 수 다음부터 시작한다.
+  const layoutRows = rowLayout(rows.length, availHeight, INITIAL_ROW_CAPACITY, ROW_FIT_MAX_SHRINK);
+  const rowHeight = layoutRows.rowHeight;
+  const ownCapacity = layoutRows.capacity;
+  // 주문이 40건을 넘어 줄이 30px 미만이면(2026-11-17: 51건 중 11건이 안 보이던 장애) 칸 여백·테두리 모서리·왼쪽 칸 글자를 줄여 상품 글자가 최대한 남게 한다.
+  // 30px 이상(40건 이하)은 예전과 완전히 같다.
+  const dense = rowHeight < 30;
+  const nameFontPx = dense ? Math.min(11, rowHeight - 7) : 12; // 업체명 글자 크기(열 폭 측정과 표시가 같은 값을 쓴다)
+
   // 고객명 열 폭: 가장 긴 고객명(굵은 12px)을 한 줄로 그릴 수 있는 폭. 1·2차 배지가 붙는 고객은 배지 폭만큼 더한다.
   // 완료 배지는 상태에 따라 붙었다 떨어지므로 열 폭에 넣지 않는다(폭이 흔들리지 않게). 넘치면 2줄로 접힌다. "박스 재확인" 경고는 고객명 칸이 아니라 박스 칸에 붙는다.
   const [nameColumn, setNameColumn] = useState(NAME_COLUMN_DEFAULT);
@@ -1079,7 +1089,7 @@ export function DashboardClient({
     const measure = () => {
       const ctx = document.createElement('canvas').getContext('2d');
       if (!ctx) return;
-      ctx.font = `700 12px ${getComputedStyle(document.body).fontFamily}`;
+      ctx.font = `700 ${nameFontPx}px ${getComputedStyle(document.body).fontFamily}`;
       const widest = nameSignature
         .split('\n')
         .filter(Boolean)
@@ -1093,13 +1103,8 @@ export function DashboardClient({
     measure();
     // 웹폰트가 늦게 로드되면 글자 폭이 달라지므로 로드 후 다시 잰다.
     void document.fonts?.ready.then(measure);
-  }, [nameSignature]);
+  }, [nameSignature, nameFontPx]);
 
-  // 줄 높이·모니터별 줄 수는 예전 규칙 그대로(src/lib/monitor-rows.ts)다. 달라진 것은 availHeight가 기준 화면(board-stage)의 높이라서
-  // 어느 기기에서 열어도 칠판과 같은 줄이 같은 모니터에 나온다는 점이다. 모니터 2는 모니터 1이 가져간 줄 수 다음부터 시작한다.
-  const layoutRows = rowLayout(rows.length, availHeight, INITIAL_ROW_CAPACITY, ROW_FIT_MAX_SHRINK);
-  const rowHeight = layoutRows.rowHeight;
-  const ownCapacity = layoutRows.capacity;
   const startIndex = effectiveMonitorMode === '2' ? ownCapacity : 0;
   const hiddenRows = hiddenRowCount(effectiveMonitorMode, rows.length, ownCapacity);
   // 화면에 다 못 들어가는 줄은 이 화면에 표시하지 않고 다음 모니터로 넘긴다.
@@ -1163,9 +1168,6 @@ export function DashboardClient({
   // 잘림은 팁 테두리에서만 일어나므로, 두 줄이 팁 안에 "글자 모양(descender 포함)까지" 들어가는 크기를 고른다.
   // 크기는 가장 큰 크기부터 1px씩 줄인 단계를 준비하고, 어느 단계가 필요한지는 그려진 결과(넘침)를 보고 아래 효과에서 팁마다 정한다.
   // 팁 안쪽 높이 = 행 높이 − 테두리 1 − 칸 여백 2 − 팁 테두리 2. (칸 여백을 4 → 2px로 줄여 글자를 키웠다, 2026-11-14 현장 요청)
-  // 주문이 40건을 넘어 줄이 30px 미만이면(2026-11-17: 51건 중 11건이 안 보이던 장애) 칸 여백·테두리 모서리·왼쪽 칸 글자를 줄여 상품 글자가 최대한 남게 한다.
-  // 30px 이상(40건 이하)은 예전과 완전히 같다.
-  const dense = rowHeight < 30;
   const pillInnerHeight = rowHeight - (dense ? 3 : 5);
   const pillSlack = dense ? 1 : 3;
 
@@ -1867,9 +1869,10 @@ export function DashboardClient({
               {Array.from({ length: productSlotCount }).map((_, i) => (
                 <div
                   key={i}
-                  className="border-r last:border-r-0 border-b-2 border-white/20 px-1.5 py-1.5 flex items-center justify-center text-center"
+                  className="border-r last:border-r-0 border-b-2 border-white/20 px-1.5 py-1.5 flex items-center justify-center text-center whitespace-nowrap overflow-hidden"
                 >
-                  상품 {i + 1}
+                  {/* 머리줄은 항상 한 줄이다: 열이 좁아 "상품 N"이 두 줄로 접히면 모니터 2의 머리줄만 커져 두 모니터의 줄 수 계산이 어긋나고 한 줄이 양쪽에서 사라졌다(2026-11-17). */}
+                  {colWidth < 64 ? i + 1 : `상품 ${i + 1}`}
                 </div>
               ))}
             </div>
@@ -1940,7 +1943,7 @@ export function DashboardClient({
                           })}
                     >
                       {/* 업체명은 현장에서 정확히 보여야 하므로 말줄임 없이 전체 폭을 쓴다(최대 2줄, 행 높이 고정). */}
-                      <span className={`font-bold leading-[1.15] break-keep line-clamp-2 ${dense ? '' : 'text-xs'} ${isCardCancelled(rowItems) ? 'text-rose-700 line-through decoration-rose-400' : 'text-slate-700'}`} style={dense ? { fontSize: Math.min(12, rowHeight - 4) } : undefined} title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge dense={dense} />}{isCardCancelled(rowItems) && <CancelledBadge dense={dense} />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} dense={dense} />}{row.businessName}</span>
+                      <span className={`font-bold leading-[1.15] break-keep ${dense ? 'whitespace-nowrap' : 'text-xs line-clamp-2'} ${isCardCancelled(rowItems) ? 'text-rose-700 line-through decoration-rose-400' : 'text-slate-700'}`} style={dense ? { fontSize: nameFontPx } : undefined} title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge dense={dense} />}{isCardCancelled(rowItems) && <CancelledBadge dense={dense} />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} dense={dense} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
                     </div>
                     {/* 박스 구성을 정한 뒤 주문이 바뀌면 이 칸이 붉게 바뀌고 경고 아이콘이 붙는다. 고객명 칸에는 아무것도 붙이지 않는다(이름은 절대 가려지면 안 된다, 2026-11-14). */}
