@@ -4,6 +4,7 @@ import { loadAppSettings } from '@/lib/settings-server';
 import { businessIdsInBothRounds, roundLabel } from '@/lib/orders';
 import { normalizeMergeGroups } from '@/lib/box-merge';
 import { ensureRecommendations, getTodayModel, orderSignature, type LiveOrderItem, type RecommendationState } from '@/lib/packing/server';
+import { orderChangedAfterSubmit, type SubmittedBoxItem } from '@/lib/packing/rename-only';
 import type { PackingBusiness } from '@/lib/packing/types';
 import { fetchAll, mapChunks, selectAll } from '@/lib/supabase/fetch-all';
 import { labelPrintStatus } from '@/lib/label-status';
@@ -79,7 +80,7 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
       : { data: [] };
     const packedBoxIds = (packedBoxes ?? []).map((b) => b.id);
     const { data: packedItems } = packedBoxIds.length
-      ? await selectAll((from, to) => supabase.from('packing_box_items').select('packing_box_id, order_item_id, quantity').in('packing_box_id', packedBoxIds).order('id').range(from, to), '박스 상품 조회 실패: ')
+      ? await selectAll((from, to) => supabase.from('packing_box_items').select('packing_box_id, order_item_id, unit, quantity').in('packing_box_id', packedBoxIds).order('id').range(from, to), '박스 상품 조회 실패: ')
       : { data: [] };
     return { packedBoxes: packedBoxes ?? [], packedItems: packedItems ?? [] };
   };
@@ -118,6 +119,13 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
   for (const l of labelRows) if (printedLabelIds.has(l.id)) printedSeqsByDaily.set(l.daily_business_id, [...(printedSeqsByDaily.get(l.daily_business_id) ?? []), l.seq]);
 
   const splitBusinessIds = businessIdsInBothRounds(allDailyRows.map((d) => ({ businessId: d.business_id, round: d.round })));
+  // 제출한 박스에 담긴 줄(이름만 바뀐 주문인지 가리는 데 쓴다).
+  const boxIdsByRecord = new Map<string, Set<string>>();
+  for (const b of packedBoxes) boxIdsByRecord.set(b.record_id, (boxIdsByRecord.get(b.record_id) ?? new Set<string>()).add(b.id));
+  const submittedItemsOf = (recordId: string): SubmittedBoxItem[] => {
+    const boxIds = boxIdsByRecord.get(recordId);
+    return boxIds ? packedItems.filter((pi) => boxIds.has(pi.packing_box_id)).map((pi) => ({ orderItemId: pi.order_item_id, unit: pi.unit, quantity: Number(pi.quantity) })) : [];
+  };
   const rows: PackingBusiness[] = dailyRows.map((d) => {
     const business = businessById.get(d.business_id);
     const record = recordByDaily.get(d.id);
@@ -156,7 +164,7 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
       labelStatus: record && !(!!d.terminal_id && parcelTerminalIds.has(d.terminal_id)) ? labelPrintStatus(packedBoxes.filter((b) => b.record_id === record.id).length, printedSeqsByDaily.get(d.id) ?? []) : null,
       // 미제출: 추천을 만든 뒤 주문이 바뀜 / 제출: 제출한 뒤 주문이 바뀜 → 박스를 다시 확인해야 한다
       orderChanged: record
-        ? !!record.order_signature && record.order_signature !== orderSignature(liveItemsOf(d.id))
+        ? orderChangedAfterSubmit(record.order_signature, orderSignature(liveItemsOf(d.id)), liveItemsOf(d.id), submittedItemsOf(record.id))
         : recommendations.get(d.id)?.orderChanged ?? false,
       submitted: record
         ? {

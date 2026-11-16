@@ -31,3 +31,15 @@ export function isRenameOnly(live: readonly LiveItemForRename[], submitted: read
   }
   return true;
 }
+
+// 제출한 뒤 주문이 바뀌었는지: 제출 때 저장한 지문이 지금과 다르더라도 이름만 바뀐 것이면 바뀐 것으로 보지 않는다.
+// 박스 할당 화면의 "주문 변경" 칩과 대시보드 경고(findChangedAfterPackingIgnoringRenames)가 같은 기준을 쓰게 한다(2026-11-16).
+export function orderChangedAfterSubmit(
+  recordSignature: string | null,
+  liveSignature: string,
+  live: readonly LiveItemForRename[],
+  submitted: readonly SubmittedBoxItem[],
+): boolean {
+  if (!recordSignature || recordSignature === liveSignature) return false;
+  return !isRenameOnly(live, submitted);
+}
