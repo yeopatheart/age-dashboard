@@ -59,12 +59,24 @@ function legacyLayout(rowCount: number, availHeight: number) {
   return availHeight > 0 ? fitRowHeight(availHeight, tierHeight, 30, 6) : { rowHeight: tierHeight, capacity: 30 };
 }
 
-test('줄 높이·줄 수 계산은 배포 전과 모든 주문 수·높이에서 같다(배포 순간 칠판이 바뀌지 않는다)', () => {
+test('줄 높이·줄 수 계산은 배포 전과 같다: 30px 이상으로 다 들어가는 모든 주문 수·높이(배포 순간 칠판이 바뀌지 않는다)', () => {
   for (let avail = 0; avail <= 900; avail += 1) {
     for (let n = 0; n <= 80; n++) {
+      if (avail > 0 && 2 * Math.floor(avail / 30) < n) continue; // 30px로도 못 담는 주문 수는 아래 테스트(더 작은 단계)
       assert.deepEqual(rowLayout(n, avail, 30, 6), legacyLayout(n, avail), `avail ${avail}, rows ${n}`);
     }
   }
+});
+
+test('2026-11-17: 칠판(본문 606px)에서 주문 41~60건도 두 모니터에 다 들어간다(예전엔 40건 초과가 안 보임)', () => {
+  for (let n = 41; n <= 60; n++) {
+    const l = rowLayout(n, 606, 30, 6);
+    assert.ok(2 * l.capacity >= n, `rows ${n}: capacity ${l.capacity}`);
+    assert.ok(l.rowHeight >= 20 && l.rowHeight < 30, `rows ${n}: height ${l.rowHeight}`);
+    assert.ok(l.capacity * l.rowHeight <= 606, `rows ${n}: 줄이 본문을 넘는다`);
+    assert.equal(hiddenRowCount('2', n, l.capacity), 0);
+  }
+  assert.equal(hiddenRowCount('2', 61, rowLayout(61, 606, 30, 6).capacity), 1);
 });
 
 test('칠판(본문 606px)의 모니터 1 줄 수: 11/16 사진(주문 32건 → 17줄·35px)과 같다', () => {
