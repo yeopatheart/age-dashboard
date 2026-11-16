@@ -43,7 +43,7 @@ export function BoardStage({ enabled, onChange, children }: Props) {
   });
 
   return (
-    <div ref={outerRef} className="relative h-[calc(100vh-24px)] w-full min-w-0 overflow-hidden">
+    <div ref={outerRef} data-board-stage-outer className="relative h-[calc(100vh-24px)] w-full min-w-0 overflow-hidden">
       {scaled && layout ? (
         <div className="absolute flex flex-col" style={{ left: layout.left, top: layout.top, width: layout.width, height: layout.height, transform: `scale(${layout.scale})`, transformOrigin: 'top left' }}>
           {children}

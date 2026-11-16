@@ -10,6 +10,7 @@ import { manualItemChanged, resolveManualChangeStatus } from '@/lib/manual-item-
 import { loadAppSettings } from '@/lib/settings-server';
 import { inkCutoffTime, parseInkStrokes } from '@/lib/ink/store';
 import { missingTable, migrationsFor } from '@/lib/supabase/missing-table';
+import { parseBoardEnv } from '@/lib/board-env';
 import { isIsoDate, nonNegativeNumberError, positiveNumberError, textError } from '@/lib/validate';
 import { fetchAll } from '@/lib/supabase/fetch-all';
 import type { Database } from '@/lib/types/database';
@@ -369,4 +370,13 @@ export async function clearProductHighlights(orderDate: string): Promise<{ error
   if (error) return { error: error.message };
   revalidatePath('/dashboard');
   return { error: null };
+}
+
+// 칠판이 펜으로 쓸 수 있는 기기로 판정됐는지(아니면 왜 막혔는지)를 서버 로그에 한 줄 남긴다. Vercel Logs에서 `board-env`로 찾는다.
+// 값은 믿지 않고 모양·길이를 확인한 뒤 남긴다(src/lib/board-env.ts). 개인정보는 없다. DB에는 아무것도 쓰지 않는다.
+export async function reportBoardEnv(value: unknown): Promise<void> {
+  await requirePermission('dashboard:view');
+  const report = parseBoardEnv(value);
+  if (!report) return;
+  console.log('[board-env]', JSON.stringify({ sha: (process.env.VERCEL_GIT_COMMIT_SHA ?? 'local').slice(0, 7), ...report }));
 }

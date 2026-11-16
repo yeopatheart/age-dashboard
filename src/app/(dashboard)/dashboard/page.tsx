@@ -51,8 +51,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         .from('daily_businesses')
         .select('id, business_id, business_number, round, memo, terminal_id, display_name, merge_groups')
         .eq('order_date', orderDate)
-        .order('sort_order')
-        .order('business_number'), // 같은 순서 값이면 발급 번호순(화면 번호가 매번 같게)
+        .order('sort_order'),
       fetchAll((from, to) => supabase.from('products').select('name, fill_color, border_color').order('id').range(from, to), '상품 조회 실패: '),
       loadAppSettings(supabase),
       supabase.from('daily_product_highlights').select('product_name, position').eq('order_date', orderDate).order('position'),
