@@ -439,8 +439,8 @@ async function commitOrderLinesInto(state: CommitState, orderDate: string, round
       textError(d.product.productName, '상품명', 100) ??
       nonNegativeNumberError(d.product.quantity, '수량') ??
       (d.terminalName ? textError(d.terminalName, '터미널', 30) : null) ??
-      (d.product.sizeRequest && d.product.sizeRequest.length > 100 ? '사이즈 요청은 100자까지 입력할 수 있습니다.' : null) ??
-      (d.memo && d.memo.length > 500 ? '메모는 500자까지 입력할 수 있습니다.' : null);
+      (d.product.sizeRequest && d.product.sizeRequest.length > 500 ? '사이즈 요청은 500자까지 입력할 수 있습니다.' : null) ??
+      (d.memo && d.memo.length > 3000 ? '메모는 3000자까지 입력할 수 있습니다.' : null);
     if (invalid) throw new Error(invalid);
   }
   const supabase = await createClient();
