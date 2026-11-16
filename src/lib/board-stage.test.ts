@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { STAGE_H, STAGE_W, stageLayout } from './board-stage.ts';
-import { hiddenRowCount, rowLayout } from './monitor-rows.ts';
+import { hiddenRowCount, MIN_ROW_HEIGHT, ROW_HEIGHT_TIERS, rowLayout } from './monitor-rows.ts';
 import { fitRowHeight } from './row-fit.ts';
 import { anchorLegacyStrokes, pickRowAnchor, rowAnchor } from './ink/row-anchor.ts';
 import { resolvePoints, toAnchoredStroke, toFreeStroke, type Box, type InkStroke } from './ink/store.ts';
@@ -52,42 +52,118 @@ test('크기를 아직 못 쟀으면(0) 변환하지 않는다', () => {
   assert.equal(stageLayout(0, 0).native, true);
 });
 
-// 예전 코드(배포 전 main)의 줄 높이 계산을 그대로 옮긴 것. 새 계산이 이것과 모든 주문 수·높이에서 같아야 배포 순간 칠판의 줄 위치가 바뀌지 않는다.
+// 예전 규칙(2026-11-17 이전: 주문 수에 따라 단계·줄 수가 바뀌던 계산)을 그대로 옮긴 것. 새 규칙에서 이것과 같아야 하는 곳은 "고정 규칙이 못 쓰는 경우"(화면이 너무 낮을 때, 주문 81건 이상)뿐이다.
 function legacyLayout(rowCount: number, availHeight: number) {
-  const tiers = [40, 36, 32, 30];
-  const tierHeight = availHeight > 0 ? tiers.find((h) => 2 * Math.floor(availHeight / h) >= rowCount) ?? 30 : tiers[0];
-  return availHeight > 0 ? fitRowHeight(availHeight, tierHeight, 30, 6) : { rowHeight: tierHeight, capacity: 30 };
+  const tier = ROW_HEIGHT_TIERS.find((h) => 2 * Math.floor(availHeight / h) >= rowCount) ?? MIN_ROW_HEIGHT;
+  return fitRowHeight(availHeight, tier, tier >= 30 ? 30 : MIN_ROW_HEIGHT, 6);
 }
 
-test('줄 높이·줄 수 계산은 배포 전과 같다: 30px 이상으로 다 들어가는 모든 주문 수·높이(배포 순간 칠판이 바뀌지 않는다)', () => {
-  for (let avail = 0; avail <= 900; avail += 1) {
-    for (let n = 0; n <= 80; n++) {
-      if (avail > 0 && 2 * Math.floor(avail / 30) < n) continue; // 30px로도 못 담는 주문 수는 아래 테스트(더 작은 단계)
-      assert.deepEqual(rowLayout(n, avail, 30, 6), legacyLayout(n, avail), `avail ${avail}, rows ${n}`);
+const INITIAL = 37; // dashboard-client의 INITIAL_ROW_CAPACITY와 같은 값
+const AVAIL = 606; // 칠판 본문 높이
+const layoutAt = (n: number, avail = AVAIL) => rowLayout(n, avail, INITIAL, 6);
+
+// 2026-11-17: 예전에는 "40건 이하에서 예전 규칙과 같다"를 고정했다(배포 순간 칠판의 줄 위치가 바뀌지 않게). 그 규칙은 주문 수에 따라 모니터 경계가 움직여
+// (54→55건에서 28→31줄) 모니터 2의 줄이 모니터 1로 넘어가면 필기가 따라가지 못했다. 그래서 경계를 고정하는 새 규칙으로 바꿨고, 아래가 그 규칙을 고정한다.
+test('전체 보기·휴대폰(fixedBoundary=false)은 모니터 경계가 없으므로 어떤 주문 수·화면 높이에서도 예전 규칙과 같다', () => {
+  for (const avail of [0, 400, 555, 560, 606, 650, 700, 900]) {
+    for (let n = 0; n <= 100; n++) {
+      const got = rowLayout(n, avail, INITIAL, 6, false);
+      if (!(avail > 0)) assert.deepEqual(got, { rowHeight: ROW_HEIGHT_TIERS[0], capacity: INITIAL }, `avail ${avail}, rows ${n}`);
+      else assert.deepEqual(got, legacyLayout(n, avail), `avail ${avail}, rows ${n}`);
     }
   }
 });
 
+test('칠판(606px): 주문 1~74건은 전부 모니터당 37줄·16px(주문 수와 무관하게 같다)', () => {
+  for (let n = 1; n <= 74; n++) assert.deepEqual(layoutAt(n), { rowHeight: 16, capacity: 37 }, `rows ${n}`);
+});
+
+test('주문 1~74건 어디서나 모니터 1은 1~37번째, 모니터 2는 38번째부터다(경계 불변)', () => {
+  const boundary = (n: number) => layoutAt(n).capacity; // dashboard-client: 모니터 2 시작 = capacity, 모니터 1 = 앞 capacity개
+  for (let n = 1; n <= 74; n++) {
+    const rowsAll = Array.from({ length: n }, (_, i) => i + 1);
+    const cap = boundary(n);
+    assert.deepEqual(rowsAll.slice(0, cap), rowsAll.filter((x) => x <= 37), `rows ${n}: 모니터 1`);
+    assert.deepEqual(rowsAll.slice(cap, cap + cap), rowsAll.filter((x) => x >= 38), `rows ${n}: 모니터 2`);
+  }
+});
+
+test('주문 75~80건은 전부 모니터당 40줄·15px, 74→75건에서 경계가 37→40으로 딱 한 번 바뀐다', () => {
+  for (let n = 75; n <= 80; n++) assert.deepEqual(layoutAt(n), { rowHeight: 15, capacity: 40 }, `rows ${n}`);
+  const changes: number[] = [];
+  for (let n = 2; n <= 80; n++) if (layoutAt(n).capacity !== layoutAt(n - 1).capacity) changes.push(n);
+  assert.deepEqual(changes, [75]);
+  assert.equal(layoutAt(74).capacity, 37);
+  assert.equal(layoutAt(75).capacity, 40);
+  for (let n = 75; n <= 80; n++) assert.equal(hiddenRowCount('2', n, layoutAt(n).capacity), 0, `rows ${n}`);
+});
+
+test('주문 81건 이상은 가장 촘촘한 줄(15px)로 일부가 안 보인다(hiddenRowCount가 센다)', () => {
+  for (const n of [81, 100]) {
+    const l = layoutAt(n);
+    assert.deepEqual(l, { rowHeight: 15, capacity: 40 }, `rows ${n}`);
+    assert.deepEqual(l, legacyLayout(n, AVAIL), `rows ${n}: 81건 이상은 예전 규칙 그대로`);
+  }
+  assert.equal(hiddenRowCount('2', 81, layoutAt(81).capacity), 1);
+  assert.equal(hiddenRowCount('2', 100, layoutAt(100).capacity), 20);
+  assert.equal(hiddenRowCount('1', 100, layoutAt(100).capacity), 0); // 모니터 1에서는 세지 않는다
+});
+
+test('본문 높이 560~700px 어디서나 모니터 1 줄 수는 주문 수 구간별로 고정이고 줄 높이는 15~40의 정수다', () => {
+  for (let avail = 560; avail <= 700; avail++) {
+    for (let n = 0; n <= 74; n++) {
+      const l = layoutAt(n, avail);
+      // 15px 이상으로 40줄이 안 들어가는 560~599px의 75~80건은 폴백이므로 아래에서 따로 본다.
+      assert.equal(l.capacity, 37, `avail ${avail}, rows ${n}`);
+      assert.equal(l.rowHeight, Math.floor(avail / 37), `avail ${avail}, rows ${n}`);
+      assert.ok(Number.isInteger(l.rowHeight) && l.rowHeight >= 15 && l.rowHeight <= 40, `avail ${avail}: ${l.rowHeight}`);
+    }
+    if (avail >= 600) {
+      for (let n = 75; n <= 80; n++) {
+        const l = layoutAt(n, avail);
+        assert.equal(l.capacity, 40, `avail ${avail}, rows ${n}`);
+        assert.equal(l.rowHeight, Math.floor(avail / 40), `avail ${avail}, rows ${n}`);
+        assert.ok(Number.isInteger(l.rowHeight) && l.rowHeight >= 15 && l.rowHeight <= 40);
+      }
+    }
+  }
+});
+
+test('줄 높이는 위쪽 40px로 제한되고(아주 높은 화면), 줄 수는 정수·1 이상이다', () => {
+  assert.deepEqual(layoutAt(10, 5000), { rowHeight: 40, capacity: 37 });
+  for (let avail = 1; avail <= 3000; avail += 7) {
+    for (const n of [0, 1, 30, 74, 75, 80, 81, 200]) {
+      const l = layoutAt(n, avail);
+      assert.ok(Number.isInteger(l.capacity) && l.capacity >= 1, `avail ${avail}, rows ${n}: capacity ${l.capacity}`);
+      assert.ok(Number.isInteger(l.rowHeight) && l.rowHeight > 0 && l.rowHeight <= 40, `avail ${avail}, rows ${n}: height ${l.rowHeight}`);
+    }
+  }
+});
+
+test('고정 규칙의 줄 높이가 15px 미만이면(화면이 너무 낮음) 예전 규칙으로 되돌아간다', () => {
+  for (let avail = 1; avail < 37 * 15; avail++) {
+    for (let n = 0; n <= 74; n++) assert.deepEqual(layoutAt(n, avail), legacyLayout(n, avail), `avail ${avail}, rows ${n}`);
+  }
+  for (let avail = 1; avail < 40 * 15; avail++) {
+    for (let n = 75; n <= 80; n++) assert.deepEqual(layoutAt(n, avail), legacyLayout(n, avail), `avail ${avail}, rows ${n}`);
+  }
+});
+
+test('본문 높이를 아직 못 쟀으면(0 이하) 임시값(줄 수 37)을 쓴다', () => {
+  for (const avail of [0, -5, NaN]) assert.deepEqual(layoutAt(50, avail), { rowHeight: 40, capacity: 37 });
+  assert.equal(layoutAt(50, 0).capacity, layoutAt(50, AVAIL).capacity); // 첫 렌더와 측정 뒤의 경계가 같다
+});
+
 test('2026-11-17: 칠판(본문 606px)에서 주문 41~80건도 두 모니터에 다 들어간다(예전엔 40건 초과가 안 보임)', () => {
   for (let n = 41; n <= 80; n++) {
-    const l = rowLayout(n, 606, 30, 6);
+    const l = layoutAt(n);
     assert.ok(2 * l.capacity >= n, `rows ${n}: capacity ${l.capacity}`);
     assert.ok(l.rowHeight >= 15 && l.rowHeight < 30, `rows ${n}: height ${l.rowHeight}`);
     assert.ok(l.capacity * l.rowHeight <= 606, `rows ${n}: 줄이 본문을 넘는다`);
     assert.equal(hiddenRowCount('2', n, l.capacity), 0);
   }
-  assert.equal(hiddenRowCount('2', 81, rowLayout(81, 606, 30, 6).capacity), 1);
-  assert.equal(rowLayout(80, 606, 30, 6).rowHeight, 15);
-});
-
-test('칠판(본문 606px)의 모니터 1 줄 수: 11/16 사진(주문 32건 → 17줄·35px)과 같다', () => {
-  const at = (n: number) => rowLayout(n, 606, 30, 6);
-  assert.deepEqual(at(32), { rowHeight: 35, capacity: 17 });
-  assert.deepEqual(at(30), { rowHeight: 37, capacity: 16 });
-  assert.equal(at(33).capacity, 19);
-  assert.equal(at(36).capacity, 19);
-  assert.equal(at(37).capacity, 20);
-  assert.equal(at(40).capacity, 20);
+  assert.equal(hiddenRowCount('2', 81, layoutAt(81).capacity), 1);
+  assert.equal(layoutAt(80).rowHeight, 15);
 });
 
 const rows = new Map<string, Box>([
