@@ -77,12 +77,16 @@ function ProductSummaryPanel({
   availHeight,
   onPick,
   className = '',
+  onInkLayout,
 }: {
   columns: ProductSummaryRow[];
   chipStyle: (name: string) => React.CSSProperties;
   availHeight?: number;
   onPick: (product: ProductSummaryRow, rect: DOMRect) => void;
   className?: string;
+  // 패널(모니터 2) 칩에 필기를 붙일 수 있게 `data-summary-chip`을 달고, 칩 배치가 달라질 만한 값(칩 순서·표시 글자·글자 단계·높이)이 바뀔 때만 그 서명을 알린다
+  // (2026-11-17: docs/decisions/2026-11-17-summary-panel-ink.md). 안 주면(별도 주문 팝업) 아무것도 달지 않는다.
+  onInkLayout?: (signature: string) => void;
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
   const signature = `${columns.map((c) => `${c.key}:${c.total}:${c.added}:${c.changed}:${c.unshipped}:${c.undecided}`).join('|')}@${availHeight ?? ''}`;
@@ -101,6 +105,20 @@ function ProductSummaryPanel({
     void document.fonts?.ready.then(check);
   }, [signature, level, availHeight]);
   const itemHeight = SUMMARY_ITEM_HEIGHTS[level];
+  // 필기를 다시 그릴 때가 됐다는 알림. 칩의 위치·폭·높이는 칩 순서, 칩 안 글자(품목·수량·단위·배지), 글자 단계, 패널 높이, 웹폰트 로드로만 달라지므로 그 값을 이어 붙인 문자열로 알린다
+  // (렌더마다 위치를 재지 않는다). 값이 같으면 상태를 바꾸지 않도록 최근 값을 ref에 두고 달라졌을 때만 알린다(렌더마다 도는 효과에서 값이 같은데 setState를 부르면 무한 재렌더가 난다: CLAUDE.md 2026-11-16).
+  const [fontsReady, setFontsReady] = useState(false);
+  useEffect(() => {
+    if (!onInkLayout) return;
+    void document.fonts?.ready.then(() => setFontsReady(true));
+  }, [onInkLayout]);
+  const inkSignature = onInkLayout ? `${level}|${availHeight ?? ''}|${fontsReady ? 1 : 0}|${columns.map((c) => `${c.key}~${c.label}~${c.total}${c.unit}~${c.added}~${c.changed}~${c.unshipped}~${c.undecided}`).join('|')}` : '';
+  const reportedInkSignature = useRef('');
+  useLayoutEffect(() => {
+    if (!onInkLayout || reportedInkSignature.current === inkSignature) return;
+    reportedInkSignature.current = inkSignature;
+    onInkLayout(inkSignature);
+  });
   return (
     <aside className={`w-52 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col${className ? ` ${className}` : ''}`} style={{ borderTop: '3px solid var(--soft-brass, #003057)' }}>
       <div className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100 flex-shrink-0">품목별 수량</div>
@@ -108,6 +126,7 @@ function ProductSummaryPanel({
         {columns.map((product) => (
           <div
             key={product.key}
+            data-summary-chip={onInkLayout ? product.key : undefined}
             role="button"
             tabIndex={0}
             title="누르면 이 상품을 주문한 고객사를 봅니다"
@@ -1486,7 +1505,9 @@ export function DashboardClient({
     </div>
   );
 
-  const productPanel = <ProductSummaryPanel columns={columns} chipStyle={chipStyle} availHeight={availHeight} onPick={(p, r) => pickProduct('main', p, r)} className="ml-auto" />;
+  // 칩 배치 서명: 패널이 칩 순서·글자·글자 단계가 달라질 때만 알린다. InkLayer가 이 값이 바뀌면 칩에 붙은 필기를 다시 그린다.
+  const [summaryInkLayout, setSummaryInkLayout] = useState('');
+  const productPanel = <ProductSummaryPanel columns={columns} chipStyle={chipStyle} availHeight={availHeight} onPick={(p, r) => pickProduct('main', p, r)} className="ml-auto" onInkLayout={setSummaryInkLayout} />;
 
   // 모달·확인창은 PC와 휴대폰 화면이 같이 쓴다.
   // 고객명을 누르면 그 옆에 이 고객의 주문 편집 패널(상품 추가·수정·미출고·취소·삭제, 주문 수정·삭제)을 연다. 행·상품은 매번 최신 값으로 다시 찾는다.
@@ -2058,9 +2079,9 @@ export function DashboardClient({
         {/* 칠판 펜: 터치 기기(스마트 칠판)이고 수정 권한이 있고 오늘(또는 과거 편집 허용)인 모니터 1·2에서만 그릴 수 있다. 전체보기는 스크롤로 그림이 어긋나서 제외한다.
             그릴 수 없는 기기(PC 등)는 같은 그림을 읽기 전용으로 겹쳐 본다(서버에 저장된 그림, 툴바 버튼으로 숨길 수 있다). */}
         {separateOpen ? null : inkWriter ? (
-          <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} ready={inkLayoutReady} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
+          <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} chipLayoutKey={summaryInkLayout} ready={inkLayoutReady} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
         ) : (
-          hydrated && isSplitMode && !inkHidden && <InkLayer key={`view|${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} ready={inkLayoutReady} scale={stage.scale} viewOnly date={orderDate} monitor={effectiveMonitorMode} dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
+          hydrated && isSplitMode && !inkHidden && <InkLayer key={`view|${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} chipLayoutKey={summaryInkLayout} ready={inkLayoutReady} scale={stage.scale} viewOnly date={orderDate} monitor={effectiveMonitorMode} dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
         )}
       </div>
     </div>
