@@ -18,6 +18,7 @@ import { CustomerOrderPanel } from './customer-order-panel';
 import { BoxAssignModal } from './box-assign-modal';
 import { hiddenRowCount, rowLayout } from '@/lib/monitor-rows';
 import { chromeFor } from '@/lib/compact-chrome';
+import { nameColumnWidth, terminalChipFontPx, terminalColumnWidth, type NameColumnEntry } from '@/lib/name-column';
 import { cardNumberLabels } from '@/lib/card-number';
 import { BoardStage, type StageInfo } from './board-stage';
 import { BoardEnvReporter } from './board-env-reporter';
@@ -209,19 +210,34 @@ function EditableCardName({ row, readOnly, onOpen }: { row: OrderRow; readOnly: 
 }
 
 // 업체의 모든 상품이 끝났을 때 업체명 앞에 붙는 표시 — 업체명 줄 안에 인라인으로 흐르므로 행 높이를 키우지 않는다.
-function DoneBadge({ dense = false }: { dense?: boolean }) {
+// 글자 배지는 dense(줄 30px 미만)가 아닌 화면(전체 보기·별도 주문 팝업)에서만 쓴다. dense는 StatusIcon을 쓴다.
+// 이 배지의 폭은 name-column.ts의 STATUS_SLOT_FULL(고객명 열 폭 예약)과 맞춰 둔다 — 배지 글자·여백을 바꾸면 그 값도 같이 본다.
+function DoneBadge() {
   return (
-    <span className={`inline-flex items-center gap-0.5 align-middle mr-1 px-1 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 font-extrabold ${dense ? 'text-[9px] leading-[10px]' : 'text-[10px] leading-[14px]'}`} title="이 업체의 모든 상품이 완료되었습니다">
-      <Check className={dense ? 'w-2 h-2' : 'w-2.5 h-2.5'} strokeWidth={4} />{dense ? null : '완료'}
+    <span className="inline-flex items-center gap-0.5 align-middle mr-1 px-1 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 font-extrabold text-[10px] leading-[14px]" title="이 업체의 모든 상품이 완료되었습니다">
+      <Check className="w-2.5 h-2.5" strokeWidth={4} />완료
     </span>
   );
 }
 
 // 주문 상품이 모두 취소된 고객사 표시. 이 고객사는 박스 할당·라벨 출력·상차가 필요 없다.
-function CancelledBadge({ dense = false }: { dense?: boolean }) {
+function CancelledBadge() {
   return (
-    <span className={`inline-flex items-center align-middle mr-1 px-1 rounded border border-rose-300 bg-rose-100 text-rose-700 font-extrabold ${dense ? 'text-[9px] leading-[10px]' : 'text-[10px] leading-[14px]'}`} title="이 업체의 모든 주문이 취소되었습니다 — 박스 할당·라벨 출력·상차가 필요 없습니다">
-      {dense ? '×' : '취소'}
+    <span className="inline-flex items-center align-middle mr-1 px-1 rounded border border-rose-300 bg-rose-100 text-rose-700 font-extrabold text-[10px] leading-[14px]" title="이 업체의 모든 주문이 취소되었습니다 — 박스 할당·라벨 출력·상차가 필요 없습니다">
+      취소
+    </span>
+  );
+}
+
+// dense(줄 30px 미만)의 완료/취소 표시: 테두리·배경 없는 맨 아이콘. 칸(name-column.ts의 STATUS_SLOT_DENSE = 14px)은 아이콘 12px 이하 + 오른쪽 간격 2px이다.
+// 고객명 칸(flex, items-center)의 첫 자식이라 이름 줄의 기준선과 무관하게 칸 가운데에 놓인다. 두 상태 모두 같은 폭이라 이름 위치가 같다.
+function StatusIcon({ kind, fontPx }: { kind: 'done' | 'cancelled'; fontPx: number }) {
+  const size = Math.min(12, Math.max(10, fontPx + 2));
+  return (
+    <span className="shrink-0 inline-flex items-center" style={{ width: 14 }} title={kind === 'done' ? '이 업체의 모든 상품이 완료되었습니다' : '이 업체의 모든 주문이 취소되었습니다 — 박스 할당·라벨 출력·상차가 필요 없습니다'}>
+      {kind === 'done'
+        ? <Check width={size} height={size} strokeWidth={4} className="text-emerald-600" aria-label="완료" />
+        : <X width={size} height={size} strokeWidth={4} className="text-rose-600" aria-label="취소" />}
     </span>
   );
 }
@@ -267,13 +283,8 @@ function SortableRow({
 // 남는 폭은 표 오른쪽에 빈 자리로 남고, 모니터 2의 품목별 수량 패널은 표 바로 옆에 붙는다.
 const PRODUCT_COLUMN_MAX = 200;
 const NAME_COLUMN_DEFAULT = 144;
-// 터미널 열 폭: 가장 긴 터미널 이름 칩(굵은 11px)에 맞춘다. 수정·삭제 버튼은 고객명을 눌러 여는 패널로 옮겨서(2026-11-14) 버튼 자리는 잡지 않는다.
+// 터미널 열 폭: 가장 긴 터미널 이름 칩(굵은 글자, dense는 9px·그 외 11px)에 맞춘다(계산은 src/lib/name-column.ts). 수정·삭제 버튼은 고객명을 눌러 여는 패널로 옮겨서(2026-11-14) 버튼 자리는 잡지 않는다.
 const TERMINAL_COLUMN_DEFAULT = 64;
-const TERMINAL_COLUMN_MIN = 56; // 표 머리 "터미널"이 들어가는 폭
-const TERMINAL_COLUMN_MAX = 120;
-const NAME_COLUMN_MIN = 72;
-const NAME_COLUMN_MAX = 220;
-const ROUND_BADGE_WIDTH = 28; // RoundBadge("1차") 폭 + 오른쪽 간격
 // 박스 열 폭(고정). 박스 수는 최대 두 자리라서 숫자(14px 굵게 약 17px) + 박스 재확인 경고 아이콘(14px) + 합포장 배지 "합"(약 18px) + 사이 간격과 좌우 여백이 한 줄에
 // 모두 들어가는 최소 폭이다. 헤더 "박스"(12px 굵게)는 이보다 좁다. 합포장 전체 이름은 배지 툴팁으로 본다.
 const BOX_COLUMN = 64;
@@ -1055,21 +1066,6 @@ export function DashboardClient({
     return () => ro.disconnect();
   }, []);
 
-  // 터미널 열 폭: 가장 긴 터미널 이름 칩을 한 줄로 그릴 수 있는 폭. 칩 좌우 여백(px-2 = 16) + 칩 테두리 2 + 칸 좌우 여백(px-2 = 16) + 오른쪽 경계선·반올림 여유.
-  const [terminalColumn, setTerminalColumn] = useState(TERMINAL_COLUMN_DEFAULT);
-  const terminalSignature = [...new Set(rows.map((r) => r.terminal || '-'))].join('\n');
-  useLayoutEffect(() => {
-    const measure = () => {
-      const ctx = document.createElement('canvas').getContext('2d');
-      if (!ctx) return;
-      ctx.font = `700 11px ${getComputedStyle(document.body).fontFamily}`;
-      const widest = terminalSignature.split('\n').reduce((max, name) => Math.max(max, ctx.measureText(name).width), 0);
-      setTerminalColumn(Math.min(TERMINAL_COLUMN_MAX, Math.max(TERMINAL_COLUMN_MIN, Math.ceil(widest) + 38)));
-    };
-    measure();
-    void document.fonts?.ready.then(measure);
-  }, [terminalSignature]);
-
   // 줄 높이·모니터별 줄 수는 src/lib/monitor-rows.ts가 정한다: 주문 수와 무관하게 모니터 1이 37줄(75~80건은 40줄) 고정이라 줄이 모니터를 옮기지 않는다(2026-11-17).
   // availHeight는 기준 화면(board-stage)의 높이라서 어느 기기에서 열어도 칠판과 같은 줄이 같은 모니터에 나온다. 모니터 2는 모니터 1이 가져간 줄 수 다음부터 시작한다.
   const layoutRows = rowLayout(rows.length, availHeight, INITIAL_ROW_CAPACITY, ROW_FIT_MAX_SHRINK, isSplitMode);
@@ -1079,29 +1075,38 @@ export function DashboardClient({
   const dense = rowHeight < 30;
   const nameFontPx = dense ? Math.min(11, rowHeight - 7) : 12; // 업체명 글자 크기(열 폭 측정과 표시가 같은 값을 쓴다)
 
-  // 고객명 열 폭: 가장 긴 고객명(굵은 12px)을 한 줄로 그릴 수 있는 폭. 1·2차 배지가 붙는 고객은 배지 폭만큼 더한다.
-  // 완료 배지는 상태에 따라 붙었다 떨어지므로 열 폭에 넣지 않는다(폭이 흔들리지 않게). 넘치면 2줄로 접힌다. "박스 재확인" 경고는 고객명 칸이 아니라 박스 칸에 붙는다.
+  // 고객명 열 폭: 가장 긴 줄(굵은 업체명 + 완료/취소 표시 슬롯 + 1·2차 배지 + 메모 점)을 한 줄로 그릴 수 있는 폭(계산은 src/lib/name-column.ts).
+  // 완료/취소 표시 몫은 줄의 상태와 무관하게 항상 넣는다(폭이 흔들리지 않게, 그리고 완료·취소 줄의 긴 이름이 잘리지 않게). 메모 점은 메모가 있는 줄만 넣는다
+  // (그래서 메모 유무가 서명에 들어 있다). 넘치면 전체 보기는 2줄로 접힌다. "박스 재확인" 경고는 고객명 칸이 아니라 박스 칸에 붙는다.
   const [nameColumn, setNameColumn] = useState(NAME_COLUMN_DEFAULT);
-  const nameSignature = rows.map((r) => `${r.businessName}|${splitBusinessIds.has(r.businessId) ? r.round : ''}`).join('\n');
+  const nameSignature = JSON.stringify(rows.map((r) => [r.businessName, splitBusinessIds.has(r.businessId), Boolean(r.memo)]));
   useLayoutEffect(() => {
     const measure = () => {
       const ctx = document.createElement('canvas').getContext('2d');
       if (!ctx) return;
       ctx.font = `700 ${nameFontPx}px ${getComputedStyle(document.body).fontFamily}`;
-      const widest = nameSignature
-        .split('\n')
-        .filter(Boolean)
-        .reduce((max, line) => {
-          const [name, round] = line.split('|');
-          return Math.max(max, ctx.measureText(name).width + (round ? ROUND_BADGE_WIDTH : 0));
-        }, 0);
-      // 칸 좌우 여백(px-2 = 16) + 오른쪽 경계선 + 반올림 여유
-      setNameColumn(Math.min(NAME_COLUMN_MAX, Math.max(NAME_COLUMN_MIN, Math.ceil(widest) + 20)));
+      const entries: NameColumnEntry[] = (JSON.parse(nameSignature) as [string, boolean, boolean][]).map(([name, round, memo]) => ({ name, round, memo }));
+      setNameColumn(nameColumnWidth(entries, dense, (text) => ctx.measureText(text).width));
     };
     measure();
     // 웹폰트가 늦게 로드되면 글자 폭이 달라지므로 로드 후 다시 잰다.
     void document.fonts?.ready.then(measure);
-  }, [nameSignature, nameFontPx]);
+  }, [nameSignature, nameFontPx, dense]);
+
+  // 터미널 열 폭: 가장 긴 터미널 이름 칩을 한 줄로 그릴 수 있는 폭. 칩 글자 크기·패딩은 칩 표시와 같은 규칙(terminalChipFontPx, dense는 px-1.5)이다.
+  const [terminalColumn, setTerminalColumn] = useState(TERMINAL_COLUMN_DEFAULT);
+  const terminalSignature = [...new Set(rows.map((r) => r.terminal || '-'))].join('\n');
+  const terminalFontPx = terminalChipFontPx(dense, rowHeight);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (!ctx) return;
+      ctx.font = `700 ${terminalFontPx}px ${getComputedStyle(document.body).fontFamily}`;
+      setTerminalColumn(terminalColumnWidth(terminalSignature.split('\n'), dense, (text) => ctx.measureText(text).width));
+    };
+    measure();
+    void document.fonts?.ready.then(measure);
+  }, [terminalSignature, terminalFontPx, dense]);
 
   const startIndex = effectiveMonitorMode === '2' ? ownCapacity : 0;
   const hiddenRows = hiddenRowCount(effectiveMonitorMode, rows.length, ownCapacity);
@@ -1922,7 +1927,7 @@ export function DashboardClient({
                     </div>
                     {/* 터미널 칸은 칩만 보인다. 주문 수정·삭제는 고객명을 눌러 여는 패널에 있다(고객명 칸에는 아무것도 겹치지 않는다, 2026-11-14). */}
                     <div className="relative border-r border-slate-100 px-2 flex items-center justify-center">
-                      <span className={`inline-block whitespace-nowrap px-2 rounded-md border font-bold ${dense ? '' : 'py-0.5 text-[11px]'} ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={{ ...terminalBadgeProps(row.terminal, terminalColors).style, ...(dense ? { fontSize: Math.min(11, rowHeight - 5), lineHeight: `${rowHeight - 5}px` } : {}) }}>
+                      <span className={`inline-block whitespace-nowrap rounded-md border font-bold ${dense ? 'px-1.5' : 'px-2 py-0.5 text-[11px]'} ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={{ ...terminalBadgeProps(row.terminal, terminalColors).style, ...(dense ? { fontSize: terminalFontPx, lineHeight: `${rowHeight - 5}px` } : {}) }}>
                         {row.terminal || '-'}
                       </span>
                     </div>
@@ -1943,7 +1948,9 @@ export function DashboardClient({
                           })}
                     >
                       {/* 업체명은 현장에서 정확히 보여야 하므로 말줄임 없이 전체 폭을 쓴다(최대 2줄, 행 높이 고정). */}
-                      <span className={`font-bold leading-[1.15] break-keep ${dense ? 'whitespace-nowrap' : 'text-xs line-clamp-2'} ${isCardCancelled(rowItems) ? 'text-rose-700 line-through decoration-rose-400' : 'text-slate-700'}`} style={dense ? { fontSize: nameFontPx } : undefined} title={row.memo ?? undefined}>{isCardComplete(rowItems) && <DoneBadge dense={dense} />}{isCardCancelled(rowItems) && <CancelledBadge dense={dense} />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} dense={dense} />}{row.businessName}</span>
+                      {dense && isCardComplete(rowItems) && <StatusIcon kind="done" fontPx={nameFontPx} />}
+                      {dense && isCardCancelled(rowItems) && <StatusIcon kind="cancelled" fontPx={nameFontPx} />}
+                      <span className={`font-bold leading-[1.15] break-keep ${dense ? 'whitespace-nowrap' : 'text-xs line-clamp-2'} ${isCardCancelled(rowItems) ? 'text-rose-700 line-through decoration-rose-400' : 'text-slate-700'}`} style={dense ? { fontSize: nameFontPx } : undefined} title={row.memo ?? undefined}>{!dense && isCardComplete(rowItems) && <DoneBadge />}{!dense && isCardCancelled(rowItems) && <CancelledBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} dense={dense} />}{row.businessName}</span>
                       {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
                     </div>
                     {/* 박스 구성을 정한 뒤 주문이 바뀌면 이 칸이 붉게 바뀌고 경고 아이콘이 붙는다. 고객명 칸에는 아무것도 붙이지 않는다(이름은 절대 가려지면 안 된다, 2026-11-14). */}
@@ -2122,7 +2129,7 @@ export function DashboardClient({
                       )}
                     </div>
                     <div className="border-r border-slate-100 px-2 flex items-center justify-center">
-                      <span className={`inline-block whitespace-nowrap px-2 rounded-md border font-bold ${dense ? '' : 'py-0.5 text-[11px]'} ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={{ ...terminalBadgeProps(row.terminal, terminalColors).style, ...(dense ? { fontSize: Math.min(11, rowHeight - 5), lineHeight: `${rowHeight - 5}px` } : {}) }}>{row.terminal || '-'}</span>
+                      <span className={`inline-block whitespace-nowrap rounded-md border font-bold ${dense ? 'px-1.5' : 'px-2 py-0.5 text-[11px]'} ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={{ ...terminalBadgeProps(row.terminal, terminalColors).style, ...(dense ? { fontSize: terminalFontPx, lineHeight: `${rowHeight - 5}px` } : {}) }}>{row.terminal || '-'}</span>
                     </div>
                     <div className={`border-r border-slate-100 px-3 ${density.name} flex flex-col justify-center gap-0.5 min-w-0 ${isCardComplete(rowItems) ? 'bg-emerald-50' : cancelledCard ? 'bg-rose-50' : ''}`}>
                       <span className={`text-sm font-bold break-keep leading-tight ${cancelledCard ? 'text-rose-700' : 'text-slate-800'}`}>{isCardComplete(rowItems) && <DoneBadge />}{cancelledCard && <CancelledBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} onOpen={(el) => openCustomerPanel(row.dailyBusinessId, el)} /></span>
