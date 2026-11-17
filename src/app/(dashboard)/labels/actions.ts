@@ -283,10 +283,11 @@ export interface BatchLabelPayload {
 
 const BATCH_CONCURRENCY = 4;
 
-// 날짜의 제출한 업체(택배 제외) 중 아직 한 번도 출력하지 않은 라벨을 업체 번호순으로 모아 한 번에 출력할 준비를 한다.
+// 날짜의 제출한 업체(별도 주문 제외: 택배·직배송 등) 중 아직 한 번도 출력하지 않은 라벨을 업체 번호순으로 모아 한 번에 출력할 준비를 한다.
 // 확정 방식이 '버튼'이면 업체마다 바코드를 발급하고 출력 이력을 바로 남기므로, 인쇄 대화상자를 닫거나 취소해도 "출력함"으로 기록된다(업체별 출력과 같다).
 // '스풀러'면 인쇄 완료가 확인된 라벨만 기록되고, 확인을 기다리는 라벨은 이 일괄 출력에서 빠진다.
-export async function prepareBatchLabelPrint(orderDate: string): Promise<BatchLabelPayload> {
+// reprintAll이 true면 이미 출력한 라벨(스풀러의 확인 대기 포함)도 모두 같은 바코드로 다시 낸다: 인쇄 창을 닫아 버려도 일괄로 다시 뽑을 수 있게 하려는 것이다(2026-11-18).
+export async function prepareBatchLabelPrint(orderDate: string, reprintAll: boolean): Promise<BatchLabelPayload> {
   const access = await requirePermission('packing:print');
   const fail = (error: string): BatchLabelPayload => ({ error, template: null, labels: [], rotated: false, jobId: null, businesses: 0, skipped: [] });
   if (!isIsoDate(orderDate)) return fail('날짜 형식이 올바르지 않습니다.');
@@ -301,7 +302,7 @@ export async function prepareBatchLabelPrint(orderDate: string): Promise<BatchLa
   if (dailyError) return fail(dailyError.message);
   const businessIds = [...new Set((dailies ?? []).map((d) => d.business_id))];
   const [{ data: terminals }, { data: businessRows }, { data: records }, template, rotated, mode] = await Promise.all([
-    supabase.from('terminals').select('id, is_parcel'),
+    supabase.from('terminals').select('id, is_separate'),
     businessIds.length ? supabase.from('businesses').select('id, name').in('id', businessIds) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
     supabase.from('packing_records').select('id, daily_business_id').eq('order_date', orderDate),
     loadLabelTemplate(supabase),
@@ -309,11 +310,11 @@ export async function prepareBatchLabelPrint(orderDate: string): Promise<BatchLa
     loadLabelConfirmMode(supabase),
   ]);
   const businessName = new Map((businessRows ?? []).map((b) => [b.id, b.name]));
-  const parcel = new Set((terminals ?? []).filter((t) => t.is_parcel).map((t) => t.id));
+  const separate = new Set((terminals ?? []).filter((t) => t.is_separate).map((t) => t.id));
   const submitted = new Set((records ?? []).map((r) => r.daily_business_id));
   // 주문이 모두 취소된 고객사는 라벨이 필요 없다.
   const cancelled = await cancelledCardIds(supabase, (dailies ?? []).map((d) => d.id));
-  const targets = (dailies ?? []).filter((d) => submitted.has(d.id) && !cancelled.has(d.id) && !(d.terminal_id && parcel.has(d.terminal_id)));
+  const targets = (dailies ?? []).filter((d) => submitted.has(d.id) && !cancelled.has(d.id) && !(d.terminal_id && separate.has(d.terminal_id)));
 
   const perBusiness: { order: number; name: string; labels: LabelData[]; items: PrintJobItem[]; error: string | null }[] = [];
   for (let i = 0; i < targets.length; i += BATCH_CONCURRENCY) {
@@ -323,8 +324,8 @@ export async function prepareBatchLabelPrint(orderDate: string): Promise<BatchLa
         const name = d.display_name ?? businessName.get(d.business_id) ?? `업체 ${d.business_number}번`;
         const [infos, boxTypes] = await Promise.all([loadCardLabels(supabase, d.id), loadSubmittedBoxTypes(supabase, d.id)]);
         // 스풀러 방식에서는 인쇄 완료 확인을 기다리는 박스도 뺀다(같은 라벨이 두 번 나가지 않게).
-        const pending = mode === 'spooler' ? await loadPendingLabelSeqs(supabase, d.id) : [];
-        const seqs = unprintedSeqs(boxTypes.length, [...infos.filter((l) => l.printCount > 0).map((l) => l.seq), ...pending]);
+        const pending = mode === 'spooler' && !reprintAll ? await loadPendingLabelSeqs(supabase, d.id) : [];
+        const seqs = reprintAll ? unprintedSeqs(boxTypes.length, []) : unprintedSeqs(boxTypes.length, [...infos.filter((l) => l.printCount > 0).map((l) => l.seq), ...pending]);
         if (seqs.length === 0) return { order: i + k, name, labels: [] as LabelData[], items: [] as PrintJobItem[], error: null };
         const result = await prepareCardLabels(supabase, userId, d.id, seqs, template, mode);
         return result.error === null ? { order: i + k, name, labels: result.labels, items: result.items, error: null } : { order: i + k, name, labels: [] as LabelData[], items: [] as PrintJobItem[], error: result.error };
@@ -334,7 +335,7 @@ export async function prepareBatchLabelPrint(orderDate: string): Promise<BatchLa
   }
   perBusiness.sort((a, b) => a.order - b.order);
   const labels = perBusiness.flatMap((b) => b.labels);
-  if (labels.length === 0 && perBusiness.every((b) => !b.error)) return fail('아직 출력하지 않은 라벨이 없습니다.');
+  if (labels.length === 0 && perBusiness.every((b) => !b.error)) return fail(reprintAll ? '다시 출력할 라벨이 없습니다.' : '아직 출력하지 않은 라벨이 없습니다.');
   // 한 번의 인쇄 = 인쇄 작업 하나: 업체별 라벨을 인쇄하는 순서 그대로 한 작업에 담는다(labels와 items의 순서가 같다).
   let jobId: string | null = null;
   if (mode === 'spooler' && labels.length > 0) {

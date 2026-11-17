@@ -1,7 +1,6 @@
 'use client';
 import '@/components/admin/admin.css';
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   DndContext,
@@ -16,7 +15,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
-import { BarChart3, CircleDashed, ClipboardList, Link2, Package, PackageCheck, Printer, PrinterCheck, PrinterX, Trash2, X } from 'lucide-react';
+import { CircleDashed, ClipboardList, Link2, Package, PackageCheck, Printer, PrinterCheck, PrinterX, RotateCcw, Trash2, X } from 'lucide-react';
 import type { StoredPlan } from '@/lib/packing/server';
 import type { PackingBoxType as BoxType, PackingBusiness, PackingItem } from '@/lib/packing/types';
 import { summarizeBoxNeeds } from '@/lib/packing/box-needs';
@@ -469,7 +468,7 @@ export function PackingLogClient({
     boxes.map((b) => b.name),
   );
 
-  // 라벨 일괄 출력: 제출한 업체(택배 제외) 중 아직 한 번도 출력하지 않은 라벨을 업체 번호순으로 한 번에 낸다. 대상 수는 목록의 출력 현황으로 센다.
+  // 라벨 일괄 출력: 제출한 업체(별도 주문 제외) 중 아직 한 번도 출력하지 않은 라벨을 업체 번호순으로 한 번에 낸다. 대상 수는 목록의 출력 현황으로 센다.
   const [batchJob, setBatchJob] = useState<LabelPrintJob | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
   // 스풀러 방식: 일괄 출력 뒤 1분 동안 5초마다 목록을 새로 읽어, 에이전트가 확정한 출력 현황이 보이게 한다.
@@ -483,18 +482,24 @@ export function PackingLogClient({
       clearTimeout(stop);
     };
   }, [confirming, router]);
-  const batchTargets = rows.filter((r) => r.submitted && !r.parcel && r.labelStatus && r.labelStatus.total > r.labelStatus.printed);
+  const batchTargets = rows.filter((r) => r.submitted && !r.separate && r.labelStatus && r.labelStatus.total > r.labelStatus.printed);
   const batchLabels = batchTargets.reduce((sum, r) => sum + (r.labelStatus ? r.labelStatus.total - r.labelStatus.printed : 0), 0);
-  const unsubmittedCount = rows.filter((r) => !r.submitted && !r.parcel).length;
-  const handleBatchPrint = async () => {
-    if (batchBusy || batchLabels === 0) return;
+  // 전체 다시 출력: 이미 출력한 라벨까지 제출한 업체(별도 주문 제외)의 라벨 전부. 인쇄 창을 닫아 버려 "출력함"으로만 남은 경우에 일괄로 다시 뽑는다.
+  const reprintTargets = rows.filter((r) => r.submitted && !r.separate && r.labelStatus && r.labelStatus.total > 0);
+  const reprintLabels = reprintTargets.reduce((sum, r) => sum + (r.labelStatus ? r.labelStatus.total : 0), 0);
+  const unsubmittedCount = rows.filter((r) => !r.submitted && !r.separate).length;
+  const handleBatchPrint = async (reprintAll: boolean) => {
+    const labelCount = reprintAll ? reprintLabels : batchLabels;
+    const businessCount = reprintAll ? reprintTargets.length : batchTargets.length;
+    if (batchBusy || labelCount === 0) return;
     const warn = unsubmittedCount > 0 ? `\n\n아직 박스를 제출하지 않은 업체 ${unsubmittedCount}곳은 제외됩니다.` : '';
-    if (!window.confirm(`아직 출력하지 않은 라벨 ${batchLabels}장(${batchTargets.length}곳)을 업체 번호순으로 한꺼번에 출력합니다.${warn}\n\n${labelConfirmMode === 'spooler' ? '프린터 PC가 인쇄 완료를 확인한 라벨만 "출력"으로 기록됩니다.' : '인쇄 창을 닫거나 취소해도 "출력함"으로 기록됩니다.'} 계속할까요?`)) return;
+    const head = reprintAll ? `이미 출력한 라벨을 포함해 제출한 업체의 라벨 ${labelCount}장(${businessCount}곳)을 업체 번호순으로 모두 다시 출력합니다. 같은 바코드로 한 번 더 나옵니다.` : `아직 출력하지 않은 라벨 ${labelCount}장(${businessCount}곳)을 업체 번호순으로 한꺼번에 출력합니다.`;
+    if (!window.confirm(`${head}${warn}\n\n${labelConfirmMode === 'spooler' ? '프린터 PC가 인쇄 완료를 확인한 라벨만 "출력"으로 기록됩니다.' : '인쇄 창을 닫거나 취소해도 "출력함"으로 기록됩니다.'} 계속할까요?`)) return;
     setBatchBusy(true);
     setError(null);
     let payload: Awaited<ReturnType<typeof prepareBatchLabelPrint>>;
     try {
-      payload = await prepareBatchLabelPrint(orderDate);
+      payload = await prepareBatchLabelPrint(orderDate, reprintAll);
     } catch {
       setError('라벨을 준비하지 못했습니다. 연결을 확인하고 다시 눌러 주세요.');
       return;
@@ -528,15 +533,17 @@ export function PackingLogClient({
 
         <div className="ak-toolbar">
           <DateNav value={orderDate} today={today} max={tomorrow} onChange={go} label="박스 할당 날짜" />
-          <span className="ak-count">업체 {rows.length}곳 · 제출 {doneCount}곳</span>
           <span className="ak-spacer" />
           {can('packing:print') && (
-            <button type="button" className="ak-btn ak-btn-primary" disabled={batchBusy || batchLabels === 0} onClick={handleBatchPrint} title={batchLabels === 0 ? '출력할 라벨이 없습니다(제출한 업체의 라벨을 모두 출력했습니다)' : '아직 출력하지 않은 라벨을 업체 번호순으로 한꺼번에 출력합니다'}>
+            <button type="button" className="ak-btn" disabled={batchBusy || reprintLabels === 0} onClick={() => handleBatchPrint(true)} title={reprintLabels === 0 ? '다시 출력할 라벨이 없습니다(제출한 업체가 없습니다)' : '이미 출력한 라벨도 포함해 제출한 업체의 라벨을 모두 다시 출력합니다(인쇄 창을 닫아 버렸을 때)'}>
+              <RotateCcw size={14} /> {`전체 다시 출력${reprintLabels > 0 ? ` (${reprintTargets.length}곳 · ${reprintLabels}장)` : ''}`}
+            </button>
+          )}
+          {can('packing:print') && (
+            <button type="button" className="ak-btn ak-btn-primary" disabled={batchBusy || batchLabels === 0} onClick={() => handleBatchPrint(false)} title={batchLabels === 0 ? '출력할 라벨이 없습니다(제출한 업체의 라벨을 모두 출력했습니다)' : '아직 출력하지 않은 라벨을 업체 번호순으로 한꺼번에 출력합니다'}>
               <Printer size={14} /> {batchBusy ? '준비 중…' : `라벨 일괄 출력${batchLabels > 0 ? ` (${batchTargets.length}곳 · ${batchLabels}장)` : ''}`}
             </button>
           )}
-          {can('reports:view') && <Link href="/reports/box?view=accuracy" className="ak-btn"><BarChart3 size={14} /> 추천 정확도</Link>}
-          <label className="pk-check"><input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} /> 미기록 업체만</label>
         </div>
       </div>
       )}
@@ -561,6 +568,11 @@ export function PackingLogClient({
       ) : (
         <div className={`pk-layout ${embedded ? 'pk-layout-single' : ''}`}>
           {!embedded && (
+          <div className="pk-side">
+            <div className="pk-list-head">
+              <span className="ak-count">업체 {rows.length}곳 · 제출 {doneCount}곳</span>
+              <label className="pk-check"><input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} /> 미기록 업체만 보기</label>
+            </div>
           <aside className="pk-list">
             {visibleRows.length === 0 && <p className="ak-empty" style={{ padding: '1.5rem 0.5rem' }}>모두 제출했습니다.</p>}
             {visibleRows.map((r) => (
@@ -588,6 +600,7 @@ export function PackingLogClient({
               </button>
             ))}
           </aside>
+          </div>
           )}
 
           {selected && draft && (
@@ -770,7 +783,9 @@ export function PackingLogClient({
         .pk-view { padding: 1rem 1.1rem; }
         .pk-check { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-sm); font-weight: 600; color: var(--muted-foreground); cursor: pointer; }
         .pk-layout { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 0.9rem; align-items: start; }
-        .pk-list { display: flex; flex-direction: column; gap: 0.4rem; max-height: calc(100vh - 14rem); overflow-y: auto; }
+        .pk-side { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+        .pk-list-head { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem 0.8rem; flex-wrap: wrap; padding: 0 0.2rem; }
+        .pk-list { display: flex; flex-direction: column; gap: 0.4rem; max-height: calc(100vh - 16rem); overflow-y: auto; }
         .pk-biz { text-align: left; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0.6rem 0.8rem; cursor: pointer; display: flex; flex-direction: column; gap: 0.2rem; }
         .pk-biz:hover { background: #f8fafc; }
         .pk-biz-on { border-color: var(--primary); background: var(--primary-light); }
@@ -871,7 +886,7 @@ export function PackingLogClient({
           .pk-top .page-header-icon { width: 36px; height: 36px; border-radius: 10px; }
           .pk-top .page-sub { margin-top: 0.1rem; line-height: 1.3; }
           .pk-top .ak-toolbar { background: transparent; border: 0; box-shadow: none; padding: 0; }
-          .pk-list { max-height: calc(100vh - 9rem); }
+          .pk-list { max-height: calc(100vh - 11rem); }
           .pk-work-head { padding: 0.5rem 1rem; }
           .pk-rec { padding: 0.4rem 1rem; }
           .pk-tab { padding: 0.25rem 0.75rem; font-size: var(--fs-sm); border-radius: 10px; }
