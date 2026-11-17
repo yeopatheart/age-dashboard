@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CHROME_COMPACT, CHROME_FULL, chromeFor, estimateAvailHeight, headerHeight, toolbarHeight, type ChromeMetrics } from './compact-chrome.ts';
 import { STAGE_H } from './board-stage.ts';
-import { rowLayout } from './monitor-rows.ts';
+import { FIXED_CAPACITY, FIXED_MAX_ROWS, rowLayout } from './monitor-rows.ts';
 
 test('FULL은 PR-B 이전 높이 그대로다: 도구줄 50, 표 머리 30, 줄 영역 606(전체 보기·휴대폰은 안 바뀐다)', () => {
   assert.equal(toolbarHeight(CHROME_FULL), 50);
@@ -60,14 +60,12 @@ test('칩은 버튼 높이를 넘지 않는다(도구줄 높이를 버튼이 정
   }
 });
 
-test('줄 높이 효과: 줄 영역 606→634에서 37줄 16→17px, 40줄은 15px 그대로, 경계(줄 수)는 안 바뀐다', () => {
-  const fixed = (avail: number, rows: number) => rowLayout(rows, avail, 37, 6, true);
-  assert.deepEqual(fixed(606, 60), { rowHeight: 16, capacity: 37 });
-  assert.deepEqual(fixed(634, 60), { rowHeight: 17, capacity: 37 });
-  assert.deepEqual(fixed(606, 78), { rowHeight: 15, capacity: 40 });
-  assert.deepEqual(fixed(634, 78), { rowHeight: 15, capacity: 40 });
-  for (const n of [1, 37, 38, 74, 75, 80]) assert.equal(fixed(634, n).capacity, fixed(606, n).capacity);
-  // 이후 35줄 규칙으로 바뀔 경우의 계산(규칙은 이 PR 범위 밖): floor(줄 영역 / 35)
-  assert.equal(Math.floor(606 / 35), 17);
-  assert.equal(Math.floor(634 / 35), 18);
+test('줄 높이 효과: 줄 영역이 606→634로 커지면 고정 줄 수에서 줄 높이가 커지고, 경계(줄 수)는 안 바뀐다', () => {
+  // 줄 수 규칙(FIXED_CAPACITY)이 바뀌어도 성립하도록 monitor-rows의 상수로 계산한다.
+  const fixed = (avail: number, rows: number) => rowLayout(rows, avail, FIXED_CAPACITY, 6, true);
+  const rows = FIXED_MAX_ROWS - 4;
+  assert.equal(fixed(606, rows).rowHeight, Math.floor(606 / FIXED_CAPACITY));
+  assert.equal(fixed(634, rows).rowHeight, Math.floor(634 / FIXED_CAPACITY));
+  assert.ok(fixed(634, rows).rowHeight > fixed(606, rows).rowHeight);
+  for (const n of [1, FIXED_CAPACITY, FIXED_CAPACITY + 1, FIXED_MAX_ROWS]) assert.equal(fixed(634, n).capacity, fixed(606, n).capacity);
 });
