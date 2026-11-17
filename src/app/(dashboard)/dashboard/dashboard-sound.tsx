@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useLiveRefresh } from '@/lib/realtime/use-live-refresh';
 import { applyItemChange, type ItemChange } from '@/lib/sound/apply-item-change';
 import { describeEvent, diffOrders, planCues, type OrderEvent, type OrderSnapshot } from '@/lib/sound/order-events';
+import { chromeFor } from '@/lib/compact-chrome';
 import { playCues } from '@/lib/sound/player';
 import { useSoundSettings } from '@/lib/sound/settings';
 import { getAudioContext, isAudioRunning, playTone, subscribeAudioState, unlockAudio } from '@/lib/sound/tones';
@@ -32,7 +33,9 @@ interface RecentEvent {
 }
 
 // 휴대폰 화면에는 붙이지 않는다(dashboard-client가 PC 화면의 툴바 안에만 렌더한다).
-export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { orderDate: string }) {
+// compact: 모니터 1·2의 줄어든 도구줄 크기(src/lib/compact-chrome.ts). 아니면 예전 크기다.
+export function DashboardSound({ rows, items, orderDate, compact = false }: OrderSnapshot & { orderDate: string; compact?: boolean }) {
+  const chrome = chromeFor(compact);
   const searchParams = useSearchParams();
   const [settings] = useSoundSettings();
   const soundOn = searchParams.get('sound') !== 'off';
@@ -252,7 +255,7 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
           type="button"
           onClick={unlockSound}
           title="브라우저가 소리를 막고 있습니다 — 눌러서 켜기"
-          className={`h-8 px-2.5 whitespace-nowrap flex-shrink-0 rounded-lg bg-amber-500 text-white text-xs font-bold shadow-sm hover:bg-amber-600 ${missed > 0 ? 'animate-pulse' : ''}`}
+          className={`${chrome.ctlH} px-2.5 whitespace-nowrap flex-shrink-0 rounded-lg bg-amber-500 text-white text-xs font-bold shadow-sm hover:bg-amber-600 ${missed > 0 ? 'animate-pulse' : ''}`}
         >
           소리 켜기{missed > 0 ? ` · 놓침 ${missed}` : ''}
         </button>
@@ -266,7 +269,7 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
             setMenuOpen(true);
           }}
           title="소리가 꺼진 동안 바뀐 주문이 있습니다 — 눌러서 최근 변경 보기"
-          className="h-8 px-2.5 whitespace-nowrap flex-shrink-0 rounded-lg border border-amber-400 bg-amber-50 text-amber-800 text-xs font-bold shadow-sm hover:bg-amber-100"
+          className={`${chrome.ctlH} px-2.5 whitespace-nowrap flex-shrink-0 rounded-lg border border-amber-400 bg-amber-50 text-amber-800 text-xs font-bold shadow-sm hover:bg-amber-100`}
         >
           놓친 변경 {missed}
         </button>
@@ -280,18 +283,18 @@ export function DashboardSound({ rows, items, orderDate }: OrderSnapshot & { ord
           aria-haspopup="dialog"
           aria-label={bellLabel}
           title={`${bellLabel} (눌러서 최근 변경 보기)`}
-          className={`relative w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ${TONE_CLASS[tone]}`}
+          className={`relative ${chrome.sq} inline-flex items-center justify-center rounded-lg border transition-colors ${TONE_CLASS[tone]}`}
         >
-          <BellIcon className="w-4 h-4" />
+          <BellIcon className={chrome.icon} />
           {/* 확인하지 않은 최근 변경 수. 패널을 열어 "모두 확인"을 누르면 사라진다. */}
           {recent.length > 0 && (
-            <span className={`absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full text-[10px] font-black leading-4 text-white text-center ${urgentRecent ? 'bg-red-600' : 'bg-sky-600'}`}>{recent.length}</span>
+            <span className={`absolute ${chrome.badgePos} min-w-4 h-4 px-1 rounded-full text-[10px] font-black leading-4 text-white text-center ${urgentRecent ? 'bg-red-600' : 'bg-sky-600'}`}>{recent.length}</span>
           )}
         </button>
         {menuOpen && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-            <div role="dialog" aria-label="최근 변경 이력" className="absolute right-0 top-10 z-50 w-72 max-h-[80vh] overflow-y-auto rounded-xl bg-white shadow-lg border border-slate-200 p-3 text-sm">
+            <div role="dialog" aria-label="최근 변경 이력" className={`absolute right-0 ${chrome.menuTop} z-50 w-72 max-h-[80vh] overflow-y-auto rounded-xl bg-white shadow-lg border border-slate-200 p-3 text-sm`}>
               <div className={`flex items-center gap-2 font-bold ${problem ? 'text-red-700' : 'text-slate-800'}`}>
                 <span className={`inline-block h-2 w-2 rounded-full ${status === 'live' && !stale ? 'bg-emerald-500' : problem ? 'bg-red-500' : 'bg-amber-400'}`} />
                 <span>{statusText}</span>

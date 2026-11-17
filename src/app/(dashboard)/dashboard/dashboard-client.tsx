@@ -17,6 +17,7 @@ import { orderDeleteMessage } from '@/lib/order-delete-warning';
 import { CustomerOrderPanel } from './customer-order-panel';
 import { BoxAssignModal } from './box-assign-modal';
 import { hiddenRowCount, rowLayout } from '@/lib/monitor-rows';
+import { chromeFor } from '@/lib/compact-chrome';
 import { cardNumberLabels } from '@/lib/card-number';
 import { BoardStage, type StageInfo } from './board-stage';
 import { BoardEnvReporter } from './board-env-reporter';
@@ -290,10 +291,8 @@ function productGridMinWidth(slotCount: number, nameColumn: number, terminalColu
 
 // 전체보기 위쪽 "품목별 수량" 카드를 접은 상태. 이 브라우저(PC·TV)마다 따로 기억한다 — 서버에는 저장하지 않는다.
 const SUMMARY_COLLAPSED_KEY = 'dash-summary-collapsed';
-// 툴바 터미널 칩의 [글자 px, 좌우 여백 px] 단계. 첫 단계가 기본이고 한 줄에 안 들어갈 때만 다음 단계로 줄인다.
 // PC 등 펜이 없는 기기에서 칠판의 펜 그림을 숨겼는지(이 브라우저에만 저장). 기본은 보인다.
 const INK_HIDDEN_KEY = 'board-ink-hidden';
-const TOOLBAR_CHIP_STEPS: [number, number][] = [[12, 8], [11, 6], [10, 5], [9, 4]];
 
 // 오늘 강조한 상품의 상품명 글자색. 첫 번째는 빨강이고, 두 개 이상 고르면 고른 순서대로 서로 다른 색을 쓴다.
 // 상태 색(신규 초록, 수정 노랑, 취소 빨강)과 헷갈리지 않게 파랑·보라·분홍·청록·갈색 계열로 이어 간다.
@@ -1251,13 +1250,15 @@ export function DashboardClient({
 
   // 툴바는 무조건 한 줄이다(두 줄로 꺾이면 그만큼 표의 행을 잃는다). 터미널별 박스 수 칩이 남는 폭에 안 들어가면 글자·여백을 단계적으로 줄이고,
   // 그래도 안 들어가면 칩 줄 안에서만 가로로 밀어 볼 수 있다. 크기는 CSS 변수로만 바꿔서 칩을 다시 그리지 않는다.
+  // 모니터 1·2는 도구줄·표 머리를 줄여 쓴다(src/lib/compact-chrome.ts). 전체 보기·휴대폰은 예전 크기 그대로다.
+  const chrome = chromeFor(isSplitMode);
   const chipRowRef = useRef<HTMLDivElement>(null);
   const chipSignature = terminalBoxTotals.map((t) => `${t.terminal}:${t.boxes}`).join('|');
   useLayoutEffect(() => {
     const el = chipRowRef.current;
     if (!el) return;
     const fit = () => {
-      for (const [fs, px] of TOOLBAR_CHIP_STEPS) {
+      for (const [fs, px] of chrome.chipSteps) {
         el.style.setProperty('--tb-fs', `${fs}px`);
         el.style.setProperty('--tb-px', `${px}px`);
         if (el.scrollWidth <= el.clientWidth + 1) break;
@@ -1268,7 +1269,7 @@ export function DashboardClient({
     observer.observe(el);
     void document.fonts?.ready.then(fit);
     return () => observer.disconnect();
-  }, [chipSignature]);
+  }, [chipSignature, chrome]);
   const [monitorMenuOpen, setMonitorMenuOpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
 
@@ -1622,13 +1623,13 @@ export function DashboardClient({
     // overflow-x까지 auto로 끌어올리는 CSS 규칙과 부딪혀 표 오른쪽이 잘려 보이는 버그가 있었다.
     <>
     <BoardStage enabled={isSplitMode} allowScale={!penAvailable} onChange={setStage}>
-    <div className="flex flex-col h-full w-full gap-2">
-      <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-sm flex-shrink-0 flex-nowrap">
+    <div className={`flex flex-col h-full w-full ${chrome.gap}`}>
+      <div className={`flex items-center gap-2 bg-white ${chrome.bar} rounded-xl border border-slate-200 shadow-sm flex-shrink-0 flex-nowrap`}>
         <div className="flex gap-2 items-center flex-1 min-w-0">
           <div className="flex items-center gap-1 flex-shrink-0">
             <button onClick={() => shiftDate(-1)} className="w-7 h-7 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100 flex items-center justify-center" title="전날"><ChevronLeft className="w-4 h-4" /></button>
             {/* 날짜 글자만 보이고(달력 아이콘 없음), 같은 크기의 투명한 날짜 입력칸이 겹쳐 있어 누르면 달력이 뜬다. */}
-            <span className="relative inline-flex items-center justify-center text-sm font-bold text-slate-800 border border-slate-200 rounded-md px-2 py-1 bg-white focus-within:border-[#003057]">
+            <span className={`relative inline-flex items-center justify-center font-bold text-slate-800 border border-slate-200 rounded-md bg-white focus-within:border-[#003057] ${chrome.date}`}>
               <span className="tabular-nums whitespace-nowrap" aria-hidden>{orderDate.replaceAll('-', '.')}</span>
               <input
                 type="date"
@@ -1654,7 +1655,7 @@ export function DashboardClient({
               <div
                 key={terminal}
                 className={`flex items-center gap-1 flex-shrink-0 rounded-md border font-bold ${terminalBadgeProps(terminal, terminalColors).className}`}
-                style={{ ...terminalBadgeProps(terminal, terminalColors).style, fontSize: 'var(--tb-fs, 12px)', padding: '2px var(--tb-px, 8px)' }}
+                style={{ ...terminalBadgeProps(terminal, terminalColors).style, fontSize: `var(--tb-fs, ${chrome.chipFs}px)`, padding: `${chrome.chipPadY}px var(--tb-px, 8px)` }}
               >
                 <span>{terminal || '(터미널 없음)'}</span>
                 <span className="font-black">{boxes}</span>
@@ -1671,26 +1672,26 @@ export function DashboardClient({
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* 실시간 알림 컨트롤(켜기·상태·소리·변경 목록). 화면에 떠 있으면 표의 맨 아래 행을 가려서 툴바 안에 둔다. */}
-          <DashboardSound key={orderDate} rows={rawRows} items={serverItems} orderDate={orderDate} />
+          <DashboardSound key={orderDate} rows={rawRows} items={serverItems} orderDate={orderDate} compact={isSplitMode} />
           {/* 모바일은 화면이 하나뿐이라 모니터 분할 자체가 의미 없다 — 전체보기만 강제되므로 */}
           {/* 선택 버튼도 노출하지 않는다(md 이상, 768px부터 노출 — 위 isMobile 판정 기준과 동일). */}
           {/* 모니터 설정(전체보기·모니터 1·모니터 2)은 버튼 하나에 현재 모드를 보여 주고, 누르면 선택 메뉴가 떠서 툴바 폭을 아낀다. */}
           <div className="relative hidden md:block">
             <button
               onClick={() => setMonitorMenuOpen((v) => !v)}
-              className="h-8 px-2 inline-flex items-center gap-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors"
+              className={`${chrome.ctlH} px-2 inline-flex items-center gap-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-colors`}
               title="모니터 설정 (전체보기·모니터 1·모니터 2)"
               aria-label="모니터 설정"
               aria-haspopup="menu"
               aria-expanded={monitorMenuOpen}
             >
-              {monitorMode === 'all' ? <LayoutGrid className="w-4 h-4" /> : <><Monitor className="w-4 h-4" /><span>{monitorMode}</span></>}
+              {monitorMode === 'all' ? <LayoutGrid className={chrome.icon} /> : <><Monitor className={chrome.icon} /><span>{monitorMode}</span></>}
               <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
             {monitorMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setMonitorMenuOpen(false)} />
-                <div role="menu" aria-label="모니터 설정" className="absolute right-0 top-10 z-50 w-44 rounded-xl bg-white shadow-lg border border-slate-200 p-1.5">
+                <div role="menu" aria-label="모니터 설정" className={`absolute right-0 ${chrome.menuTop} z-50 w-44 rounded-xl bg-white shadow-lg border border-slate-200 p-1.5`}>
                   {([
                     { mode: 'all', title: '전체보기', icon: <LayoutGrid className="w-4 h-4" /> },
                     { mode: '1', title: '모니터 1', icon: <Monitor className="w-4 h-4" /> },
@@ -1718,29 +1719,29 @@ export function DashboardClient({
           {separateNames.size > 0 && (
             <button
               onClick={() => { setSepPage(0); setSepFit({ key: '', level: 0 }); setSeparateOpen(true); }}
-              className="h-8 px-2.5 inline-flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-colors bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+              className={`${chrome.ctlH} px-2.5 inline-flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-colors bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100`}
               title={`별도 주문 보기 (택배·직배송 등) — ${separateRows.length}건`}
               aria-label="별도 주문 보기"
             >
-              <Truck className="w-4 h-4" />
+              <Truck className={chrome.icon} />
               {separateRows.length}
             </button>
           )}
           <div className="relative">
             <button
               onClick={() => setHlOpen((v) => !v)}
-              className={`h-8 px-2.5 inline-flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-colors ${hlList.length > 0 ? 'bg-red-50 border-red-300 text-red-600 hover:bg-red-100' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-100'}`}
+              className={`${chrome.ctlH} px-2.5 inline-flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-colors ${hlList.length > 0 ? 'bg-red-50 border-red-300 text-red-600 hover:bg-red-100' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-100'}`}
               title="오늘 강조할 상품 선택 — 주문표에서 그 상품의 이름 색이 달라집니다"
               aria-label="강조 상품 선택"
               aria-expanded={hlOpen}
             >
-              <Highlighter className="w-4 h-4" />
+              <Highlighter className={chrome.icon} />
               {hlList.length > 0 && hlList.length}
             </button>
             {hlOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setHlOpen(false)} />
-                <div className="absolute right-0 top-10 z-50 w-72 max-h-[60vh] overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-lg p-2">
+                <div className={`absolute right-0 ${chrome.menuTop} z-50 w-72 max-h-[60vh] overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-lg p-2`}>
                   <div className="flex items-center justify-between px-2 py-1">
                     <span className="text-xs font-bold text-slate-700">강조할 상품</span>
                     {hlList.length > 0 && <button onClick={clearHl} className="text-xs text-slate-500 hover:text-slate-800">모두 해제</button>}
@@ -1766,31 +1767,31 @@ export function DashboardClient({
           {isSplitMode && !inkWriter && (
             <button
               onClick={() => setInkHidden(!inkHidden)}
-              className={`w-8 h-8 inline-flex items-center justify-center rounded-lg border transition-colors ${inkHidden ? 'border-slate-200 text-slate-400 bg-white hover:bg-slate-100' : 'bg-[#003057] border-[#003057] text-white hover:opacity-90'}`}
+              className={`${chrome.sq} inline-flex items-center justify-center rounded-lg border transition-colors ${inkHidden ? 'border-slate-200 text-slate-400 bg-white hover:bg-slate-100' : 'bg-[#003057] border-[#003057] text-white hover:opacity-90'}`}
               title={inkHidden ? '칠판 펜 그림 보기' : '칠판 펜 그림 숨기기'}
               aria-label={inkHidden ? '칠판 펜 그림 보기' : '칠판 펜 그림 숨기기'}
               aria-pressed={!inkHidden}
             >
-              <PenLine className="w-4 h-4" />
+              <PenLine className={chrome.icon} />
             </button>
           )}
           {/* 주문 추가와 엑셀 다운로드는 버튼 하나에서 고른다(보기 전용이면 다운로드만 나온다). */}
           <div className="relative">
             <button
               onClick={() => setActionMenuOpen((v) => !v)}
-              className="w-8 h-8 rounded-lg text-white shadow-sm hover:opacity-90 transition-opacity flex items-center justify-center"
+              className={`${chrome.sq} rounded-lg text-white shadow-sm hover:opacity-90 transition-opacity flex items-center justify-center`}
               style={{ backgroundColor: 'var(--soft-head, #003057)' }}
               title={readOnly ? '엑셀 다운로드' : '새 주문 추가 · 엑셀 다운로드'}
               aria-label={readOnly ? '엑셀 다운로드' : '새 주문 추가·엑셀 다운로드'}
               aria-haspopup="menu"
               aria-expanded={actionMenuOpen}
             >
-              <Plus className="w-4 h-4" />
+              <Plus className={chrome.icon} />
             </button>
             {actionMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setActionMenuOpen(false)} />
-                <div role="menu" className="absolute right-0 top-10 z-50 w-56 rounded-xl bg-white shadow-lg border border-slate-200 p-1.5">
+                <div role="menu" className={`absolute right-0 ${chrome.menuTop} z-50 w-56 rounded-xl bg-white shadow-lg border border-slate-200 p-1.5`}>
                   {!readOnly && (
                     <button
                       role="menuitem"
@@ -1858,17 +1859,17 @@ export function DashboardClient({
             {/* 헤더 */}
             <div
               ref={headerRef}
-              className={`soft-head-line grid text-white text-xs font-bold flex-shrink-0 ${!isSplitMode ? 'sticky top-0 z-10' : ''}`}
+              className={`soft-head-line grid text-white ${chrome.headText} font-bold flex-shrink-0 ${!isSplitMode ? 'sticky top-0 z-10' : ''}`}
               style={{ backgroundColor: 'var(--soft-head, #003057)', gridTemplateColumns: gridTemplate }}
             >
-              <div className="border-r border-b-2 border-white/20 px-2 py-1.5 flex items-center justify-center">No</div>
-              <div className="border-r border-b-2 border-white/20 px-2 py-1.5 flex items-center justify-center">터미널</div>
-              <div className="border-r border-b-2 border-white/20 px-3 py-1.5 flex items-center">고객명</div>
-              <div className="border-r border-b-2 border-white/20 px-2 py-1.5 flex items-center justify-center">박스</div>
+              <div className={`border-r border-b-2 border-white/20 px-2 ${chrome.headCell} flex items-center justify-center`}>No</div>
+              <div className={`border-r border-b-2 border-white/20 px-2 ${chrome.headCell} flex items-center justify-center`}>터미널</div>
+              <div className={`border-r border-b-2 border-white/20 px-3 ${chrome.headCell} flex items-center`}>고객명</div>
+              <div className={`border-r border-b-2 border-white/20 px-2 ${chrome.headCell} flex items-center justify-center`}>박스</div>
               {Array.from({ length: productSlotCount }).map((_, i) => (
                 <div
                   key={i}
-                  className="border-r last:border-r-0 border-b-2 border-white/20 px-1.5 py-1.5 flex items-center justify-center text-center whitespace-nowrap overflow-hidden"
+                  className={`border-r last:border-r-0 border-b-2 border-white/20 px-1.5 ${chrome.headCell} flex items-center justify-center text-center whitespace-nowrap overflow-hidden`}
                 >
                   {/* 머리줄은 항상 한 줄이다: 열이 좁아 "상품 N"이 두 줄로 접히면 모니터 2의 머리줄만 커져 두 모니터의 줄 수 계산이 어긋나고 한 줄이 양쪽에서 사라졌다(2026-11-17). */}
                   {colWidth < 64 ? i + 1 : `상품 ${i + 1}`}
