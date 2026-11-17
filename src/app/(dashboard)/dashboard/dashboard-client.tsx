@@ -46,9 +46,9 @@ import {
   type ManualItemFields,
 } from './actions';
 
-// 행 높이·모니터별 줄 수 규칙은 src/lib/monitor-rows.ts(주문 수와 무관하게 모니터 1이 37줄 고정, 75~80건은 40줄 고정 — 2026-11-17).
+// 행 높이·모니터별 줄 수 규칙은 src/lib/monitor-rows.ts(주문 수와 무관하게 모니터 1이 35줄 고정, 71건 이상은 모니터 2만 줄 높이를 줄여 더 담는다 — 2026-11-17).
 const ROW_FIT_MAX_SHRINK = 6; // 하단 자투리에 한 행을 더 넣으려고 행을 줄일 수 있는 최대 높이(px)
-const INITIAL_ROW_CAPACITY = 37; // 측정 전(첫 렌더) 임시값. 고정 줄 수(monitor-rows.ts FIXED_CAPACITY)와 같아야 첫 렌더에서 모니터 경계가 흔들리지 않는다
+const INITIAL_ROW_CAPACITY = 35; // 측정 전(첫 렌더) 임시값. 고정 줄 수(monitor-rows.ts FIXED_CAPACITY)와 같아야 첫 렌더에서 모니터 경계가 흔들리지 않는다
 const SEP_REF_VIEWPORT_H = 720; // 칠판의 창 높이(CSS px). 별도 주문 팝업의 쪽 나눔 기준
 
 // 헤더와 각 본문 행이 전부 독립된 flexbox였을 때는 같은 칸이라도 행마다 내용에 따라 폭이
@@ -1045,7 +1045,7 @@ export function DashboardClient({
   // 별도 주문 팝업은 모니터 1·2와 달리 분할 모드 조건이 없다(팝업 자체가 하나의 화면).
   const inkWriterPopup = penAvailable && can('dashboard:edit') && !(isPast && !allowPast);
   // 표 본문에 쓸 수 있는 높이(스크롤 영역 − 헤더)를 측정해서 행 높이 단계와 줄 수를 정한다.
-  // 두 모니터가 같은 높이를 쓰므로 모니터 2는 모니터 1이 가져간 줄 수(ownCapacity) 다음부터 시작한다.
+  // 모니터 2는 모니터 1이 가져간 줄 수(monitor2Start) 다음부터 시작한다(71건 이상에서는 모니터 2만 줄 높이가 더 낮다).
   const [availHeight, setAvailHeight] = useState(0);
   const [availWidth, setAvailWidth] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1066,12 +1066,13 @@ export function DashboardClient({
     return () => ro.disconnect();
   }, []);
 
-  // 줄 높이·모니터별 줄 수는 src/lib/monitor-rows.ts가 정한다: 주문 수와 무관하게 모니터 1이 37줄(75~80건은 40줄) 고정이라 줄이 모니터를 옮기지 않는다(2026-11-17).
+  // 줄 높이·모니터별 줄 수는 src/lib/monitor-rows.ts가 정한다: 주문 수와 무관하게 모니터 1이 35줄(71건 이상은 모니터 2만 줄 높이를 줄임) 고정이라 줄이 모니터를 옮기지 않는다(2026-11-17).
   // availHeight는 기준 화면(board-stage)의 높이라서 어느 기기에서 열어도 칠판과 같은 줄이 같은 모니터에 나온다. 모니터 2는 모니터 1이 가져간 줄 수 다음부터 시작한다.
-  const layoutRows = rowLayout(rows.length, availHeight, INITIAL_ROW_CAPACITY, ROW_FIT_MAX_SHRINK, isSplitMode);
+  const layoutRows = rowLayout(rows.length, availHeight, INITIAL_ROW_CAPACITY, ROW_FIT_MAX_SHRINK, isSplitMode, effectiveMonitorMode);
   const rowHeight = layoutRows.rowHeight;
   const ownCapacity = layoutRows.capacity;
-  // 줄이 30px 미만이면(칠판 606px에서는 모니터 37줄 = 16px, 40줄 = 15px) 칸 여백·테두리 모서리·왼쪽 칸 글자를 줄여 상품 글자가 최대한 남게 한다.
+  const monitor2Start = layoutRows.monitor2Start;
+  // 줄이 30px 미만이면(본문 606px에서는 35줄 = 17px, 71건 이상 모니터 2는 16~15px) 칸 여백·테두리 모서리·왼쪽 칸 글자를 줄여 상품 글자가 최대한 남게 한다.
   const dense = rowHeight < 30;
   const nameFontPx = dense ? Math.min(11, rowHeight - 7) : 12; // 업체명 글자 크기(열 폭 측정과 표시가 같은 값을 쓴다)
 
@@ -1108,8 +1109,8 @@ export function DashboardClient({
     void document.fonts?.ready.then(measure);
   }, [terminalSignature, terminalFontPx, dense]);
 
-  const startIndex = effectiveMonitorMode === '2' ? ownCapacity : 0;
-  const hiddenRows = hiddenRowCount(effectiveMonitorMode, rows.length, ownCapacity);
+  const startIndex = effectiveMonitorMode === '2' ? monitor2Start : 0;
+  const hiddenRows = hiddenRowCount(effectiveMonitorMode, rows.length, monitor2Start, ownCapacity);
   // 화면에 다 못 들어가는 줄은 이 화면에 표시하지 않고 다음 모니터로 넘긴다.
   const monitorSlice = isSplitMode ? rows.slice(startIndex, startIndex + ownCapacity) : rows;
   const displayedRows = monitorSlice;
@@ -1846,7 +1847,7 @@ export function DashboardClient({
             <p className="text-xs text-slate-400 max-w-xs text-center leading-relaxed">
               오늘 전체 주문 {rows.length}건 중 {effectiveMonitorMode === '2'
                 ? `모니터 2는 ${startIndex + 1}번째 주문부터 표시됩니다. 아직 그만큼 쌓이지 않았습니다.`
-                : `모니터 1은 1~${ownCapacity}번째 주문을 표시합니다.`}
+                : `모니터 1은 1~${monitor2Start}번째 주문을 표시합니다.`}
             </p>
           </div>
         )}
