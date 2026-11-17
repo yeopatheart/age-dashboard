@@ -2058,7 +2058,7 @@ export function DashboardClient({
         {separateOpen ? null : inkWriter ? (
           <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} ready={inkLayoutReady} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
         ) : (
-          hydrated && isSplitMode && !inkHidden && <InkLayer key={`view|${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} ready={inkLayoutReady} viewOnly date={orderDate} monitor={effectiveMonitorMode} dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
+          hydrated && isSplitMode && !inkHidden && <InkLayer key={`view|${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} ready={inkLayoutReady} scale={stage.scale} viewOnly date={orderDate} monitor={effectiveMonitorMode} dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
         )}
       </div>
     </div>
