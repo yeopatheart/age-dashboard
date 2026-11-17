@@ -17,7 +17,7 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
   // 1단계: 서로 의존하지 않는 조회를 한 번에 보낸다.
   const [{ data: dailies, error: dailyError }, { data: terminals }, { data: boxes }, products, settings] = await Promise.all([
     supabase.from('daily_businesses').select('id, business_id, business_number, round, terminal_id, display_name, merge_groups').eq('order_date', orderDate).order('sort_order'),
-    supabase.from('terminals').select('id, name, is_parcel'),
+    supabase.from('terminals').select('id, name, is_parcel, is_separate'),
     supabase.from('boxes').select('id, name, is_active, inner_width_cm, inner_depth_cm, inner_height_cm, is_mulbong_box').order('name'),
     fetchAll((from, to) => supabase.from('products').select('name, needs_mulbong').order('id').range(from, to), '상품 조회 실패: '),
     loadAppSettings(supabase),
@@ -47,6 +47,7 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
   const businessById = new Map((businesses ?? []).map((b) => [b.id, b]));
   const terminalById = new Map((terminals ?? []).map((t) => [t.id, t.name]));
   const parcelTerminalIds = new Set((terminals ?? []).filter((t) => t.is_parcel).map((t) => t.id));
+  const separateTerminalIds = new Set((terminals ?? []).filter((t) => t.is_separate).map((t) => t.id));
   const needsMulbong = new Map(products.map((p) => [p.name, p.needs_mulbong]));
   const recordByDaily = new Map((records ?? []).map((r) => [r.daily_business_id, r]));
 
@@ -136,6 +137,7 @@ export async function loadPackingRows(supabase: SupabaseClient<Database>, orderD
       businessName: d.display_name ?? business?.name ?? '',
       terminal: d.terminal_id ? terminalById.get(d.terminal_id) ?? '' : '',
       parcel: !!d.terminal_id && parcelTerminalIds.has(d.terminal_id),
+      separate: !!d.terminal_id && separateTerminalIds.has(d.terminal_id),
       items: itemsOf(d.id)
         // 미출고 수량은 박스에 담을 대상이 아니므로 뺀다(전량 미출고면 상품 자체를 제외).
         .filter((i) => i.change_status !== 'cancelled' && Number(i.quantity) - Number(i.unshipped_quantity ?? 0) > 0)

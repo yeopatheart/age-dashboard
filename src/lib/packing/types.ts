@@ -26,6 +26,8 @@ export interface PackingBusiness {
   terminal: string;
   // 택배 터미널: 택배사 송장을 붙이므로 박스 라벨을 출력하지 않는다
   parcel: boolean;
+  // 별도 주문 터미널(택배·직배송 등, 택배는 이 중 하나): 라벨 일괄 출력·전체 다시 출력 대상에서 뺀다. 업체별 출력은 그대로 된다.
+  separate: boolean;
   items: PackingItem[];
   // 박스에 담을 대상이 아니라 items에서 빠진 상품(수량 미정·전량 미출고). 조용히 빠지지 않게 화면이 안내한다.
   excludedItems: ExcludedItem[];
