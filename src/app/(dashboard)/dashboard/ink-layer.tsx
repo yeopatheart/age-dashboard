@@ -9,7 +9,7 @@ import { classifyStroke, pathLength, REASON_LABEL, startsTwoFingerTap, TWO_FINGE
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
 import { cardPosition, clampToViewport, stackPositions } from '@/lib/ink/menu-layout';
 import { anchorLegacyStrokes, isRowAnchor, pickRowAnchor } from '@/lib/ink/row-anchor';
-import { resolvePoints, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, type Box, type InkStroke } from '@/lib/ink/store';
+import { remapStroke, resolvePoints, rowLayoutFrom, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, toPieceStroke, type Box, type InkStroke, type RowLayout } from '@/lib/ink/store';
 import { saveBoardInk } from './actions';
 
 // 칠판 펜 기능의 그림 층: 주문표 위에 얹는 캔버스 + 플로팅 버튼 + 세로로 쌓이는 메뉴.
@@ -72,6 +72,7 @@ interface ActiveStroke {
   tail: Pt | null; // 받았지만 앞 점과 너무 가까워(STORE_MIN_STEP) 아직 쓰지 않은 마지막 점. 획이 끝날 때 마지막 점으로 붙인다.
   before: InkStroke[];
   boxes: Map<string, Box>; // 지우개는 시작할 때 재 둔다. 펜은 획이 끝날 때 잰다(쓰는 동안 레이아웃을 강제로 읽지 않으려고)
+  layouts: Map<string, RowLayout>; // 지우개가 시작할 때 잰, lay가 있는 획이 붙은 줄의 지금 열 레이아웃(없으면 비어 있다)
   origin: Pt; // 획을 시작할 때 잰 그림 층의 화면 위 왼쪽 위(획 도중 점마다 다시 재지 않는다)
   layer: { width: number; height: number };
   touched: Set<string>; // 지우개가 닿은(잘라 낸) 획에 붙어 있던 상품 id
@@ -122,6 +123,31 @@ function anchorBoxes(canvas: HTMLCanvasElement): Map<string, Box> {
   canvas.parentElement?.querySelectorAll<HTMLElement>('[data-chip]').forEach((el) => measure(el, el.dataset.chip));
   canvas.parentElement?.querySelectorAll<HTMLElement>('[data-ink-row]').forEach((el) => measure(el, el.dataset.inkRow ? `row:${el.dataset.inkRow}` : undefined));
   return out;
+}
+
+// 줄의 열(grid 트랙) 레이아웃: 줄 폭은 배율 전 px(offsetWidth)이고 열 폭은 computed grid-template-columns다. 같은 단위라 배율이 걸린 화면에서도 비율로만 계산된다.
+// 잴 수 없으면(px가 아닌 값·0·NaN·열 합이 줄 폭보다 큼·예외) 그 줄은 빠진다 — 쓸 때는 lay 없이 저장하고, 그릴 때는 환산하지 않는다. 어떤 예외도 밖으로 내보내지 않는다.
+function measureRowLayouts(canvas: HTMLCanvasElement, keys: ReadonlySet<string>): Map<string, RowLayout> {
+  const out = new Map<string, RowLayout>();
+  if (keys.size === 0) return out;
+  try {
+    canvas.parentElement?.querySelectorAll<HTMLElement>('[data-ink-row]').forEach((el) => {
+      const key = el.dataset.inkRow ? `row:${el.dataset.inkRow}` : undefined;
+      if (!key || !keys.has(key) || el.closest('[data-ink-ignore]')) return;
+      const lay = rowLayoutFrom(getComputedStyle(el).gridTemplateColumns, el.offsetWidth);
+      if (lay) out.set(key, lay);
+    });
+  } catch {
+    // 측정에 실패하면 그 줄은 환산 없이 예전 방식으로 쓰고 그린다
+  }
+  return out;
+}
+
+// lay가 있는 획이 붙은 줄들의 지금 열 레이아웃. lay가 있는 획이 하나도 없으면 DOM을 읽지 않는다.
+function measureStrokeLayouts(canvas: HTMLCanvasElement, strokes: readonly InkStroke[]): Map<string, RowLayout> {
+  const keys = new Set<string>();
+  for (const stroke of strokes) if (stroke.lay && stroke.anchor !== undefined) keys.add(stroke.anchor);
+  return measureRowLayouts(canvas, keys);
 }
 
 // 동그라미·직선 판정 대상은 상품 칸뿐이다(줄은 제외).
@@ -283,7 +309,10 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     const boxes = strokes.some((stroke) => stroke.anchor !== undefined) ? anchorBoxes(canvas) : new Map<string, Box>();
     // 배율이 걸린 기준 화면(PC)에서는 선 굵기도 같은 배율로 그려서 칠판과 같은 모양으로 보이게 한다(칠판은 배율 1).
     const scale = canvas.offsetWidth > 0 ? layer.width / canvas.offsetWidth : 1;
-    for (const stroke of strokes) {
+    // 쓸 때의 열 레이아웃(lay)이 있는 줄 획은 지금 줄의 열 레이아웃으로 환산해서 같은 칸 안에 그린다. lay가 없는 획은 DOM을 더 읽지 않고 예전과 같다.
+    const layouts = measureStrokeLayouts(canvas, strokes);
+    for (const raw of strokes) {
+      const stroke = raw.lay && raw.anchor !== undefined ? remapStroke(raw, layouts.get(raw.anchor)) : raw;
       const points = resolvePoints(stroke, { width: layer.width, height: layer.height }, stroke.anchor !== undefined ? boxes.get(stroke.anchor) ?? null : undefined);
       if (!points || points.length < 2) continue; // 붙은 상품 칸이 지금 화면에 없으면 그리지 않고 보관만 한다
       ctx.strokeStyle = stroke.color;
@@ -468,8 +497,10 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     let changed = false;
     const next: InkStroke[] = [];
     for (const stroke of stateRef.current.strokes) {
+      // 줄 획은 화면에 보이는 모양(지금 열 레이아웃으로 환산한 것)을 기준으로 지우고, 조각은 그 레이아웃(lay)을 이어받는다.
+      const shown = stroke.lay && stroke.anchor !== undefined ? remapStroke(stroke, active.layouts.get(stroke.anchor)) : stroke;
       const box = stroke.anchor !== undefined ? active.boxes.get(stroke.anchor) ?? null : undefined;
-      const points = resolvePoints(stroke, active.layer, box);
+      const points = resolvePoints(shown, active.layer, box);
       if (!points) {
         next.push(stroke);
         continue;
@@ -483,7 +514,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       if (stroke.anchor !== undefined && !isRowAnchor(stroke.anchor)) active.touched.add(stroke.anchor);
       for (const piece of result.pieces) {
         const base = { id: newId(), color: stroke.color, width: stroke.width };
-        next.push(stroke.anchor !== undefined && box ? toAnchoredStroke(base, piece, stroke.anchor, box) : toFreeStroke(base, piece, active.layer));
+        next.push(toPieceStroke(base, piece, shown, box, active.layer));
       }
     }
     if (changed) {
@@ -546,6 +577,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       tail: null,
       before: stateRef.current.strokes,
       boxes: current === 'eraser' ? anchorBoxes(canvas) : new Map<string, Box>(),
+      layouts: current === 'eraser' ? measureStrokeLayouts(canvas, stateRef.current.strokes) : new Map<string, RowLayout>(),
       origin: { x: layerRect.left, y: layerRect.top },
       layer: { width: layerRect.width, height: layerRect.height },
       touched: new Set<string>(),
@@ -636,7 +668,8 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     if (stroke.anchor === undefined) {
       const rowKey = pickRowAnchor(active.points, boxes);
       const rowBox = rowKey ? boxes.get(rowKey) : undefined;
-      if (rowKey && rowBox) stroke = toAnchoredStroke(base, active.points, rowKey, rowBox);
+      // 줄 획에는 쓸 때의 열 레이아웃(lay)을 함께 저장한다: 폭이 다른 화면에서도 같은 칸 안에 그리려고. 잴 수 없으면 lay 없이 예전과 똑같이 저장한다.
+      if (rowKey && rowBox) stroke = toAnchoredStroke(base, active.points, rowKey, rowBox, canvas ? measureRowLayouts(canvas, new Set([rowKey])).get(rowKey) : undefined);
     }
     const cur = stateRef.current;
     skipRedraw.current = true; // 방금 쓴 획은 이미 화면에 똑같이 그려져 있다 — 전체를 다시 그리지 않는다(획이 쌓일수록 느려지는 것을 막는다)
