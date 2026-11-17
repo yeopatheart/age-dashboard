@@ -20,6 +20,17 @@ export function backingSize(cssWidth: number, cssHeight: number, dpr: number): {
   return { width: Math.max(1, Math.round(cssWidth * scale)), height: Math.max(1, Math.round(cssHeight * scale)) };
 }
 
+// 캔버스 그림 해상도가 지금 화면에 보이는 크기(rect)에 맞는지 본다. 틀리면 true(다시 잡아야 한다).
+// CSS transform: scale 안의 캔버스는 배율이 바뀌어도 ResizeObserver가 발동하지 않아(content-box는 배율 전 크기) 그림 해상도가 옛 크기로 남는다.
+// 그 상태로 새 rect 기준 좌표를 그리면 k = 새 rect / 옛 rect 배 위치·크기로 나오므로, 그릴 때마다 이 판단으로 확인한다.
+// 소수점 반올림 때문에 매번 다시 잡지 않도록 ±1px는 같은 것으로 본다. 크기를 모르는 상태(0·NaN)는 판단하지 않는다(false).
+export const FIT_TOLERANCE_PX = 1;
+export function needsFit(bufWidth: number, bufHeight: number, rectWidth: number, rectHeight: number, dpr: number): boolean {
+  if (!(rectWidth > 0) || !(rectHeight > 0)) return false;
+  const want = backingSize(rectWidth, rectHeight, dpr);
+  return Math.abs(bufWidth - want.width) > FIT_TOLERANCE_PX || Math.abs(bufHeight - want.height) > FIT_TOLERANCE_PX;
+}
+
 // 캔버스를 화면에 보이는 크기에 맞춰 다시 잡는다. 크기를 바꾸면 그림이 지워지므로 호출한 쪽이 저장해 둔 획을 다시 그려야 한다.
 export function fitCanvas(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; cssWidth: number; cssHeight: number } | null {
   const rect = canvas.getBoundingClientRect();

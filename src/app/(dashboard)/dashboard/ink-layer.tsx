@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Eraser, Palette, PenLine, Undo2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { fetchBoardInk, fetchBoardInkStamp, subscribeBoardInk } from '@/lib/ink/board-ink-client';
-import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, redrawLive, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
+import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, needsFit, redrawLive, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
 import { eraseStroke } from '@/lib/ink/erase';
 import { classifyStroke, pathLength, REASON_LABEL, startsTwoFingerTap, TWO_FINGER } from '@/lib/ink/gesture';
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
@@ -186,9 +186,11 @@ interface Props {
   layoutKey?: string;
   // 줄 위치를 다 쟀다(표 높이 측정이 끝났다). 이때부터 예전 방식(그림 층 비율)으로 저장된 필기를 줄에 붙인다.
   ready?: boolean;
+  // 기준 화면(board-stage)에 걸린 배율(PC). 바뀌면 다시 그려서 그림 해상도를 새 크기에 맞춘다. 배율이 없는 곳(칠판·별도 주문 팝업)은 생략한다.
+  scale?: number;
 }
 
-export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActiveChange, viewOnly = false, layoutKey = '', ready = false }: Props) {
+export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActiveChange, viewOnly = false, layoutKey = '', ready = false, scale: stageScale = 1 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<InkState>(() => ({ strokes: [], history: [] }));
@@ -302,8 +304,11 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
-    clearCanvas(ctx);
     const layer = canvas.getBoundingClientRect();
+    // 기준 화면(PC)의 배율이 바뀌면 ResizeObserver가 발동하지 않아 그림 해상도가 옛 크기로 남는다. 그 위에 새 rect 기준 좌표를 그리면 필기가 가로·세로로 어긋나므로,
+    // 그릴 때마다 해상도가 지금 rect와 맞는지 보고 다르면 다시 잡는다(같은 ctx가 그대로 쓰이고, 변환·선 모양은 fitCanvas가 다시 건다). 칠판(배율 1)은 항상 맞아서 건너뛴다.
+    if (needsFit(canvas.width, canvas.height, layer.width, layer.height, window.devicePixelRatio || 1)) fitCanvas(canvas);
+    clearCanvas(ctx);
     // 상품 칸에 붙은 획이 하나라도 있을 때만 칸 위치를 잰다(칸마다 위치를 재는 것은 강제 레이아웃이라, 낙서뿐일 때는 건너뛴다).
     const strokes = stateRef.current.strokes;
     const boxes = strokes.some((stroke) => stroke.anchor !== undefined) ? anchorBoxes(canvas) : new Map<string, Box>();
@@ -374,7 +379,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       return;
     }
     redraw();
-  }, [state.strokes, itemsKey, layoutTick, layoutKey]);
+  }, [state.strokes, itemsKey, layoutTick, layoutKey, stageScale]);
 
   // 그리는 쪽(칠판)이 필기를 정리한다. 줄 위치가 2초 동안 안정된 뒤 한 번에 처리해서 한 번만 저장한다.
   // (1) 예전 방식(그림 층 비율)으로 저장된 필기를 지금 보이는 줄에 붙인다: 보이는 위치는 그대로이고 저장 방식만 바뀌어서, 그 뒤로는 줄이 커지거나 움직여도 따라간다. 줄 밖의 필기는 그대로 둔다.
