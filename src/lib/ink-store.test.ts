@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { densify, eraseStroke, splitByMask } from './ink/erase.ts';
 import { HISTORY_LIMIT, popHistory, pushHistory, type HistoryEntry } from './ink/history.ts';
-import { inkCutoffTime, MAX_POINTS, MAX_STROKES, parseInkStrokes, resolvePoints, thinForStorage, toAnchoredStroke, toFreeStroke, type InkStroke } from './ink/store.ts';
+import { inkCutoffTime, limitInkStrokes, MAX_INK_BYTES, MAX_POINTS, MAX_STROKES, parseInkStrokes, resolvePoints, thinForStorage, toAnchoredStroke, toFreeStroke, type InkStroke } from './ink/store.ts';
 import type { Pt } from './ink/canvas.ts';
 
 const base = { id: 's1', color: '#dc2626', width: 4 };
@@ -111,4 +111,75 @@ test('the number of saved strokes and points is capped', () => {
 test('the server keeps ink for three days after the last save, whatever the order date', () => {
   assert.equal(inkCutoffTime(new Date('2026-11-14T03:00:00.000Z')), '2026-11-11T03:00:00.000Z');
   assert.equal(inkCutoffTime(new Date('2026-03-01T00:00:00.000Z')), '2026-02-26T00:00:00.000Z');
+});
+
+// 획 목록 상한: 개수(MAX_STROKES)와 총 크기(MAX_INK_BYTES). 오래된 획부터 버리고 순서는 그대로, 마지막 획은 항상 남긴다.
+const short = (i: number): InkStroke => ({ id: `s${i}`, color: '#112233', width: 3, pts: [0, 0, 1, 1] });
+// 점 n개짜리 획. 좌표는 실제 저장처럼 소수 4자리.
+const longStroke = (i: number, n: number): InkStroke => ({ id: `L${i}`, color: '#dc2626', width: 4, pts: Array.from({ length: n * 2 }, (_, k) => Math.round((k * 37 + i * 11) % 9973) / 10000) });
+const jsonSize = (list: readonly InkStroke[]) => JSON.stringify(list).length;
+
+test('the stroke limit is 1000 and the size limit is about 700KB', () => {
+  assert.equal(MAX_STROKES, 1000);
+  assert.equal(MAX_INK_BYTES, 700_000);
+});
+
+test('up to 1000 strokes are kept as they are, including lay', () => {
+  const lay = { w: 800, t: [40, 64, 200, 200] };
+  const list = Array.from({ length: MAX_STROKES }, (_, i) => ({ ...short(i), ...(i % 3 === 0 ? { anchor: `row:${i}`, lay } : {}) }));
+  assert.deepEqual(parseInkStrokes(JSON.parse(JSON.stringify(list))), list);
+});
+
+test('the 1001st stroke pushes out the oldest one first and keeps the order', () => {
+  const list = Array.from({ length: MAX_STROKES + 1 }, (_, i) => short(i));
+  const loaded = parseInkStrokes(list);
+  assert.equal(loaded.length, MAX_STROKES);
+  assert.equal(loaded[0].id, 's1');
+  assert.equal(loaded[loaded.length - 1].id, `s${MAX_STROKES}`);
+  assert.deepEqual(loaded.map((s) => s.id), list.slice(1).map((s) => s.id));
+});
+
+test('1000 short strokes are well under the size limit', () => {
+  const list = Array.from({ length: MAX_STROKES }, (_, i) => short(i));
+  assert.ok(jsonSize(list) < MAX_INK_BYTES / 4);
+  assert.equal(limitInkStrokes(list).length, MAX_STROKES);
+});
+
+test('many 800-point strokes hit the size limit and the oldest are dropped', () => {
+  const list = Array.from({ length: MAX_STROKES }, (_, i) => longStroke(i, MAX_POINTS));
+  assert.ok(jsonSize(list) > MAX_INK_BYTES);
+  const kept = limitInkStrokes(list);
+  assert.ok(kept.length < MAX_STROKES && kept.length > 0);
+  assert.ok(jsonSize(kept) <= MAX_INK_BYTES);
+  assert.deepEqual(kept, list.slice(list.length - kept.length)); // 새 쪽 연속 구간, 순서 그대로
+  assert.equal(kept[kept.length - 1].id, `L${MAX_STROKES - 1}`);
+  // 한 획만 더 남길 수 있었다면 상한을 넘는다(필요 이상으로 버리지 않는다)
+  assert.ok(jsonSize(list.slice(list.length - kept.length - 1)) > MAX_INK_BYTES);
+  assert.deepEqual(parseInkStrokes(list), kept); // 저장 전·읽은 뒤 경로(parseInkStrokes)도 같은 결과
+});
+
+test('size limit boundary: exactly at the limit keeps everything, one byte over drops the oldest', () => {
+  const list = Array.from({ length: 10 }, (_, i) => longStroke(i, 50));
+  const size = jsonSize(list);
+  assert.deepEqual(limitInkStrokes(list, size), list);
+  assert.deepEqual(limitInkStrokes(list, size + 1), list);
+  const over = limitInkStrokes(list, size - 1);
+  assert.deepEqual(over, list.slice(1));
+  assert.ok(jsonSize(over) <= size - 1);
+});
+
+test('the newest stroke is always kept, even when it alone is over the limit', () => {
+  const list = [longStroke(0, 50), longStroke(1, 50), longStroke(2, 50)];
+  assert.deepEqual(limitInkStrokes(list, 10), [list[2]]);
+  assert.deepEqual(limitInkStrokes(list, 0), [list[2]]);
+  assert.deepEqual(limitInkStrokes([], 10), []);
+});
+
+test('data at or under the old 300 limit parses exactly as before (golden)', () => {
+  const list = Array.from({ length: 300 }, (_, i) => ({ ...(i % 2 ? longStroke(i, 20) : short(i)), ...(i % 5 === 0 ? { anchor: `row:${i}`, lay: { w: 900, t: [40, 64, 200] } } : {}) }));
+  const loaded = parseInkStrokes(JSON.parse(JSON.stringify(list)));
+  assert.deepEqual(loaded, list);
+  assert.equal(JSON.stringify(loaded), JSON.stringify(list));
+  const sample = parseInkStrokes([{ id: 'a', color: '#AbCdEf', width: 2.5, pts: [0.1, 0.2, 0.3, 0.4], anchor: 'x', lay: { w: 100, t: [40, 60] } }]);
+  assert.equal(JSON.stringify(sample), '[{"id":"a","color":"#AbCdEf","width":2.5,"pts":[0.1,0.2,0.3,0.4],"anchor":"x","lay":{"w":100,"t":[40,60]}}]');
 });
