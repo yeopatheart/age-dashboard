@@ -8,7 +8,8 @@ import { eraseStroke } from '@/lib/ink/erase';
 import { classifyStroke, pathLength, REASON_LABEL, startsTwoFingerTap, TWO_FINGER } from '@/lib/ink/gesture';
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
 import { cardPosition, clampToViewport, stackPositions } from '@/lib/ink/menu-layout';
-import { anchorLegacyStrokes, isRowAnchor, pickRowAnchor } from '@/lib/ink/row-anchor';
+import { anchorLegacyStrokes, pickRowAnchor } from '@/lib/ink/row-anchor';
+import { chipTargets, isProductAnchor, isSumAnchor, pickSumAnchor, sumAnchor } from '@/lib/ink/summary-anchor';
 import { limitInkStrokes, MAX_STROKES, remapStroke, resolvePoints, rowLayoutFrom, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, toPieceStroke, type Box, type InkStroke, type RowLayout } from '@/lib/ink/store';
 import { saveBoardInk } from './actions';
 
@@ -110,8 +111,9 @@ function loadPos(): Pt {
   return defaultPos();
 }
 
-// 그림 층(캔버스) 기준으로 잰 화면 위 상품 칸과 줄의 위치. 칸은 `data-chip="상품 id"`, 줄은 `data-ink-row="업체 카드 id"`(키는 `row:카드 id`)로 찾는다.
-// 획은 시작한 줄(또는 동그라미·직선으로 표시한 상품 칸)에 붙어서 칸·줄의 크기가 바뀌거나 위치가 움직여도 따라간다.
+// 그림 층(캔버스) 기준으로 잰 화면 위 상품 칸과 줄·패널 칩의 위치. 칸은 `data-chip="상품 id"`, 줄은 `data-ink-row="업체 카드 id"`(키는 `row:카드 id`),
+// 모니터 2의 품목별 수량 패널 칩은 `data-summary-chip="품목 키"`(키는 `sum:품목 키`)로 찾는다.
+// 획은 시작한 줄·패널 칩(또는 동그라미·직선으로 표시한 상품 칸)에 붙어서 칸·줄·칩의 크기가 바뀌거나 위치가 움직여도 따라간다.
 function anchorBoxes(canvas: HTMLCanvasElement): Map<string, Box> {
   const layer = canvas.getBoundingClientRect();
   const out = new Map<string, Box>();
@@ -122,6 +124,7 @@ function anchorBoxes(canvas: HTMLCanvasElement): Map<string, Box> {
   };
   canvas.parentElement?.querySelectorAll<HTMLElement>('[data-chip]').forEach((el) => measure(el, el.dataset.chip));
   canvas.parentElement?.querySelectorAll<HTMLElement>('[data-ink-row]').forEach((el) => measure(el, el.dataset.inkRow ? `row:${el.dataset.inkRow}` : undefined));
+  canvas.parentElement?.querySelectorAll<HTMLElement>('[data-summary-chip]').forEach((el) => measure(el, el.dataset.summaryChip ? sumAnchor(el.dataset.summaryChip) : undefined));
   return out;
 }
 
@@ -149,9 +152,6 @@ function measureStrokeLayouts(canvas: HTMLCanvasElement, strokes: readonly InkSt
   for (const stroke of strokes) if (stroke.lay && stroke.anchor !== undefined) keys.add(stroke.anchor);
   return measureRowLayouts(canvas, keys);
 }
-
-// 동그라미·직선 판정 대상은 상품 칸뿐이다(줄은 제외).
-const chipTargets = (boxes: Map<string, Box>) => [...boxes].filter(([key]) => !isRowAnchor(key)).map(([id, box]) => ({ id, ...box }));
 
 // 다른 모니터에서 이 모니터로 복사해 온 획의 id(이 기기의 localStorage, 날짜·모니터별). 복사한 뒤 지운 획이 다시 복사되지 않게 한다.
 const migratedKey = (date: string, monitor: string) => `board-ink-migrated:${date}:${monitor}`;
@@ -185,13 +185,14 @@ interface Props {
   viewOnly?: boolean;
   // 줄 높이·줄 구성·열 폭이 바뀌면 달라지는 값. 바뀌면 줄에 붙은 필기를 바뀐 위치에 다시 그린다.
   layoutKey?: string;
+  chipLayoutKey?: string; // 모니터 2 패널 칩의 배치 서명. 달라지면 칩에 붙은 필기를 다시 그린다(줄 구성 키와 달리 다른 모니터 필기 복사는 일으키지 않는다)
   // 줄 위치를 다 쟀다(표 높이 측정이 끝났다). 이때부터 예전 방식(그림 층 비율)으로 저장된 필기를 줄에 붙인다.
   ready?: boolean;
   // 기준 화면(board-stage)에 걸린 배율(PC). 바뀌면 다시 그려서 그림 해상도를 새 크기에 맞춘다. 배율이 없는 곳(칠판·별도 주문 팝업)은 생략한다.
   scale?: number;
 }
 
-export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActiveChange, viewOnly = false, layoutKey = '', ready = false, scale: stageScale = 1 }: Props) {
+export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActiveChange, viewOnly = false, layoutKey = '', chipLayoutKey = '', ready = false, scale: stageScale = 1 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<InkState>(() => ({ strokes: [], history: [] }));
@@ -380,7 +381,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       return;
     }
     redraw();
-  }, [state.strokes, itemsKey, layoutTick, layoutKey, stageScale]);
+  }, [state.strokes, itemsKey, layoutTick, layoutKey, chipLayoutKey, stageScale]);
 
   // 그리는 쪽(칠판)이 필기를 정리한다. 줄 위치가 2초 동안 안정된 뒤 한 번에 처리해서 한 번만 저장한다.
   // (1) 예전 방식(그림 층 비율)으로 저장된 필기를 지금 보이는 줄에 붙인다: 보이는 위치는 그대로이고 저장 방식만 바뀌어서, 그 뒤로는 줄이 커지거나 움직여도 따라간다. 줄 밖의 필기는 그대로 둔다.
@@ -420,7 +421,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
         mergedKeyRef.current = layoutKey;
         const known = loadMigrated(date, monitor);
         const own = new Set(next.map((stroke) => stroke.id));
-        const incoming = foreign.filter((stroke) => stroke.anchor !== undefined && boxes.has(stroke.anchor) && !own.has(stroke.id) && !known.has(stroke.id));
+        const incoming = foreign.filter((stroke) => stroke.anchor !== undefined && !isSumAnchor(stroke.anchor) && boxes.has(stroke.anchor) && !own.has(stroke.id) && !known.has(stroke.id));
         if (incoming.length > 0) {
           next = [...next, ...incoming];
           saveMigrated(date, monitor, [...known, ...incoming.map((stroke) => stroke.id)]);
@@ -517,7 +518,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
         continue;
       }
       changed = true;
-      if (stroke.anchor !== undefined && !isRowAnchor(stroke.anchor)) active.touched.add(stroke.anchor);
+      if (isProductAnchor(stroke.anchor)) active.touched.add(stroke.anchor);
       for (const piece of result.pieces) {
         const base = { id: newId(), color: stroke.color, width: stroke.width };
         next.push(toPieceStroke(base, piece, shown, box, active.layer));
@@ -670,7 +671,13 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
         }
       }
     }
-    // 상품 칸에 붙지 않은 획은 시작한 줄에 붙인다: 줄 높이가 바뀌거나 줄이 움직여도 필기가 그 줄을 따라간다. 줄 밖이면 그림 층 비율 그대로다.
+    // 상품 칸에 붙지 않은 획은 패널 칩(모니터 2의 품목별 수량)에 쓴 것이면 그 칩에 붙인다: 수량이 바뀌어 칩이 움직이거나 늘어나도 필기가 칩을 따라간다. 칩 사이 빈 곳은 낙서로 둔다.
+    if (stroke.anchor === undefined) {
+      const sumKey = pickSumAnchor(active.points, boxes);
+      const sumBox = sumKey ? boxes.get(sumKey) : undefined;
+      if (sumKey && sumBox) stroke = toAnchoredStroke(base, active.points, sumKey, sumBox);
+    }
+    // 그래도 붙지 않은 획은 시작한 줄에 붙인다: 줄 높이가 바뀌거나 줄이 움직여도 필기가 그 줄을 따라간다. 줄 밖이면 그림 층 비율 그대로다.
     if (stroke.anchor === undefined) {
       const rowKey = pickRowAnchor(active.points, boxes);
       const rowBox = rowKey ? boxes.get(rowKey) : undefined;
