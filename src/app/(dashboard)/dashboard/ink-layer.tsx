@@ -9,7 +9,7 @@ import { classifyStroke, pathLength, REASON_LABEL, startsTwoFingerTap, TWO_FINGE
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
 import { cardPosition, clampToViewport, stackPositions } from '@/lib/ink/menu-layout';
 import { anchorLegacyStrokes, isRowAnchor, pickRowAnchor } from '@/lib/ink/row-anchor';
-import { remapStroke, resolvePoints, rowLayoutFrom, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, toPieceStroke, type Box, type InkStroke, type RowLayout } from '@/lib/ink/store';
+import { limitInkStrokes, MAX_STROKES, remapStroke, resolvePoints, rowLayoutFrom, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, toPieceStroke, type Box, type InkStroke, type RowLayout } from '@/lib/ink/store';
 import { saveBoardInk } from './actions';
 
 // 칠판 펜 기능의 그림 층: 주문표 위에 얹는 캔버스 + 플로팅 버튼 + 세로로 쌓이는 메뉴.
@@ -165,7 +165,8 @@ function loadMigrated(date: string, monitor: string): Set<string> {
 }
 function saveMigrated(date: string, monitor: string, ids: string[]) {
   try {
-    localStorage.setItem(migratedKey(date, monitor), JSON.stringify(ids.slice(-600)));
+    // 기억하는 id는 두 모니터 몫(2 × 획 상한)까지. 이보다 적게 기억하면 지운 획이 다음 복사 때 되살아난다.
+    localStorage.setItem(migratedKey(date, monitor), JSON.stringify(ids.slice(-2 * MAX_STROKES)));
   } catch {
     // 저장이 막혀 있으면 기억하지 못한다(지운 획이 한 번 되살아날 수 있을 뿐이다)
   }
@@ -267,7 +268,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     clearTimeout(saveTimer.current);
     if (!dirtyRef.current) return;
     dirtyRef.current = false;
-    const { error } = await saveBoardInk(date, monitor, stateRef.current.strokes);
+    const { error } = await saveBoardInk(date, monitor, limitInkStrokes(stateRef.current.strokes));
     if (error) {
       dirtyRef.current = true;
       setSaveError(error);
@@ -284,7 +285,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
   useEffect(
     () => () => {
       clearTimeout(saveTimer.current);
-      if (dirtyRef.current) void saveBoardInk(date, monitor, stateRef.current.strokes);
+      if (dirtyRef.current) void saveBoardInk(date, monitor, limitInkStrokes(stateRef.current.strokes));
     },
     [date, monitor],
   );

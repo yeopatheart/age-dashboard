@@ -30,7 +30,13 @@ export interface Box {
   height: number;
 }
 
-export const MAX_STROKES = 300;
+// 한 모니터가 저장하는 획 개수 상한. 넘으면 가장 오래된 획부터 버린다.
+// 300일 때 운영 데이터의 모니터 1·2가 모두 정확히 300개로 상한에 걸려, 아침에 쓴 필기가 저녁에 조용히 사라졌다(2026-11-17: docs/decisions/2026-11-17-ink-stroke-limit.md).
+export const MAX_STROKES = 1000;
+// 저장하는 획 전체의 JSON 크기 상한(글자 수). 획 하나가 최대 800점이라 개수가 적어도 크기가 커질 수 있고,
+// 저장은 한 모니터의 획 전체를 서버 액션 한 번으로 보내는데 Next 서버 액션 요청 본문 기본 한도가 1MB(next.config에 따로 설정 없음)라 넘으면 저장이 통째로 실패한다.
+// 1MB에서 호출 인자(날짜·모니터)와 직렬화 여유를 뺀 약 700KB를 상한으로 한다. 저장이 실패하는 것보다 오래된 획을 버리는 편이 안전하다.
+export const MAX_INK_BYTES = 700_000;
 // 저장본으로 다시 그려도 쓰던 모양과 같게 하려고 점을 거의 줄이지 않는다(2026-11-14: 3px로 솎고 240점으로 자르던 것이 글씨 모양을 바꿨다).
 // 쓰는 동안에도 같은 간격(STORE_MIN_STEP)으로만 점을 받으므로(ink-layer) 저장본과 쓰던 점 목록이 같다.
 export const MAX_POINTS = 800; // 획 하나가 저장하는 점 상한(긴 글씨 한 획도 넉넉하다)
@@ -186,7 +192,25 @@ export function parseInkStrokes(data: unknown): InkStroke[] {
     const lay = parseRowLayout(s.lay); // 망가진 lay는 lay만 버리고 획은 둔다(옛 획처럼 줄 폭 비율로 그린다)
     out.push({ id: s.id, color: s.color, width: s.width, pts: pts as number[], ...(typeof s.anchor === 'string' ? { anchor: s.anchor } : {}), ...(lay ? { lay } : {}) });
   }
-  return out.slice(-MAX_STROKES);
+  return limitInkStrokes(out);
+}
+
+// 획 목록을 개수(MAX_STROKES)와 총 크기(maxBytes, JSON.stringify(목록).length 기준)에 맞춘다. 넘으면 가장 오래된(앞쪽) 획부터 버리고 순서는 그대로 둔다.
+// 마지막(가장 새) 획은 항상 남긴다. 비용: 개수로 먼저 자른 뒤 새 획부터 한 획씩 직렬화하다가 상한을 넘는 획에서 멈추므로,
+// 직렬화하는 양은 남기는 양(최대 maxBytes)에 1획을 더한 정도다. 입력이 아무리 커도 이 이상 늘지 않는다.
+export function limitInkStrokes(strokes: readonly InkStroke[], maxBytes = MAX_INK_BYTES): InkStroke[] {
+  const last = strokes.length - 1;
+  let start = Math.max(0, strokes.length - MAX_STROKES);
+  let total = 2; // "[" + "]"
+  for (let i = last; i >= start; i--) {
+    const size = JSON.stringify(strokes[i]).length + (i < last ? 1 : 0); // 앞 획 사이의 ","
+    if (i < last && total + size > maxBytes) {
+      start = i + 1;
+      break;
+    }
+    total += size;
+  }
+  return strokes.slice(start);
 }
 
 // 서버 보관 기간: 마지막으로 그린(저장한) 뒤 3일. 이보다 오래 손대지 않은 그림은 지운다.
