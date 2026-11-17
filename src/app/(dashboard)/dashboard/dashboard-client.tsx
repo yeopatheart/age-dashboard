@@ -76,11 +76,13 @@ function ProductSummaryPanel({
   chipStyle,
   availHeight,
   onPick,
+  className = '',
 }: {
   columns: ProductSummaryRow[];
   chipStyle: (name: string) => React.CSSProperties;
   availHeight?: number;
   onPick: (product: ProductSummaryRow, rect: DOMRect) => void;
+  className?: string;
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
   const signature = `${columns.map((c) => `${c.key}:${c.total}:${c.added}:${c.changed}:${c.unshipped}:${c.undecided}`).join('|')}@${availHeight ?? ''}`;
@@ -100,7 +102,7 @@ function ProductSummaryPanel({
   }, [signature, level, availHeight]);
   const itemHeight = SUMMARY_ITEM_HEIGHTS[level];
   return (
-    <aside className="w-52 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ borderTop: '3px solid var(--soft-brass, #003057)' }}>
+    <aside className={`w-52 flex-shrink-0 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col${className ? ` ${className}` : ''}`} style={{ borderTop: '3px solid var(--soft-brass, #003057)' }}>
       <div className="px-3 py-2 text-xs font-bold text-slate-500 bg-slate-50 border-b border-slate-100 flex-shrink-0">품목별 수량</div>
       <div ref={gridRef} className={`flex-1 min-h-0 flex flex-wrap content-start gap-x-1 p-1.5 ${availHeight === undefined ? 'overflow-y-auto' : 'overflow-hidden'}`}>
         {columns.map((product) => (
@@ -280,7 +282,7 @@ function SortableRow({
 // 모니터 1·2의 상품 열 최대 폭(px). 상품 열이 적을 때(예: 모니터 2에 3열뿐) 열이 화면 폭만큼 늘어나면 65인치 칠판에서 작업자가 고개를 많이 돌려야 해서 상한을 둔다
 // (2026-11-14 현장 요청). 이 폭이면 가장 긴 한 줄 칩("활장어 2kg (키로6-8미, 기포기)")이 한 줄에 들어가고, 1920px 화면에서 열이 9개일 때의 열 폭(사이드바를 펼치면 약 150px,
 // 접으면 약 175px)보다 크다. 열이 그보다 많으면 지금처럼 화면 폭을 나눠 쓰므로 이 상한은 열이 적을 때만 작동한다.
-// 남는 폭은 표 오른쪽에 빈 자리로 남고, 모니터 2의 품목별 수량 패널은 표 바로 옆에 붙는다.
+// 남는 폭은 표와 모니터 2의 품목별 수량 패널 사이에 빈 자리로 남는다(패널은 `ml-auto`로 화면 오른쪽 끝에 고정, 2026-11-17).
 const PRODUCT_COLUMN_MAX = 200;
 const NAME_COLUMN_DEFAULT = 144;
 // 터미널 열 폭: 가장 긴 터미널 이름 칩(굵은 글자, dense는 9px·그 외 11px)에 맞춘다(계산은 src/lib/name-column.ts). 수정·삭제 버튼은 고객명을 눌러 여는 패널로 옮겨서(2026-11-14) 버튼 자리는 잡지 않는다.
@@ -1484,7 +1486,7 @@ export function DashboardClient({
     </div>
   );
 
-  const productPanel = <ProductSummaryPanel columns={columns} chipStyle={chipStyle} availHeight={availHeight} onPick={(p, r) => pickProduct('main', p, r)} />;
+  const productPanel = <ProductSummaryPanel columns={columns} chipStyle={chipStyle} availHeight={availHeight} onPick={(p, r) => pickProduct('main', p, r)} className="ml-auto" />;
 
   // 모달·확인창은 PC와 휴대폰 화면이 같이 쓴다.
   // 고객명을 누르면 그 옆에 이 고객의 주문 편집 패널(상품 추가·수정·미출고·취소·삭제, 주문 수정·삭제)을 연다. 행·상품은 매번 최신 값으로 다시 찾는다.
