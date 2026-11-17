@@ -122,18 +122,20 @@ export function rowLayoutFrom(gridTemplateColumns: string, rowWidth: number): Ro
   return parseRowLayout({ w: round2(rowWidth), t }) ?? null;
 }
 
-// 지금 레이아웃으로 환산할 수 있는가: 열 수가 저장 때와 같고, 지금 열 폭과 줄 폭이 모두 양의 유한수여야 한다. 아니면 환산하지 않는다(예전처럼 줄 폭 비율 그대로).
+// 지금 레이아웃으로 환산할 수 있는가: 지금 줄 폭과 열 폭이 모두 양의 유한수이고, 저장된 줄 폭이 양의 유한수·열 폭이 비음수 유한수이며, 열 목록이 비어 있지 않아야 한다.
+// 열 개수가 달라도 환산한다(열은 항상 끝에 추가·제거되므로 열 번호가 같으면 같은 칸이다). 조건을 못 채우면 환산하지 않는다(예전처럼 줄 폭 비율 그대로).
 function canRemap(lay: RowLayout, curTracks: readonly number[], curW: number): boolean {
   if (!(Number.isFinite(curW) && curW > 0 && Number.isFinite(lay.w) && lay.w > 0)) return false;
-  if (curTracks.length !== lay.t.length || curTracks.length === 0) return false;
+  if (curTracks.length === 0 || lay.t.length === 0) return false;
   return curTracks.every((n) => Number.isFinite(n) && n > 0) && lay.t.every((n) => Number.isFinite(n) && n >= 0);
 }
 
 const sameLayout = (lay: RowLayout, cur: RowLayout) => lay.w === cur.w && lay.t.length === cur.t.length && lay.t.every((n, i) => n === cur.t[i]);
 
-// 쓸 때 줄 폭 비율 u로 저장된 x를 지금 레이아웃의 줄 폭 비율로 바꾼다. 쓸 때 속한 열 안의 상대 위치를 지금 같은 열 안에 놓는다.
-// 열 오른쪽 바깥은 열 끝에서의 거리를, x<0은 px 위치를 그대로 둔다. 결과는 줄 폭 ± REMAP_MARGIN 안으로 자른다.
-// 환산할 수 없으면(열 수가 다르다·열 폭이 0·NaN) 원래 u를 그대로 돌려준다.
+// 쓸 때 줄 폭 비율 u로 저장된 x를 지금 레이아웃의 줄 폭 비율로 바꾼다. 쓸 때 속한 열(번호 i) 안의 상대 위치를 지금 같은 번호 열 안에 놓는다.
+// 열 개수가 달라도 같다(주문에 상품이 늘면 카드 열이 끝에 추가된다). 쓸 때 있던 열이 지금은 없으면(i가 지금 열 수 이상) 표 오른쪽 끝 바깥으로 보낸다: 쓸 때 그 열 시작에서의 거리를 지금 표 끝에서부터 둔다.
+// 쓸 때 표 끝 오른쪽 바깥은 표 끝에서의 거리를, x<0은 px 위치를 그대로 둔다. 결과는 줄 폭 ± REMAP_MARGIN 안으로 자른다.
+// 환산할 수 없으면(canRemap 조건 불충족: 열 폭·줄 폭이 0·NaN, 열 목록이 비었다) 원래 u를 그대로 돌려준다.
 export function remapX(u: number, lay: RowLayout, curTracks: readonly number[], curW: number): number {
   if (!Number.isFinite(u) || !canRemap(lay, curTracks, curW)) return u;
   const x = u * lay.w;
@@ -150,11 +152,11 @@ export function remapX(u: number, lay: RowLayout, curTracks: readonly number[], 
     out = curEnd; // 아래 반복에서 반드시 찾는다(x < storedEnd). 부동소수 오차로 못 찾는 경우를 위한 안전값
     for (let i = 0; i < lay.t.length; i++) {
       if (x < storedStart + lay.t[i]) {
-        out = curStart + ((x - storedStart) / lay.t[i]) * curTracks[i];
+        out = i < curTracks.length ? curStart + ((x - storedStart) / lay.t[i]) * curTracks[i] : curEnd + (x - storedStart);
         break;
       }
       storedStart += lay.t[i];
-      curStart += curTracks[i];
+      if (i < curTracks.length) curStart += curTracks[i];
     }
   }
   out = Math.min(Math.max(out, -REMAP_MARGIN * curW), (1 + REMAP_MARGIN) * curW);
