@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Check, GripVertical, Plus, Pencil, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PenLine, TriangleAlert, Truck } from 'lucide-react';
-import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, productDelta, formatDelta, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
+import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors, softenColors } from '@/lib/color-palette';
 import { useCan } from '@/components/permissions-context';
@@ -69,7 +69,6 @@ const SEP_DENSITIES = [
   { cell: 'p-[1px]', chip: 'min-h-[28px] py-0', name: 'py-0.5', no: 'min-h-[28px]' },
 ] as const;
 const NO_ITEMS: OrderItem[] = [];
-const DELTA_TITLE = '처음 입력 이후 바뀐 수량: 새로 추가된 수량과, 이미 있던 품목의 수량을 고친 만큼의 합(줄면 −)';
 const SUMMARY_BADGE_STYLE: React.CSSProperties = { padding: '1px 3px', fontSize: '0.9em' };
 function ProductSummaryPanel({
   columns,
@@ -142,7 +141,6 @@ function ProductSummaryPanel({
               ) : (
                 <>
                   {product.total}{product.unit}
-                  {productDelta(product) !== 0 && <span className="ml-1 inline-block rounded bg-white/70 leading-none text-sky-700" style={SUMMARY_BADGE_STYLE} title={DELTA_TITLE}>{formatDelta(productDelta(product), product.unit)}</span>}
                   {product.unshipped > 0 && <span className="ml-1 text-amber-700">(미출고 {product.unshipped})</span>}
                 </>
               )}
@@ -1468,7 +1466,6 @@ export function DashboardClient({
       ) : (
         <>
           <span className="text-xs font-black">{product.total}{product.unit}</span>
-          {productDelta(product) !== 0 && <span className="text-[10px] font-bold text-sky-700 bg-white/70 rounded px-1" title={DELTA_TITLE}>{formatDelta(productDelta(product), product.unit)}</span>}
           {product.unshipped > 0 && <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 rounded px-1">미출고 {product.unshipped}</span>}
         </>
       )}
