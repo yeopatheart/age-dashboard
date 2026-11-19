@@ -75,7 +75,7 @@ function Chip({ item }: { item: SummaryItem }) {
   );
 }
 
-// fixedScale이 있으면 그 배율(1 = 칠판 기준 화면 크기)로 고정하고, 없으면 바깥 상자 폭에 맞춰 maxScale까지 확대·축소한다.
+// fixedScale이 있으면 그 배율(1 = 칠판 기준 화면 크기)로 고정하고, 없으면 바깥 상자 폭에 맞춰 maxScale까지 확대·축소한다(maxScale보다 넓으면 상자를 표 폭에 맞춘다).
 export function HistoryBoard({ cards, meta, strokes, snapshotKey, group, sepCompact, fixedScale = null, maxScale = 2 }: { cards: SummaryCard[]; meta: SnapshotMeta; strokes: InkStroke[]; snapshotKey: string; group: BoardGroup; sepCompact: boolean; fixedScale?: number | null; maxScale?: number }) {
   const slots = productSlotCount(cards);
   const template = boardGridTemplate(slots);
@@ -87,6 +87,7 @@ export function HistoryBoard({ cards, meta, strokes, snapshotKey, group, sepComp
   const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [fitScale, setFitScale] = useState(1);
+  const [capped, setCapped] = useState(false); // 바깥 상자가 표를 maxScale로 키워도 남을 만큼 넓은지(그러면 상자를 표 폭에 맞춘다)
   const [innerHeight, setInnerHeight] = useState<number | null>(null);
   const scale = fixedScale ?? fitScale;
   useEffect(() => {
@@ -94,7 +95,9 @@ export function HistoryBoard({ cards, meta, strokes, snapshotKey, group, sepComp
     const inner = innerRef.current;
     if (!outer || !inner) return;
     const measure = () => {
-      setFitScale(Math.min(maxScale, Math.max(0.4, outer.clientWidth / innerWidth)));
+      const raw = outer.clientWidth / innerWidth;
+      setFitScale(Math.min(maxScale, Math.max(0.4, raw)));
+      setCapped(raw >= maxScale);
       setInnerHeight(inner.offsetHeight);
     };
     measure();
@@ -123,7 +126,7 @@ export function HistoryBoard({ cards, meta, strokes, snapshotKey, group, sepComp
     <div
       ref={outerRef}
       className="main-content-soft overflow-hidden rounded-xl border border-slate-300"
-      style={{ height: innerHeight !== null ? Math.ceil(innerHeight * scale) + 1 : undefined, width: fixedScale ? Math.ceil(innerWidth * fixedScale) + 2 : undefined }}
+      style={{ height: innerHeight !== null ? Math.ceil(innerHeight * scale) + 1 : undefined, width: fixedScale ? Math.ceil(innerWidth * fixedScale) + 2 : capped ? Math.ceil(innerWidth * scale) + 2 : undefined, maxWidth: '100%' }}
     >
       <div ref={innerRef} data-board-capture className="relative bg-white" style={{ width: innerWidth, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
         {isSep ? (

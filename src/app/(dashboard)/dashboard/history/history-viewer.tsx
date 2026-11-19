@@ -23,6 +23,9 @@ interface Props {
   children?: ReactNode; // 그 줄 아래·표 위에 놓는 안내
 }
 
+// 별도 주문 표는 칠판 팝업 크기(배율 1)까지만 키운다. 줄이 높아(옛 51px) 더 키우면 화면 하나에 8~9줄밖에 안 보인다(2026-11-19 사용자 요청: 1.0배).
+const SEP_MAX_SCALE = 1;
+
 type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'done' } | { kind: 'error'; message: string };
 
 const ZOOM_LEVELS = [
@@ -138,7 +141,7 @@ export function HistoryViewer({ toolbar, children, ...props }: Props) {
         }}
         className="group relative cursor-zoom-in rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-slate-900/60"
       >
-        <HistoryBoard cards={props.cards} meta={props.meta} strokes={props.strokes} snapshotKey={props.snapshotKey} group={props.group} sepCompact={props.sepCompact} />
+        <HistoryBoard cards={props.cards} meta={props.meta} strokes={props.strokes} snapshotKey={props.snapshotKey} group={props.group} sepCompact={props.sepCompact} maxScale={props.group === 'sep' ? SEP_MAX_SCALE : undefined} />
         <span className="pointer-events-none absolute right-2 top-2 hidden items-center gap-1 rounded-full bg-slate-900/80 px-2.5 py-1 text-xs font-semibold text-white group-hover:inline-flex group-focus-visible:inline-flex">
           <ZoomIn size={13} /> 눌러서 확대
         </span>
