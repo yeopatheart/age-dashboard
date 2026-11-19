@@ -19,12 +19,18 @@ export interface AppSettings {
   contactPhone: string;
   // 상차 스캔에서 터미널별로 카카오톡에 보내는 상차 완료 글의 형식(문구 + {변수})
   scanShare: ScanShareTemplate;
-  // 칠판 필기를 서버 이력(board_ink_history)으로 남기는 최소 간격(분). DB 트리거(0067)가 저장할 때마다 이 값을 읽는다. 키 이름도 DB와 같다.
+  // 칠판 필기를 서버 이력(board_ink_history)으로 남기는 최소 간격(분). 정기 점검 함수(0068·0070)가 이 값을 읽는다. 키 이름도 DB와 같다.
   boardInkSnapshotMinutes: number;
+  // 이력을 남기는 시간대(한국 시간, 시). 시작 시각의 정각부터 종료 시각의 정각까지(종료 정각 포함, 예: 4~16이면 04:00~16:00).
+  // 시작이 종료보다 크면 자정을 넘기는 시간대(22~6), 같으면 하루 종일. 시간대 밖에서는 정기 이력을 남기지 않는다(필기가 크게 줄었을 때의 이력은 시간과 상관없이 남긴다). 키 이름도 DB와 같다(0070).
+  boardInkSnapshotStartHour: number;
+  boardInkSnapshotEndHour: number;
 }
 
 export const BOARD_INK_SNAPSHOT_MINUTES_MIN = 5;
 export const BOARD_INK_SNAPSHOT_MINUTES_MAX = 240;
+export const BOARD_INK_SNAPSHOT_HOUR_MIN = 0;
+export const BOARD_INK_SNAPSHOT_HOUR_MAX = 23;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   sizeTolerancePct: 10,
@@ -37,7 +43,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   companyName: '통영아재수산',
   contactPhone: '',
   scanShare: DEFAULT_SCAN_SHARE_TEMPLATE,
-  boardInkSnapshotMinutes: 30,
+  boardInkSnapshotMinutes: 10,
+  boardInkSnapshotStartHour: 4,
+  boardInkSnapshotEndHour: 16,
 };
 
 const num = (v: unknown, fallback: number, min: number, max: number) => {
@@ -65,5 +73,8 @@ export function mergeSettings(stored: Record<string, unknown> | null | undefined
     scanShare: normalizeScanShareTemplate(s.scanShare),
     // 분 단위 정수만 쓴다(트리거도 소수는 내림한다). 범위를 벗어나면 기본값으로 되돌린다.
     boardInkSnapshotMinutes: Math.round(num(s.boardInkSnapshotMinutes, d.boardInkSnapshotMinutes, BOARD_INK_SNAPSHOT_MINUTES_MIN, BOARD_INK_SNAPSHOT_MINUTES_MAX)),
+    // 시각은 0~23 정수만 쓴다. 범위를 벗어나면 기본값으로 되돌린다.
+    boardInkSnapshotStartHour: Math.round(num(s.boardInkSnapshotStartHour, d.boardInkSnapshotStartHour, BOARD_INK_SNAPSHOT_HOUR_MIN, BOARD_INK_SNAPSHOT_HOUR_MAX)),
+    boardInkSnapshotEndHour: Math.round(num(s.boardInkSnapshotEndHour, d.boardInkSnapshotEndHour, BOARD_INK_SNAPSHOT_HOUR_MIN, BOARD_INK_SNAPSHOT_HOUR_MAX)),
   };
 }
