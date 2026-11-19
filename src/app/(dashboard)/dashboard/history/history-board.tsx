@@ -13,13 +13,6 @@ import { HistoryInk } from './history-ink';
 // 상태별 칩 색(getItemStyle와 같은 클래스), 업체명 11px·터미널 9px. 열 순서(No · 터미널 · 고객명 · 박스 · 상품 1..N)도 같게 해서 필기가 같은 열에 놓인다.
 // 칠판은 기준 화면(1248px 폭)을 창에 맞춰 확대하므로 이 표도 화면 폭에 맞춰 확대·축소한다(PC 보기와 같은 방식).
 
-// 필기 굵기: 저장된 굵기에 곱한다. 이력은 칩 글자를 읽는 것이 먼저라 기본은 가늘게.
-const INK_WIDTHS = [
-  { key: 'thin', label: '가늘게', factor: 0.5 },
-  { key: 'normal', label: '보통', factor: 0.75 },
-  { key: 'orig', label: '원래대로', factor: 1 },
-] as const;
-
 const STAGE_W = 1248;
 const ROW_H = 18;
 const NAME_FONT = 11;
@@ -98,7 +91,8 @@ function Chip({ item }: { item: SummaryItem }) {
   );
 }
 
-export function HistoryBoard({ cards, meta, strokes, snapshotKey }: { cards: SummaryCard[]; meta: SnapshotMeta; strokes: InkStroke[]; snapshotKey: string }) {
+// fixedScale이 있으면 그 배율(1 = 칠판 기준 화면 크기)로 고정하고, 없으면 바깥 상자 폭에 맞춰 maxScale까지 확대·축소한다.
+export function HistoryBoard({ cards, meta, strokes, snapshotKey, fixedScale = null, maxScale = 2 }: { cards: SummaryCard[]; meta: SnapshotMeta; strokes: InkStroke[]; snapshotKey: string; fixedScale?: number | null; maxScale?: number }) {
   const slots = productSlotCount(cards);
   const template = boardGridTemplate(slots);
   const labels = cardNumberLabels(cards.map((c) => ({ id: c.id, businessNumber: c.number, separate: c.separate })));
@@ -107,17 +101,15 @@ export function HistoryBoard({ cards, meta, strokes, snapshotKey }: { cards: Sum
 
   const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
+  const [fitScale, setFitScale] = useState(1);
   const [innerHeight, setInnerHeight] = useState<number | null>(null);
-  const [showInk, setShowInk] = useState(true);
-  const [inkWidth, setInkWidth] = useState<(typeof INK_WIDTHS)[number]['key']>('thin');
-  const widthFactor = INK_WIDTHS.find((w) => w.key === inkWidth)?.factor ?? 0.5;
+  const scale = fixedScale ?? fitScale;
   useEffect(() => {
     const outer = outerRef.current;
     const inner = innerRef.current;
     if (!outer || !inner) return;
     const measure = () => {
-      setScale(Math.min(2, Math.max(0.4, outer.clientWidth / innerWidth)));
+      setFitScale(Math.min(maxScale, Math.max(0.4, outer.clientWidth / innerWidth)));
       setInnerHeight(inner.offsetHeight);
     };
     measure();
@@ -125,7 +117,7 @@ export function HistoryBoard({ cards, meta, strokes, snapshotKey }: { cards: Sum
     observer.observe(outer);
     observer.observe(inner);
     return () => observer.disconnect();
-  }, [innerWidth]);
+  }, [innerWidth, maxScale]);
 
   // 칩마다 글자 크기 단계를 골라 칩 안쪽 높이에 넣는다(칠판의 글자 맞춤과 같은 규칙). 배율(transform)은 scrollHeight에 영향이 없다.
   useLayoutEffect(() => {
@@ -143,22 +135,12 @@ export function HistoryBoard({ cards, meta, strokes, snapshotKey }: { cards: Sum
   }, [cards, slots, innerWidth]);
 
   return (
-    <div>
-    <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-      <label className="flex cursor-pointer items-center gap-1.5 font-semibold text-slate-700">
-        <input type="checkbox" checked={showInk} onChange={(e) => setShowInk(e.target.checked)} /> 필기 보기
-      </label>
-      <div className="flex items-center gap-1">
-        <span className="text-slate-500">필기 굵기</span>
-        {INK_WIDTHS.map((w) => (
-          <button key={w.key} type="button" onClick={() => setInkWidth(w.key)} aria-pressed={inkWidth === w.key} disabled={!showInk} className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${inkWidth === w.key ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-700'} disabled:opacity-40`}>
-            {w.label}
-          </button>
-        ))}
-      </div>
-    </div>
-    <div ref={outerRef} className="main-content-soft overflow-hidden rounded-xl border border-slate-300" style={{ height: innerHeight !== null ? Math.ceil(innerHeight * scale) + 1 : undefined }}>
-      <div ref={innerRef} className="relative bg-white" style={{ width: innerWidth, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+    <div
+      ref={outerRef}
+      className="main-content-soft overflow-hidden rounded-xl border border-slate-300"
+      style={{ height: innerHeight !== null ? Math.ceil(innerHeight * scale) + 1 : undefined, width: fixedScale ? Math.ceil(innerWidth * fixedScale) + 2 : undefined }}
+    >
+      <div ref={innerRef} data-board-capture className="relative bg-white" style={{ width: innerWidth, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
         <div className="soft-head-line grid text-[11px] leading-[14px] font-bold text-white" style={{ gridTemplateColumns: template, backgroundColor: 'var(--soft-head, #003057)' }}>
           {['No', '터미널', '고객명', '박스', ...Array.from({ length: slots }, (_, i) => `상품 ${i + 1}`)].map((label, i) => (
             <div key={i} className="flex items-center justify-center border-b-2 border-r border-white/20 px-2 py-1.5 last:border-r-0">
@@ -196,9 +178,8 @@ export function HistoryBoard({ cards, meta, strokes, snapshotKey }: { cards: Sum
             </div>
           );
         })}
-        <HistoryInk strokes={strokes} redrawKey={`${snapshotKey}|${slots}|${cards.length}|${scale.toFixed(3)}`} widthFactor={widthFactor} visible={showInk} />
+        <HistoryInk strokes={strokes} redrawKey={`${snapshotKey}|${slots}|${cards.length}|${scale.toFixed(3)}`} />
       </div>
-    </div>
     </div>
   );
 }

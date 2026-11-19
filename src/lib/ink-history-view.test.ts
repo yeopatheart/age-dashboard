@@ -11,6 +11,7 @@ import {
   formatKst,
   itemIsUndecided,
   monitorLabel,
+  monitorShortLabel,
   parseMeta,
   parseSummary,
   productSlotCount,
@@ -125,7 +126,8 @@ test('buildHistoryIndex: 날짜는 최신순, 모니터는 1·2·s1·s2 순', ()
 test('monitorLabel', () => {
   assert.equal(monitorLabel('1'), '모니터 1');
   assert.equal(monitorLabel('2'), '모니터 2');
-  assert.equal(monitorLabel('s3'), '별도 주문 3쪽');
+  assert.equal(monitorLabel('s3'), '별도 주문 3');
+  assert.equal(monitorShortLabel('s1'), '별도 1');
   assert.equal(monitorLabel('x'), 'x');
 });
 
@@ -155,8 +157,8 @@ test('driftMinutes: 정기(v2)는 어긋나지 않고, 급감·옛 형식은 저
 import { needsMigration, parseSnapshotInfo } from './ink/history-queries.ts';
 
 test('parseSnapshotInfo: 정기·급감 행을 읽고 잘못된 행은 버린다', () => {
-  const base = { id: 7, reason: 'drop', stroke_count: 10, point_count: 100, prev_point_count: 100, new_point_count: 60, strokes_saved_at: '2026-11-18T00:00:00Z', captured_at: '2026-11-18T00:10:00Z', summary_version: 2 };
-  assert.deepEqual(parseSnapshotInfo(base), { id: 7, reason: 'drop', strokeCount: 10, pointCount: 100, prevPointCount: 100, newPointCount: 60, strokesSavedAt: '2026-11-18T00:00:00Z', capturedAt: '2026-11-18T00:10:00Z', summaryVersion: 2 });
+  const base = { id: 7, monitor: '2', reason: 'drop', stroke_count: 10, point_count: 100, prev_point_count: 100, new_point_count: 60, strokes_saved_at: '2026-11-18T00:00:00Z', captured_at: '2026-11-18T00:10:00Z', summary_version: 2 };
+  assert.deepEqual(parseSnapshotInfo(base), { id: 7, monitor: '2', reason: 'drop', strokeCount: 10, pointCount: 100, prevPointCount: 100, newPointCount: 60, strokesSavedAt: '2026-11-18T00:00:00Z', capturedAt: '2026-11-18T00:10:00Z', summaryVersion: 2 });
   const old = parseSnapshotInfo({ ...base, reason: 'interval', prev_point_count: null, new_point_count: null, summary_version: undefined });
   assert.ok(old);
   assert.equal(old.prevPointCount, null);
@@ -164,6 +166,7 @@ test('parseSnapshotInfo: 정기·급감 행을 읽고 잘못된 행은 버린다
   assert.equal(parseSnapshotInfo({ ...base, reason: 'x' }), null);
   assert.equal(parseSnapshotInfo({ ...base, id: 'a' }), null);
   assert.equal(parseSnapshotInfo({ ...base, captured_at: 3 }), null);
+  assert.equal(parseSnapshotInfo({ ...base, monitor: undefined }), null);
   assert.equal(parseSnapshotInfo(null), null);
 });
 
@@ -174,4 +177,50 @@ test('needsMigration: 이력 테이블·열이 없을 때만 안내한다', () =
   assert.equal(needsMigration('permission denied for table board_ink_history'), false);
   assert.equal(needsMigration('fetch failed'), false);
   assert.equal(needsMigration('relation "other_table" does not exist'), false);
+});
+
+import { buildTimePoints, monitorsAt, snapshotAt } from './ink/history-timeline.ts';
+import type { SnapshotInfo } from './ink/history-queries.ts';
+
+const snap = (id: number, monitor: string, at: string, reason: 'interval' | 'drop' = 'interval', extra: Partial<SnapshotInfo> = {}): SnapshotInfo => ({
+  id, monitor, reason, strokeCount: 1, pointCount: 10, prevPointCount: null, newPointCount: null, strokesSavedAt: at, capturedAt: at, summaryVersion: 2, ...extra,
+});
+const INFOS = [
+  snap(1, '1', '2026-11-18T01:00:05Z'),
+  snap(2, '2', '2026-11-18T01:00:05Z'), // 같은 점검 = 같은 시각
+  snap(3, 's1', '2026-11-18T01:30:10Z'), // 이 화면은 01:30에야 처음 생김
+  snap(4, '1', '2026-11-18T01:30:10Z'),
+  snap(5, '1', '2026-11-18T01:42:30Z', 'drop', { prevPointCount: 100, newPointCount: 20 }),
+];
+
+test('buildTimePoints: 분 단위로 묶고 최신순, 급감은 따로 알린다', () => {
+  const points = buildTimePoints(INFOS);
+  assert.deepEqual(points.map((p) => p.monitors), [['1'], ['1', 's1'], ['1', '2']]);
+  assert.equal(points[0].key, Date.parse('2026-11-18T01:42:00Z'));
+  assert.equal(points[0].endMs, Date.parse('2026-11-18T01:42:59.999Z'));
+  assert.deepEqual(points[0].drops, [{ monitor: '1', prev: 100, next: 20 }]);
+  assert.deepEqual(points[1].drops, []);
+  assert.deepEqual(buildTimePoints([]), []);
+  assert.deepEqual(buildTimePoints([snap(9, '1', '이상한 값')]), []);
+});
+
+test('monitorsAt: 그 시각까지 기록이 있던 화면만, 1·2·별도 순', () => {
+  assert.deepEqual(monitorsAt(INFOS, Date.parse('2026-11-18T01:00:59Z')), ['1', '2']); // 별도 1은 아직 없었다
+  assert.deepEqual(monitorsAt(INFOS, Date.parse('2026-11-18T01:30:59Z')), ['1', '2', 's1']);
+  assert.deepEqual(monitorsAt(INFOS, Date.parse('2026-11-18T00:59:00Z')), []);
+});
+
+test('snapshotAt: 그 시각까지 가장 최근 스냅샷, 같은 순간이면 id가 큰 것', () => {
+  assert.equal(snapshotAt(INFOS, '1', Date.parse('2026-11-18T01:30:59Z'))?.id, 4);
+  assert.equal(snapshotAt(INFOS, '1', Date.parse('2026-11-18T01:59:59Z'))?.id, 5);
+  assert.equal(snapshotAt(INFOS, '2', Date.parse('2026-11-18T01:59:59Z'))?.id, 2); // 2번 화면은 그 뒤 기록이 없어 직전 기록
+  assert.equal(snapshotAt(INFOS, 's1', Date.parse('2026-11-18T01:00:59Z')), null);
+  assert.equal(snapshotAt([snap(1, '1', '2026-11-18T01:00:05Z'), snap(2, '1', '2026-11-18T01:00:05Z')], '1', Date.parse('2026-11-18T01:30:00Z'))?.id, 2);
+});
+
+import { kstTime } from './ink/history-view.ts';
+test('kstTime: 밀리초를 한국 시간 HH:mm으로', () => {
+  assert.equal(kstTime(Date.parse('2026-11-17T20:06:41Z')), '05:06');
+  assert.equal(kstTime(Date.parse('2026-11-18T00:20:00Z')), '09:20');
+  assert.equal(kstTime(Number.NaN), '');
 });

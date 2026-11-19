@@ -146,7 +146,7 @@ export interface HistoryIndex {
   monitorsByDate: Record<string, string[]>;
 }
 
-const monitorRank = (m: string): number => (m === '1' ? 1 : m === '2' ? 2 : 100 + (Number(m.slice(1)) || 0));
+export const monitorRank = (m: string): number => (m === '1' ? 1 : m === '2' ? 2 : 100 + (Number(m.slice(1)) || 0));
 
 export function buildHistoryIndex(rows: readonly { order_date: string; monitor: string }[]): HistoryIndex {
   const byDate = new Map<string, Set<string>>();
@@ -161,7 +161,9 @@ export function buildHistoryIndex(rows: readonly { order_date: string; monitor: 
   return { dates, monitorsByDate };
 }
 
-export const monitorLabel = (monitor: string): string => (monitor === '1' || monitor === '2' ? `모니터 ${monitor}` : /^s\d$/.test(monitor) ? `별도 주문 ${monitor.slice(1)}쪽` : monitor);
+export const monitorLabel = (monitor: string): string => (monitor === '1' || monitor === '2' ? `모니터 ${monitor}` : /^s\d$/.test(monitor) ? `별도 주문 ${monitor.slice(1)}` : monitor);
+// 시각 목록처럼 좁은 곳에 쓰는 짧은 이름.
+export const monitorShortLabel = (monitor: string): string => (monitor === '1' || monitor === '2' ? `모니터 ${monitor}` : /^s\d$/.test(monitor) ? `별도 ${monitor.slice(1)}` : monitor);
 
 // 한국 시간 "MM-DD HH:mm" (목록용). 읽을 수 없는 값은 빈 글자.
 export function formatKst(iso: string): string {
@@ -183,4 +185,11 @@ export function driftMinutes(reason: string, summaryVersion: number, savedAt: st
   const diff = new Date(capturedAt).getTime() - new Date(savedAt).getTime();
   if (!Number.isFinite(diff) || diff < 60_000) return null; // 1분 안이면 알릴 만큼 어긋나지 않는다
   return Math.round(diff / 60_000);
+}
+
+// 한국 시간 "HH:mm" (시각 목록용). 읽을 수 없는 값은 빈 글자.
+export function kstTime(ms: number): string {
+  const t = new Date(ms);
+  if (Number.isNaN(t.getTime())) return '';
+  return t.toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(11, 16);
 }
