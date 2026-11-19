@@ -22,7 +22,6 @@ import { nameColumnWidth, terminalChipFontPx, terminalColumnWidth, type NameColu
 import { cardNumberLabels } from '@/lib/card-number';
 import { BoardStage, type StageInfo } from './board-stage';
 import { BoardEnvReporter } from './board-env-reporter';
-import { packRows } from '@/lib/page-rows';
 import { useTouchDesktop } from '@/lib/use-touch-desktop';
 import { useHydrated } from '@/lib/use-hydrated';
 import { useToast, useUndoToast } from '@/components/toast';
@@ -49,7 +48,7 @@ import {
 // 행 높이·모니터별 줄 수 규칙은 src/lib/monitor-rows.ts(주문 수와 무관하게 모니터 1이 35줄 고정, 71건 이상은 모니터 2만 줄 높이를 줄여 더 담는다 — 2026-11-17).
 const ROW_FIT_MAX_SHRINK = 6; // 하단 자투리에 한 행을 더 넣으려고 행을 줄일 수 있는 최대 높이(px)
 const INITIAL_ROW_CAPACITY = 35; // 측정 전(첫 렌더) 임시값. 고정 줄 수(monitor-rows.ts FIXED_CAPACITY)와 같아야 첫 렌더에서 모니터 경계가 흔들리지 않는다
-const SEP_REF_VIEWPORT_H = 720; // 칠판의 창 높이(CSS px). 별도 주문 팝업의 쪽 나눔 기준
+const SEP_REF_VIEWPORT_H = 720; // 칠판의 창 높이(CSS px). 별도 주문 팝업 오른쪽 품목별 수량 패널의 높이 기준
 
 // 헤더와 각 본문 행이 전부 독립된 flexbox였을 때는 같은 칸이라도 행마다 내용에 따라 폭이
 // 1~2px씩 미묘하게 달라져(브라우저의 flex 여유공간 분배가 셀 내용에 영향받는 경우가 있다)
@@ -62,12 +61,14 @@ const SEP_REF_VIEWPORT_H = 720; // 칠판의 창 높이(CSS px). 별도 주문 �
 // 안 주면(팝업) 기본 크기로 그리고 넘치면 패널 안에서 스크롤한다.
 const SUMMARY_ITEM_HEIGHTS = [26, 24, 22, 20, 18, 16, 14];
 // 추가(+N)·미정 배지는 칩 글자보다 작게, 위아래 여백을 1px만 둬서 칩 테두리에 닿지 않게 한다(15px 칩에서 배지가 테두리를 넘어 보였다).
-// 별도 주문 팝업 표의 행 촘촘함 단계(0 = 넉넉함). 칸 안쪽 여백과 칩·번호 칸의 최소 높이만 줄이고 글자 크기는 바꾸지 않는다(글자 잘림 점검 대상 아님).
-const SEP_DENSITIES = [
-  { cell: 'p-[3px]', chip: 'min-h-[44px] py-1', name: 'py-1.5', no: 'min-h-[44px]' },
-  { cell: 'p-[2px]', chip: 'min-h-[34px] py-0.5', name: 'py-1', no: 'min-h-[34px]' },
-  { cell: 'p-[1px]', chip: 'min-h-[28px] py-0', name: 'py-0.5', no: 'min-h-[28px]' },
-] as const;
+// 별도 주문 팝업은 한 쪽(모니터)에 SEP_PAGE_ROWS줄씩 채운다: 줄 1~20은 모니터 1, 21~40은 모니터 2 …(2026-11-19 사용자 요청).
+// 줄 높이는 기기·창 높이와 상관없이 같다(칩 최소 26px + 칸 여백 2px + 테두리 1px = 29px). 필기가 줄 높이 대비 비율로 저장되므로 기기마다 줄 높이가 다르면
+// 같은 필기가 기기마다 다르게 눌려 보인다(2026-11-16 줄 수 사고와 같은 종류). 29px는 30px 미만이라 주문 목록과 같은 규칙으로 완료·취소를 아이콘(StatusIcon)으로 표시한다.
+// 20줄 = 20 × 29 + 표 머리 30 = 610px이고 팝업 높이 제한(96vh)의 칠판(720px) 값 691px − 제목·여백 54px = 637px 안에 들어간다.
+const SEP_PAGE_ROWS = 20;
+const SEP_HEADER_H = 30;
+const SEP_CHROME_H = 54; // 팝업 제목 줄(py-2) + 안쪽 여백(p-2) + 테두리
+const SEP_ROW = { cell: 'p-[1px]', chip: 'min-h-[26px] py-0', no: 'min-h-[26px]' } as const;
 const NO_ITEMS: OrderItem[] = [];
 const SUMMARY_BADGE_STYLE: React.CSSProperties = { padding: '1px 3px', fontSize: '0.9em' };
 function ProductSummaryPanel({
@@ -944,32 +945,17 @@ export function DashboardClient({
   const numberLabels = cardNumberLabels(allRows.map((r) => ({ id: r.dailyBusinessId, businessNumber: r.businessNumber, separate: separateNames.has(r.terminal) })));
   const rows = mainRows;
   const [separateOpen, setSeparateOpen] = useState(false);
-  // 별도 주문 팝업은 스크롤 없이 주문 목록의 모니터 1·2처럼 모니터(쪽)로 나눠 본다: 행 높이를 재서 팝업 높이에 들어가는 만큼씩 한 쪽에 둔다.
-  // 다른 쪽의 행도 화면 밖에 숨겨 둔 채 렌더해서 높이를 재고(펜 그림은 이 행들의 칸을 무시한다), 쪽마다 그림을 따로 저장한다(monitor s1·s2…).
+  // 별도 주문 팝업은 스크롤 없이 주문 목록의 모니터 1·2처럼 모니터(쪽)로 나눠 본다: 쪽마다 SEP_PAGE_ROWS줄씩 앞에서부터 채운다. 쪽마다 그림을 따로 저장한다(monitor s1·s2…).
   const [sepPage, setSepPage] = useState(0);
-  const [sepHeights, setSepHeights] = useState<Record<string, number>>({});
-  // 가장 최근에 반영한 행 높이. 아래 측정이 "달라졌을 때만" 상태를 바꾸려고 상태와 따로 들고 있다.
-  const sepHeightsRef = useRef(sepHeights);
-  const sepListRef = useRef<HTMLDivElement>(null);
-  // 별도 주문 팝업의 쪽 나눔은 창 높이가 칠판(720px)보다 커도 칠판 높이로 계산한다: 큰 PC 창에서도 칠판과 같은 주문이 같은 쪽에 나온다(필기도 쪽마다 저장된다).
-  // 칠판보다 낮은 창은 그 높이에 맞춘다(팝업이 창 밖으로 넘치지 않게).
+  // 오른쪽 품목별 수량 패널의 높이는 창 높이가 칠판(720px)보다 커도 칠판 높이로 계산한다(칠판과 같은 모양). 칠판보다 낮은 창은 그 높이에 맞춘다(팝업이 창 밖으로 넘치지 않게).
   const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 0 : Math.min(window.innerHeight, SEP_REF_VIEWPORT_H)));
-  // 표 모양이라 행 사이 간격은 없고(테두리만), 표 머리 줄 높이만큼 쓸 수 있는 높이에서 뺀다.
-  const SEP_ROW_GAP = 0;
-  const SEP_HEADER_H = 30;
-  const sepAvail = Math.max(0, Math.floor(viewportHeight * 0.88) - 88 - SEP_HEADER_H);
-  // 모니터 1에 조금만 넘치는데 모니터 2로 넘기지 않도록, 먼저 행 여백을 한 단계씩 줄여서 한 쪽에 들어가는지 본다(글자 크기는 그대로).
-  // 끝까지 줄여도 안 들어갈 때만 쪽을 나눈다. 단계는 팝업을 열거나 주문·창 높이가 바뀌면 처음(넉넉함)부터 다시 정한다.
-  const [sepFit, setSepFit] = useState({ key: '', level: 0 });
+  const sepAvail = Math.max(0, Math.floor(viewportHeight * 0.96) - SEP_CHROME_H - SEP_HEADER_H);
   useLayoutEffect(() => {
     if (!separateOpen) return;
     const onResize = () => setViewportHeight(Math.min(window.innerHeight, SEP_REF_VIEWPORT_H));
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, [separateOpen]);
-  // 별도 주문 행·상품 수나 창 높이가 바뀌면 촘촘함 단계를 처음으로 되돌린다(줄어든 주문에서 계속 촘촘하게 남지 않도록). 팝업을 열 때도 처음부터(버튼에서 비운다).
-  const sepFitKey = `${separateRows.length}:${separateRows.reduce((sum, r) => sum + itemsOf(r.dailyBusinessId).length, 0)}:${viewportHeight}`;
-  const sepDensity = sepFit.key === sepFitKey ? sepFit.level : 0;
   // 별도 주문 팝업이 떠 있는 동안 뒤의 화면(주문 목록을 감싼 컨테이너들)이 스크롤되지 않게 한다.
   // 이 컨테이너들은 overflow가 hidden이라 사용자는 스크롤할 수 없지만, 팝업 안 스크롤이 끝에서 뒤로 번지거나(스크롤 연쇄) 브라우저가
   // 포커스·선택 때문에 코드로 스크롤해 버리면 화면이 아래로 밀린 채 되돌릴 수 없게 된다(2026-11-14 현장: 메뉴를 펼쳐 위로 올려야 풀렸다).
@@ -990,32 +976,6 @@ export function DashboardClient({
       reset();
     };
   }, [separateOpen]);
-  // 행 높이 측정: 렌더 뒤마다 재서 달라졌을 때만 상태를 바꾼다(같으면 다시 그리지 않는다).
-  useLayoutEffect(() => {
-    if (!separateOpen) return;
-    const measure = () => {
-      const list = sepListRef.current;
-      if (!list) return;
-      const next: Record<string, number> = {};
-      list.querySelectorAll<HTMLElement>('[data-sep-row]').forEach((el) => {
-        next[el.dataset.sepRow as string] = Math.ceil(el.getBoundingClientRect().height);
-      });
-      // 달라졌을 때만 상태를 바꾼다. 이 효과는 렌더마다 돌므로, 같은 값이어도 setState(함수)를 부르면 React가 "바뀔 수 있다"고 보고 다시 그린다.
-      // 펜으로 포장 완료를 올리는 동안(전환이 진행 중이라 React가 같은 값 확인을 건너뛴다) 그 재렌더가 끝없이 이어져
-      // "Maximum update depth exceeded"로 화면이 "화면을 불러오지 못했습니다"로 바뀌었다(2026-11-16 현장).
-      const prev = sepHeightsRef.current;
-      const keys = Object.keys(next);
-      if (!(keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k]))) {
-        sepHeightsRef.current = next;
-        setSepHeights(next);
-      }
-      // 방금 잰 높이로 한 쪽에 다 들어가는지 본다. 안 들어가고 더 줄일 수 있으면 한 단계 더 촘촘하게(다음 렌더에서 다시 잰다).
-      const heights = separateRows.map((r) => next[r.dailyBusinessId] ?? 56);
-      if (packRows(heights, sepAvail, SEP_ROW_GAP).length > 1 && sepDensity < SEP_DENSITIES.length - 1) setSepFit({ key: sepFitKey, level: sepDensity + 1 });
-    };
-    measure();
-    void document.fonts?.ready.then(measure);
-  });
   // 품목별 수량은 일반 주문과 별도 주문(택배·직배송 등)을 나눠 센다 — 기본 화면에는 일반 주문 상품만, 별도 주문 상품은 팝업에서 본다.
   // 주문 줄이나 별도 주문 카드 구성이 바뀔 때만 다시 센다(메뉴를 여닫는 등 무관한 다시 그리기에서는 다시 세지 않는다).
   const separateKey = separateRows.map((r) => r.dailyBusinessId).join('|');
@@ -1025,14 +985,13 @@ export function DashboardClient({
     const separate = items.filter((i) => separateDailyIds.has(i.dailyBusinessId));
     return { mainItems: main, separateItems: separate, columns: getProductSummary(main), separateColumns: getProductSummary(separate) };
   }, [items, separateKey]);
-  // 별도 주문 팝업의 쪽 나누기: 팝업이 쓸 수 있는 높이(화면의 88% − 제목 줄 − 안쪽 여백)에 들어가는 만큼씩.
-  const sepPages = packRows(separateRows.map((r) => sepHeights[r.dailyBusinessId] ?? 56), sepAvail, SEP_ROW_GAP);
   // 상품 열 수는 별도 주문 행 중 상품이 가장 많은 업체 기준(쪽을 넘겨도 열이 바뀌지 않게 모든 행에서 센다).
   const sepSlotCount = Math.max(1, ...separateRows.map((r) => itemsOf(r.dailyBusinessId).length));
   const sepGridTemplate = `44px 76px minmax(150px, 1.3fr) 64px repeat(${sepSlotCount}, minmax(104px, 1fr))`;
   const sepMinWidth = 44 + 76 + 150 + 64 + sepSlotCount * 104;
-  const sepPageNo = Math.min(sepPage, sepPages.length - 1);
-  const sepVisible = new Set(sepPages[sepPageNo].map((i) => separateRows[i].dailyBusinessId));
+  const sepPageCount = Math.max(1, Math.ceil(separateRows.length / SEP_PAGE_ROWS));
+  const sepPageNo = Math.min(sepPage, sepPageCount - 1);
+  const sepPageRows = separateRows.slice(sepPageNo * SEP_PAGE_ROWS, (sepPageNo + 1) * SEP_PAGE_ROWS);
   // 터미널별 박스는 기본 주문표 기준이다 — 별도 주문 터미널은 "별도 주문" 팝업에서 따로 본다.
   // 주문이 모두 취소된 고객사의 박스는 터미널별 박스 수에 세지 않는다.
   const cancelledCardSet = new Set(mainRows.filter((r) => isCardCancelled(itemsOf(r.dailyBusinessId))).map((r) => r.dailyBusinessId));
@@ -1744,7 +1703,7 @@ export function DashboardClient({
           </div>
           {separateNames.size > 0 && (
             <button
-              onClick={() => { setSepPage(0); setSepFit({ key: '', level: 0 }); setSeparateOpen(true); }}
+              onClick={() => { setSepPage(0); setSeparateOpen(true); }}
               className={`${chrome.ctlH} px-2.5 inline-flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-colors bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100`}
               title={`별도 주문 보기 (택배·직배송 등) — ${separateRows.length}건`}
               aria-label="별도 주문 보기"
@@ -2097,12 +2056,12 @@ export function DashboardClient({
 
       {separateOpen && (
         <div className="fixed inset-0 z-[60] overflow-hidden overscroll-contain bg-slate-900/40 flex items-center justify-center p-4" onClick={() => setSeparateOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[88vh] flex flex-col border border-slate-200" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 rounded-t-2xl flex-shrink-0" style={{ backgroundColor: 'var(--soft-head, #003057)' }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl max-h-[96vh] flex flex-col border border-slate-200" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-2 rounded-t-2xl flex-shrink-0" style={{ backgroundColor: 'var(--soft-head, #003057)' }}>
               <h3 className="text-sm font-bold text-white tracking-wide">별도 주문 ({separateRows.length}) — {[...separateNames].join(', ')}</h3>
-              {sepPages.length > 1 && (
+              {sepPageCount > 1 && (
                 <div role="tablist" aria-label="별도 주문 모니터" className="ml-auto mr-4 flex gap-1">
-                  {sepPages.map((_, i) => (
+                  {Array.from({ length: sepPageCount }).map((_, i) => (
                     <button key={i} role="tab" aria-selected={i === sepPageNo} onClick={() => setSepPage(i)} className={`rounded-md px-3 py-1 text-xs font-bold ${i === sepPageNo ? 'bg-white text-[#003057]' : 'bg-white/15 text-white hover:bg-white/30'}`}>
                       모니터 {i + 1}
                     </button>
@@ -2111,12 +2070,12 @@ export function DashboardClient({
               )}
               <button onClick={() => setSeparateOpen(false)} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
             </div>
-            <div className="relative flex-1 min-h-0 flex gap-3 p-4">
-            <div ref={sepListRef} className="relative flex-1 min-w-0 overflow-auto overscroll-contain flex flex-col rounded-lg border border-slate-200">
+            <div className="relative flex-1 min-h-0 flex gap-3 p-2">
+            <div className="relative flex-1 min-w-0 overflow-auto overscroll-contain flex flex-col rounded-lg border border-slate-200">
               {separateRows.length === 0 && (
                 <p className="text-sm text-slate-400 text-center py-10">별도 주문이 없습니다. 터미널 관리에서 &apos;별도 주문&apos;으로 지정한 터미널의 주문이 여기에 모입니다.</p>
               )}
-              {/* 주문 목록과 같은 표 모양: 헤더 + 칸마다 테두리가 있는 행. 상품 열 수는 이 팝업의 모든 행 중 상품이 가장 많은 업체 기준이다(쪽을 넘겨도 열이 안 바뀐다). */}
+              {/* 주문 목록과 같은 표 모양: 헤더 + 칸마다 테두리가 있는 행(쪽당 SEP_PAGE_ROWS줄). 상품 열 수는 이 팝업의 모든 행 중 상품이 가장 많은 업체 기준이다(쪽을 넘겨도 열이 안 바뀐다). */}
               {separateRows.length > 0 && (
                 <div className="soft-head-line grid flex-shrink-0 sticky top-0 z-10 text-white text-xs font-bold" style={{ backgroundColor: 'var(--soft-head, #003057)', gridTemplateColumns: sepGridTemplate, minWidth: sepMinWidth, height: SEP_HEADER_H }}>
                   <div className="border-r border-b-2 border-white/20 px-2 flex items-center justify-center">No</div>
@@ -2129,28 +2088,27 @@ export function DashboardClient({
                 </div>
               )}
               <DndContext id="separate-dnd" sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleSeparateDragEnd}>
-              <SortableContext items={separateRows.filter((r) => sepVisible.has(r.dailyBusinessId)).map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
-              {separateRows.map((row) => {
+              <SortableContext items={sepPageRows.map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
+              {sepPageRows.map((row) => {
                 const rowItems = itemsOf(row.dailyBusinessId);
-                const visible = sepVisible.has(row.dailyBusinessId);
                 const cancelledCard = isCardCancelled(rowItems);
-                const density = SEP_DENSITIES[sepDensity];
+                const completeCard = isCardComplete(rowItems);
                 return (
-                  <div key={row.dailyBusinessId} data-sep-row={row.dailyBusinessId} data-ink-ignore={visible ? undefined : ''} aria-hidden={!visible} className={visible ? '' : 'invisible absolute inset-x-0 top-0 pointer-events-none'} style={{ minWidth: sepMinWidth }}>
+                  <div key={row.dailyBusinessId} style={{ minWidth: sepMinWidth }}>
                   <SortableRow
                     id={row.dailyBusinessId}
-                    disabled={readOnly} // 숨긴 행도 손잡이 칸까지 같은 모양이어야 높이를 똑같이 잰다(숨긴 행은 pointer-events가 꺼져 있어 끌 수 없다)
+                    disabled={readOnly}
                     className="group/row grid border-b border-slate-100 bg-white hover:bg-slate-50/50 transition-colors"
                     style={{ gridTemplateColumns: sepGridTemplate }}
                   >
                     {(handle) => (
                     <>
-                    <div className="border-r border-slate-100 px-2 flex items-center justify-center text-xs font-bold whitespace-nowrap text-slate-400 bg-slate-50">
+                    <div className="border-r border-slate-100 px-2 flex items-center justify-center text-[11px] leading-none font-bold whitespace-nowrap text-slate-400 bg-slate-50">
                       {handle ? (
                         <div
                           ref={handle.ref}
                           {...handle.props}
-                          className={`relative w-full h-full ${density.no} flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none`}
+                          className={`relative w-full h-full ${SEP_ROW.no} flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none`}
                           title="끌어서 순서 변경"
                         >
                           <span className="group-hover/row:invisible">{numberLabels.get(row.dailyBusinessId) ?? row.businessNumber}</span>
@@ -2161,28 +2119,42 @@ export function DashboardClient({
                       )}
                     </div>
                     <div className="border-r border-slate-100 px-2 flex items-center justify-center">
-                      <span className={`inline-block whitespace-nowrap rounded-md border font-bold ${dense ? 'px-1.5' : 'px-2 py-0.5 text-[11px]'} ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={{ ...terminalBadgeProps(row.terminal, terminalColors).style, ...(dense ? { fontSize: terminalFontPx, lineHeight: `${rowHeight - 5}px` } : {}) }}>{row.terminal || '-'}</span>
+                      <span className={`inline-block whitespace-nowrap rounded-md border font-bold px-1.5 text-[11px] leading-[18px] ${terminalBadgeProps(row.terminal, terminalColors).className}`} style={terminalBadgeProps(row.terminal, terminalColors).style}>{row.terminal || '-'}</span>
                     </div>
-                    <div className={`border-r border-slate-100 px-3 ${density.name} flex flex-col justify-center gap-0.5 min-w-0 ${isCardComplete(rowItems) ? 'bg-emerald-50' : cancelledCard ? 'bg-rose-50' : ''}`}>
-                      <span className={`text-sm font-bold break-keep leading-tight ${cancelledCard ? 'text-rose-700' : 'text-slate-800'}`}>{isCardComplete(rowItems) && <DoneBadge />}{cancelledCard && <CancelledBadge />}{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} />}<EditableCardName row={row} readOnly={readOnly} onOpen={(el) => openCustomerPanel(row.dailyBusinessId, el)} /></span>
-                      {row.memo && <span className="text-[11px] font-bold leading-tight text-amber-700">메모: {row.memo}</span>}
+                    {/* 고객명: 주문 목록의 줄 30px 미만 규칙과 같다. 완료·취소는 글자 배지가 아니라 아이콘이고, 업체 메모는 점으로 알리고 글은 상품 뒤 빈 칸에 둔다. 이름은 말줄임 없이 전체를 보인다(길면 두 줄). */}
+                    <div className={`border-r border-slate-100 px-2 flex items-center min-w-0 ${completeCard ? 'bg-emerald-50' : cancelledCard ? 'bg-rose-50' : ''}`}>
+                      {completeCard && <StatusIcon kind="done" fontPx={12} />}
+                      {cancelledCard && <StatusIcon kind="cancelled" fontPx={12} />}
+                      <span className={`text-xs font-bold break-keep leading-[1.15] ${cancelledCard ? 'text-rose-700 line-through decoration-rose-400' : 'text-slate-800'}`}>{roundOf(row) && <RoundBadge round={roundOf(row) as OrderRound} dense />}<EditableCardName row={row} readOnly={readOnly} onOpen={(el) => openCustomerPanel(row.dailyBusinessId, el)} /></span>
+                      {row.memo && <span className="ml-1 w-1.5 h-1.5 shrink-0 rounded-full bg-amber-400" />}
                     </div>
                     <div className="border-r border-slate-100 px-1 flex items-center justify-center gap-1 whitespace-nowrap bg-slate-50/60">
-                      <span className={`font-bold tabular-nums ${dense ? 'text-xs leading-none' : 'text-sm'} ${row.totalBoxes == null || cancelledCard ? 'text-slate-300' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{cancelledCard ? '-' : (row.totalBoxes ?? '-')}</span>
-                      {row.mergeGroups.length > 0 && <span className={`rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800 ${dense ? 'leading-[10px]' : ''}`} title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`} aria-label="합포장">합</span>}
+                      <span className={`font-bold tabular-nums text-xs leading-none ${row.totalBoxes == null || cancelledCard ? 'text-slate-300' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{cancelledCard ? '-' : (row.totalBoxes ?? '-')}</span>
+                      {row.mergeGroups.length > 0 && <span className="rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] leading-[10px] font-bold text-emerald-800" title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`} aria-label="합포장">합</span>}
                     </div>
                     {Array.from({ length: sepSlotCount }).map((_, slotIndex) => {
                       const item = rowItems[slotIndex];
-                      // 빈 칸도 다른 칸과 같은 테두리로 그려서 열 경계가 행마다 어긋나 보이지 않게 한다.
-                      if (!item) return <div key={slotIndex} className="border-r border-slate-100 last:border-r-0" />;
+                      if (!item) {
+                        // 업체 메모는 상품이 끝난 뒤 남는 빈 칸들을 하나로 합쳐서 보여준다(칸이 모자라면 이름 옆 점으로 대신). 주문 목록과 같은 규칙이다.
+                        if (row.memo) {
+                          if (slotIndex !== rowItems.length) return null;
+                          return (
+                            <div key={slotIndex} className="px-2 flex items-center text-[11px] font-bold leading-[1.15] text-amber-700 bg-amber-50/60 overflow-hidden" style={{ gridColumn: `span ${sepSlotCount - slotIndex}` }}>
+                              <span className="line-clamp-1">메모: {row.memo}</span>
+                            </div>
+                          );
+                        }
+                        // 빈 칸도 다른 칸과 같은 테두리로 그려서 열 경계가 행마다 어긋나 보이지 않게 한다.
+                        return <div key={slotIndex} className="border-r border-slate-100 last:border-r-0" />;
+                      }
                       const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked, item.unshippedQuantity, item.quantity);
                       const suffixParts: string[] = [];
                       if (item.secondaryWeightKg != null) suffixParts.push(`${item.secondaryWeightKg}kg`);
                       if (item.sizeRequest) suffixParts.push(item.sizeRequest);
                       if (prepLabelOf(item)) suffixParts.push(prepLabelOf(item) as string);
                       return (
-                        <div key={item.id} className={`border-r border-slate-100 last:border-r-0 ${density.cell} flex min-w-0`}>
-                          <div data-chip={item.id} className={`relative w-full ${density.chip} flex flex-wrap items-center justify-start content-center gap-x-1 px-1.5 rounded-lg border text-xs text-left break-keep [overflow-wrap:anywhere] shadow-sm ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
+                        <div key={item.id} className={`border-r border-slate-100 last:border-r-0 ${SEP_ROW.cell} flex min-w-0`}>
+                          <div data-chip={item.id} className={`relative w-full ${SEP_ROW.chip} flex flex-wrap items-center justify-start content-center gap-x-1 px-1 rounded border text-xs text-left break-keep [overflow-wrap:anywhere] shadow-sm ${bg} ${border} ${text} ${readOnly ? '' : 'cursor-pointer'}`} onClick={() => !readOnly && handleTogglePacked(item)}>
                             <span className="font-bold">{item.productName}</span>
                             {isUndecidedQuantity(item) ? (
                               <span className="rounded bg-amber-100 px-1 font-black text-amber-700 whitespace-nowrap">수량 미정</span>
