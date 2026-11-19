@@ -3,7 +3,7 @@ import '@/components/admin/admin.css';
 import { useMemo, useState } from 'react';
 import { RotateCcw, Settings as SettingsIcon } from 'lucide-react';
 import { AdminHeader, Toggle, useNotice } from '@/components/admin/admin-kit';
-import { BOARD_INK_SNAPSHOT_HOUR_MAX, BOARD_INK_SNAPSHOT_HOUR_MIN, BOARD_INK_SNAPSHOT_MINUTES_MAX, BOARD_INK_SNAPSHOT_MINUTES_MIN, DEFAULT_SETTINGS, type AppSettings } from '@/lib/app-settings';
+import { BOARD_INK_HISTORY_KEEP_DAYS_MAX, BOARD_INK_HISTORY_KEEP_DAYS_MIN, BOARD_INK_SNAPSHOT_HOUR_MAX, BOARD_INK_SNAPSHOT_HOUR_MIN, BOARD_INK_SNAPSHOT_MINUTES_MAX, BOARD_INK_SNAPSHOT_MINUTES_MIN, DEFAULT_SETTINGS, type AppSettings } from '@/lib/app-settings';
 import { shareTemplateError, type ScanShareTemplate } from '@/lib/scan-share-template';
 import { describeSizeSpec, parseSizeSpec } from '@/lib/size-spec';
 import { reapplySizeSpecs, saveSettings } from './actions';
@@ -26,6 +26,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
     boardInkSnapshotMinutes: String(initial.boardInkSnapshotMinutes),
     boardInkSnapshotStartHour: String(initial.boardInkSnapshotStartHour),
     boardInkSnapshotEndHour: String(initial.boardInkSnapshotEndHour),
+    boardInkHistoryKeepDays: String(initial.boardInkHistoryKeepDays),
   });
   const [allowPast, setAllowPast] = useState(initial.allowPastOrderEdit);
   const [scanShare, setScanShare] = useState<ScanShareTemplate>(initial.scanShare);
@@ -49,6 +50,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       boardInkSnapshotMinutes: parseFloat(form.boardInkSnapshotMinutes),
       boardInkSnapshotStartHour: parseFloat(form.boardInkSnapshotStartHour),
       boardInkSnapshotEndHour: parseFloat(form.boardInkSnapshotEndHour),
+      boardInkHistoryKeepDays: parseFloat(form.boardInkHistoryKeepDays),
     }),
     [form, allowPast, scanShare],
   );
@@ -70,6 +72,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
   const startHourValid = hourValid(draft.boardInkSnapshotStartHour);
   const endHourValid = hourValid(draft.boardInkSnapshotEndHour);
   const windowValid = startHourValid && endHourValid;
+  const keepDaysValid = Number.isInteger(draft.boardInkHistoryKeepDays) && draft.boardInkHistoryKeepDays >= BOARD_INK_HISTORY_KEEP_DAYS_MIN && draft.boardInkHistoryKeepDays <= BOARD_INK_HISTORY_KEEP_DAYS_MAX;
   // 입력한 시간대를 한 줄로 풀어 써서 보여 준다(같으면 하루 종일, 시작이 크면 자정을 넘김).
   const windowText = !windowValid
     ? ''
@@ -101,6 +104,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       boardInkSnapshotMinutes: String(DEFAULT_SETTINGS.boardInkSnapshotMinutes),
       boardInkSnapshotStartHour: String(DEFAULT_SETTINGS.boardInkSnapshotStartHour),
       boardInkSnapshotEndHour: String(DEFAULT_SETTINGS.boardInkSnapshotEndHour),
+      boardInkHistoryKeepDays: String(DEFAULT_SETTINGS.boardInkHistoryKeepDays),
     });
     setAllowPast(DEFAULT_SETTINGS.allowPastOrderEdit);
     setScanShare(DEFAULT_SETTINGS.scanShare);
@@ -199,7 +203,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
 
       <section className="st-card">
         <h2 className="st-title">칠판 필기 백업</h2>
-        <p className="st-desc">칠판 필기가 지워져도 되찾을 수 있게, 정한 시간대 안에서 이 간격마다 필기를 서버에 이력으로 남깁니다(필기가 바뀐 경우만). 필기가 한 번에 크게 줄었을 때(지우개로 크게 쓸거나 전체 지우기)는 시간대·간격과 상관없이 직전 상태를 남깁니다. 이력은 7일 동안 보관됩니다. 저장하면 바로 적용됩니다.</p>
+        <p className="st-desc">칠판 필기가 지워져도 되찾을 수 있게, 정한 시간대 안에서 이 간격마다 필기를 서버에 이력으로 남깁니다(필기가 바뀐 경우만). 필기가 한 번에 크게 줄었을 때(지우개로 크게 쓸거나 전체 지우기)는 시간대·간격과 상관없이 직전 상태를 남깁니다. 이력은 최근 영업일 몇 일치만 보관하고 더 오래된 날짜는 지웁니다. 저장하면 바로 적용됩니다.</p>
         <label className="ak-field">
           <span>이력을 남기는 간격 (분)</span>
           <input className="ak-input" type="number" inputMode="numeric" min={BOARD_INK_SNAPSHOT_MINUTES_MIN} max={BOARD_INK_SNAPSHOT_MINUTES_MAX} step="5" value={form.boardInkSnapshotMinutes} onChange={set('boardInkSnapshotMinutes')} disabled={!canEdit} />
@@ -216,6 +220,11 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
           <small>{endHourValid ? `${BOARD_INK_SNAPSHOT_HOUR_MIN}~${BOARD_INK_SNAPSHOT_HOUR_MAX}시. 그 시각 정각의 이력까지 남깁니다. 기본 ${DEFAULT_SETTINGS.boardInkSnapshotEndHour}시.` : `${BOARD_INK_SNAPSHOT_HOUR_MIN}~${BOARD_INK_SNAPSHOT_HOUR_MAX} 사이의 정수(시)로 입력해 주세요.`}</small>
         </label>
         {windowText && <p className="st-desc" role="status">{windowText}</p>}
+        <label className="ak-field">
+          <span>이력을 보관할 영업일 수 (일)</span>
+          <input className="ak-input" type="number" inputMode="numeric" min={BOARD_INK_HISTORY_KEEP_DAYS_MIN} max={BOARD_INK_HISTORY_KEEP_DAYS_MAX} step="1" value={form.boardInkHistoryKeepDays} onChange={set('boardInkHistoryKeepDays')} disabled={!canEdit} />
+          <small>{keepDaysValid ? `${BOARD_INK_HISTORY_KEEP_DAYS_MIN}~${BOARD_INK_HISTORY_KEEP_DAYS_MAX}일. 오늘을 포함해 이력이 있는 날짜만 셉니다(일요일·휴무일은 건너뜀). 예: 2일이면 월요일에는 월요일과 토요일 이력만 남고 그 이전은 지워집니다. 지운 이력은 되살릴 수 없습니다. 기본 ${DEFAULT_SETTINGS.boardInkHistoryKeepDays}일.` : `${BOARD_INK_HISTORY_KEEP_DAYS_MIN}~${BOARD_INK_HISTORY_KEEP_DAYS_MAX} 사이의 정수(일)로 입력해 주세요.`}</small>
+        </label>
       </section>
 
       <section className="st-card">
@@ -233,7 +242,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
         <span className="ak-spacer" />
         {error && <span className="ak-error">{error}</span>}
         {notice && <span className="ak-notice">{notice}</span>}
-        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !numbersValid || !shareValid || !snapshotValid || !windowValid}>저장</button>
+        <button className="ak-btn ak-btn-primary" onClick={save} disabled={!canEdit || busy || !numbersValid || !shareValid || !snapshotValid || !windowValid || !keepDaysValid}>저장</button>
       </div>
 
       <style>{`

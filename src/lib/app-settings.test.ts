@@ -63,3 +63,19 @@ test('boardInkSnapshotStartHour·EndHour: 범위를 벗어나거나 숫자가 �
   assert.equal(mergeSettings({ boardInkSnapshotStartHour: 5.4 }).boardInkSnapshotStartHour, 5);
   assert.equal(mergeSettings({ boardInkSnapshotEndHour: 15.6 }).boardInkSnapshotEndHour, 16);
 });
+
+test('boardInkHistoryKeepDays: 기본은 2영업일, 1~30 정수는 그대로 쓴다', () => {
+  assert.equal(DEFAULT_SETTINGS.boardInkHistoryKeepDays, 2);
+  assert.equal(mergeSettings(null).boardInkHistoryKeepDays, 2);
+  assert.equal(mergeSettings({}).boardInkHistoryKeepDays, 2);
+  for (const d of [1, 2, 3, 30]) assert.equal(mergeSettings({ boardInkHistoryKeepDays: d }).boardInkHistoryKeepDays, d);
+  assert.equal(mergeSettings({ boardInkHistoryKeepDays: '5' }).boardInkHistoryKeepDays, 5);
+});
+
+test('boardInkHistoryKeepDays: 범위를 벗어나거나 숫자가 아니면 기본값, 소수는 반올림', () => {
+  for (const bad of [0, -1, 31, 100, 'abc', '', null, undefined, NaN, Infinity, {}, [], true]) {
+    assert.equal(mergeSettings({ boardInkHistoryKeepDays: bad }).boardInkHistoryKeepDays, 2, String(bad));
+  }
+  assert.equal(mergeSettings({ boardInkHistoryKeepDays: 2.4 }).boardInkHistoryKeepDays, 2);
+  assert.equal(mergeSettings({ boardInkHistoryKeepDays: 2.6 }).boardInkHistoryKeepDays, 3);
+});

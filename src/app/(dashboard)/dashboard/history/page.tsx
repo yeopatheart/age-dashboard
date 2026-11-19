@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import { HistoryBoard } from './history-board';
 
 // 칠판 필기 이력 보기(읽기 전용). 주문 목록·필기와 따로 동작하고 이 화면은 어떤 것도 쓰지 않는다. 주소로만 들어온다(메뉴 링크 없음).
-// 이력은 정기 스냅샷(시계 기준)과 점 수 급감 스냅샷으로 남고 7일 보관된다: docs/decisions/2026-11-18-board-ink-history-v2.md
+// 이력은 정기 스냅샷(시계 기준)과 점 수 급감 스냅샷으로 남고 최근 N영업일(설정, 기본 2)만 보관된다: docs/decisions/2026-11-18-board-ink-history-v2.md
 
 const href = (date: string, monitor: string, snap?: number) => `/dashboard/history?date=${date}&monitor=${monitor}${snap !== undefined ? `&snap=${snap}` : ''}`;
 const chip = (on: boolean) => `rounded-full border px-3 py-1 text-sm font-semibold ${on ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`;
@@ -18,7 +18,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="mx-auto max-w-[1600px] space-y-4 p-4 md:p-6">
       <div>
         <h1 className="text-xl font-bold text-slate-900">필기 이력</h1>
-        <p className="mt-1 text-sm text-slate-500">칠판 필기를 일정 간격과 필기가 크게 줄었을 때 남긴 기록입니다. 읽기 전용이고 7일간 보관됩니다.</p>
+        <p className="mt-1 text-sm text-slate-500">칠판 필기를 일정 간격과 필기가 크게 줄었을 때 남긴 기록입니다. 읽기 전용이고 최근 영업일 며칠 치만 보관됩니다(시스템 설정).</p>
       </div>
       {children}
     </div>
