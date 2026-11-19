@@ -2,16 +2,18 @@
 import { Check, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { cardNumberLabels } from '@/lib/card-number';
-import { boardGridTemplate, businessIdsInBothRounds, cardIsCancelled, cardIsComplete, itemIsUndecided, productSlotCount, type SnapshotMeta, type SummaryCard, type SummaryItem } from '@/lib/ink/history-view';
+import { boardGridTemplate, businessIdsInBothRounds, cardIsCancelled, cardIsComplete, itemIsUndecided, productSlotCount, sepInnerWidth, type BoardGroup, type SnapshotMeta, type SummaryCard, type SummaryItem } from '@/lib/ink/history-view';
 import type { InkStroke } from '@/lib/ink/store';
 import { prepLabelOf } from '@/lib/orders';
 import { terminalBadgeProps } from '@/lib/terminal-color';
 import { HistoryInk } from './history-ink';
+import { itemColors, SepHeader, SepRow } from './history-sep-rows';
 
 // 스냅샷의 요약으로 칠판 모양의 표를 다시 그리고 그 위에 필기를 얹는다(읽기 전용). 주문 목록 코드를 복사·공유하지 않은 별도 표지만,
 // 보이는 값은 칠판(dashboard-client.tsx)의 값을 따라 맞췄다: 린넨 색 테마(main-content-soft), 주문 70건 이하일 때의 줄 높이 18px,
 // 상태별 칩 색(getItemStyle와 같은 클래스), 업체명 11px·터미널 9px. 열 순서(No · 터미널 · 고객명 · 박스 · 상품 1..N)도 같게 해서 필기가 같은 열에 놓인다.
 // 칠판은 기준 화면(1248px 폭)을 창에 맞춰 확대하므로 이 표도 화면 폭에 맞춰 확대·축소한다(PC 보기와 같은 방식).
+// 별도 주문 탭(group='sep')은 칠판의 별도 주문 팝업과 모양이 달라서(줄 44px 이상, 큰 칩) 그 모양의 표(history-sep-rows.tsx)로 그린다.
 
 const STAGE_W = 1248;
 const ROW_H = 18;
@@ -27,26 +29,8 @@ const PILL_STEPS: readonly (readonly [number, number, number, number])[] = [
 ];
 const PILL_INNER = ROW_H - 3;
 
-// 칠판 getItemStyle과 같은 상태별 색. 미출고(점선)·포장 완료(회색)·추가(초록)·수정(노랑)·취소(빨강 취소선)·최초 주문(진한 테두리).
-function itemStyle(status: SummaryItem['status'], packed: boolean, unshipped: number, qty: number) {
-  if (unshipped > 0 && status !== 'cancelled') {
-    return unshipped >= qty ? { bg: 'bg-amber-100', border: 'border-amber-500 border-dashed', text: 'text-amber-900' } : { bg: 'bg-amber-50', border: 'border-amber-500 border-dashed', text: 'text-slate-900' };
-  }
-  if (packed && status !== 'cancelled') return { bg: 'bg-slate-100', border: 'border-slate-300', text: 'text-slate-400' };
-  switch (status) {
-    case 'new':
-      return { bg: 'bg-emerald-50', border: 'border-emerald-300', text: 'text-emerald-700' };
-    case 'modified':
-      return { bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700' };
-    case 'cancelled':
-      return { bg: 'bg-rose-50', border: 'border-rose-300', text: 'text-rose-600 line-through' };
-    default:
-      return { bg: 'bg-slate-50', border: 'border-slate-800', text: 'text-slate-900' };
-  }
-}
-
 function Chip({ item }: { item: SummaryItem }) {
-  const { bg, border, text } = itemStyle(item.status, item.packed, item.unshipped, item.qty);
+  const { bg, border, text } = itemColors(item.status, item.packed, item.unshipped, item.qty);
   const cancelled = item.status === 'cancelled';
   const parts: string[] = [];
   if (item.size) parts.push(item.size);
@@ -92,12 +76,13 @@ function Chip({ item }: { item: SummaryItem }) {
 }
 
 // fixedScale이 있으면 그 배율(1 = 칠판 기준 화면 크기)로 고정하고, 없으면 바깥 상자 폭에 맞춰 maxScale까지 확대·축소한다.
-export function HistoryBoard({ cards, meta, strokes, snapshotKey, fixedScale = null, maxScale = 2 }: { cards: SummaryCard[]; meta: SnapshotMeta; strokes: InkStroke[]; snapshotKey: string; fixedScale?: number | null; maxScale?: number }) {
+export function HistoryBoard({ cards, meta, strokes, snapshotKey, group, sepCompact, fixedScale = null, maxScale = 2 }: { cards: SummaryCard[]; meta: SnapshotMeta; strokes: InkStroke[]; snapshotKey: string; group: BoardGroup; sepCompact: boolean; fixedScale?: number | null; maxScale?: number }) {
   const slots = productSlotCount(cards);
   const template = boardGridTemplate(slots);
   const labels = cardNumberLabels(cards.map((c) => ({ id: c.id, businessNumber: c.number, separate: c.separate })));
   const bothRounds = businessIdsInBothRounds(cards);
-  const innerWidth = Math.max(STAGE_W, 44 + 76 + 150 + 64 + slots * 104);
+  const isSep = group === 'sep';
+  const innerWidth = isSep ? sepInnerWidth(strokes, slots, sepCompact) : Math.max(STAGE_W, 44 + 76 + 150 + 64 + slots * 104);
 
   const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -141,6 +126,15 @@ export function HistoryBoard({ cards, meta, strokes, snapshotKey, fixedScale = n
       style={{ height: innerHeight !== null ? Math.ceil(innerHeight * scale) + 1 : undefined, width: fixedScale ? Math.ceil(innerWidth * fixedScale) + 2 : undefined }}
     >
       <div ref={innerRef} data-board-capture className="relative bg-white" style={{ width: innerWidth, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+        {isSep ? (
+          <>
+            <SepHeader template={template} slots={slots} />
+            {cards.map((card) => (
+              <SepRow key={card.id} card={card} label={labels.get(card.id)} template={template} slots={slots} meta={meta} bothRounds={card.businessId !== null && bothRounds.has(card.businessId)} compact={sepCompact} />
+            ))}
+          </>
+        ) : (
+          <>
         <div className="soft-head-line grid text-[11px] leading-[14px] font-bold text-white" style={{ gridTemplateColumns: template, backgroundColor: 'var(--soft-head, #003057)' }}>
           {['No', '터미널', '고객명', '박스', ...Array.from({ length: slots }, (_, i) => `상품 ${i + 1}`)].map((label, i) => (
             <div key={i} className="flex items-center justify-center border-b-2 border-r border-white/20 px-2 py-1.5 last:border-r-0">
@@ -178,7 +172,9 @@ export function HistoryBoard({ cards, meta, strokes, snapshotKey, fixedScale = n
             </div>
           );
         })}
-        <HistoryInk strokes={strokes} redrawKey={`${snapshotKey}|${slots}|${cards.length}|${scale.toFixed(3)}`} />
+          </>
+        )}
+        <HistoryInk strokes={strokes} redrawKey={`${snapshotKey}|${group}${sepCompact ? 'c' : ''}|${slots}|${cards.length}|${scale.toFixed(3)}`} />
       </div>
     </div>
   );

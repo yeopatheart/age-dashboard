@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowLeft, History as HistoryIcon, Info, TriangleAlert }
 import { Segmented } from '@/components/segmented';
 import { fetchDaySnapshots, fetchHistoryIndex, fetchSnapshot } from '@/lib/ink/history-queries';
 import { buildTimePoints, groupSnapshotsAt, groupsAt } from '@/lib/ink/history-timeline';
-import { cardsOfGroup, driftMinutes, formatKst, groupLabel, kstTime, type BoardGroup } from '@/lib/ink/history-view';
+import { cardsOfGroup, driftMinutes, formatKst, groupLabel, isSepCompact, kstTime, type BoardGroup } from '@/lib/ink/history-view';
 import { todayKST } from '@/lib/order-date';
 import { requireMenu } from '@/lib/permissions/access';
 import { createClient } from '@/lib/supabase/server';
@@ -180,7 +180,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
 
         <section className="min-w-0">
           {boardReady ? (
-            <HistoryViewer cards={cards} meta={primary!.data.meta} strokes={strokes} snapshotKey={snapshots.map((s) => s.info.id).join('-')} caption={caption} filename={filename} toolbar={tabs}>
+            <HistoryViewer cards={cards} meta={primary!.data.meta} strokes={strokes} snapshotKey={snapshots.map((s) => s.info.id).join('-')} group={selGroup} sepCompact={isSepCompact(selDate)} caption={caption} filename={filename} toolbar={tabs}>
               {notes}
             </HistoryViewer>
           ) : (
