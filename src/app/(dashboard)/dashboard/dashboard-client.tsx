@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, use
 import { useRouter, useSearchParams } from 'next/navigation';
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Check, GripVertical, Plus, Pencil, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Highlighter, LayoutGrid, Monitor, PenLine, TriangleAlert, Truck } from 'lucide-react';
+import { Check, GripVertical, Plus, Pencil, X, Inbox, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, Ellipsis, Highlighter, History, LayoutGrid, Monitor, PenLine, TriangleAlert, Truck } from 'lucide-react';
 import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors, softenColors } from '@/lib/color-palette';
@@ -1801,18 +1801,18 @@ export function DashboardClient({
               <PenLine className={chrome.icon} />
             </button>
           )}
-          {/* 주문 추가와 엑셀 다운로드는 버튼 하나에서 고른다(보기 전용이면 다운로드만 나온다). */}
+          {/* 주문 추가·엑셀 다운로드·필기 이력은 버튼 하나(더보기 메뉴)에서 고른다(보기 전용이면 주문 추가는 나오지 않는다). */}
           <div className="relative">
             <button
               onClick={() => setActionMenuOpen((v) => !v)}
               className={`${chrome.sq} rounded-lg text-white shadow-sm hover:opacity-90 transition-opacity flex items-center justify-center`}
               style={{ backgroundColor: 'var(--soft-head, #003057)' }}
-              title={readOnly ? '엑셀 다운로드' : '새 주문 추가 · 엑셀 다운로드'}
-              aria-label={readOnly ? '엑셀 다운로드' : '새 주문 추가·엑셀 다운로드'}
+              title={readOnly ? '메뉴 (엑셀 다운로드 · 필기 이력)' : '메뉴 (새 주문 추가 · 엑셀 다운로드 · 필기 이력)'}
+              aria-label={readOnly ? '메뉴: 엑셀 다운로드, 필기 이력' : '메뉴: 새 주문 추가, 엑셀 다운로드, 필기 이력'}
               aria-haspopup="menu"
               aria-expanded={actionMenuOpen}
             >
-              <Plus className={chrome.icon} />
+              <Ellipsis className={chrome.icon} />
             </button>
             {actionMenuOpen && (
               <>
@@ -1841,6 +1841,17 @@ export function DashboardClient({
                     title="정산용 엑셀 다운로드 — 별도 주문(택배) 고객"
                   >
                     <Download className="w-4 h-4" />정산용 엑셀 다운로드
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setActionMenuOpen(false);
+                      router.push('/dashboard/history');
+                    }}
+                    className="w-full h-11 px-3 flex items-center gap-2 rounded-lg text-sm font-bold text-left text-slate-700 hover:bg-slate-50 transition-colors"
+                    title="칠판 필기를 시각별로 되돌아보는 읽기 전용 화면"
+                  >
+                    <History className="w-4 h-4" />필기 이력
                   </button>
                 </div>
               </>
