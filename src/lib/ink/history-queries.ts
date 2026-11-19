@@ -9,6 +9,7 @@ export type Reason = 'interval' | 'drop';
 
 export interface SnapshotInfo {
   id: number;
+  monitor: string; // '1' | '2' | 's1' | 's2' …
   reason: Reason;
   strokeCount: number;
   pointCount: number;
@@ -42,9 +43,10 @@ export function parseSnapshotInfo(raw: unknown): SnapshotInfo | null {
   if (!isRec(raw)) return null;
   const id = intOrNull(raw.id);
   if (id === null || (raw.reason !== 'interval' && raw.reason !== 'drop')) return null;
-  if (typeof raw.captured_at !== 'string' || typeof raw.strokes_saved_at !== 'string') return null;
+  if (typeof raw.captured_at !== 'string' || typeof raw.strokes_saved_at !== 'string' || typeof raw.monitor !== 'string') return null;
   return {
     id,
+    monitor: raw.monitor,
     reason: raw.reason,
     strokeCount: intOrNull(raw.stroke_count) ?? 0,
     pointCount: intOrNull(raw.point_count) ?? 0,
@@ -56,9 +58,9 @@ export function parseSnapshotInfo(raw: unknown): SnapshotInfo | null {
   };
 }
 
-const SNAPSHOT_COLUMNS = 'id, reason, stroke_count, point_count, prev_point_count, new_point_count, strokes_saved_at, captured_at, summary_version';
+const SNAPSHOT_COLUMNS = 'id, monitor, reason, stroke_count, point_count, prev_point_count, new_point_count, strokes_saved_at, captured_at, summary_version';
 const INDEX_LIMIT = 2000; // 보관 7일의 가벼운 열만 읽는 상한(날짜·모니터 목록용)
-const LIST_LIMIT = 200;
+const DAY_LIMIT = 600; // 하루 모든 화면의 스냅샷(정기 30분 간격 × 화면 수 + 급감)이 들어가는 상한
 
 // 이력이 있는 날짜·모니터. 획·요약은 읽지 않는다.
 export async function fetchHistoryIndex(db: SupabaseClient): Promise<Result<HistoryIndex>> {
@@ -69,9 +71,9 @@ export async function fetchHistoryIndex(db: SupabaseClient): Promise<Result<Hist
   return { ok: true, value: buildHistoryIndex(list) };
 }
 
-// 날짜·모니터의 스냅샷 목록(최신순). 획·요약은 읽지 않아 가볍다.
-export async function fetchSnapshotList(db: SupabaseClient, date: string, monitor: string): Promise<Result<SnapshotInfo[]>> {
-  const { data, error } = await db.from('board_ink_history').select(SNAPSHOT_COLUMNS).eq('order_date', date).eq('monitor', monitor).order('captured_at', { ascending: false }).order('id', { ascending: false }).limit(LIST_LIMIT);
+// 한 날짜의 모든 화면 스냅샷 목록(최신순). 획·요약은 읽지 않아 가볍다. 시각 목록과 "그 시각에 존재한 화면"을 이것으로 계산한다.
+export async function fetchDaySnapshots(db: SupabaseClient, date: string): Promise<Result<SnapshotInfo[]>> {
+  const { data, error } = await db.from('board_ink_history').select(SNAPSHOT_COLUMNS).eq('order_date', date).order('captured_at', { ascending: false }).order('id', { ascending: false }).limit(DAY_LIMIT);
   if (error) return fail(error.message);
   const rows: unknown = data;
   return { ok: true, value: Array.isArray(rows) ? rows.flatMap((r) => { const info = parseSnapshotInfo(r); return info ? [info] : []; }) : [] };

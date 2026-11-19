@@ -39,8 +39,10 @@ function rowLayouts(canvas: HTMLCanvasElement, strokes: readonly InkStroke[]): M
   return out;
 }
 
-// widthFactor: 저장된 굵기에 곱하는 값(1이면 칠판에서 쓴 굵기 그대로). 이력은 칩 글자를 읽는 것이 먼저라 기본은 가늘게 그린다. visible이 false면 필기를 그리지 않는다.
-export function HistoryInk({ strokes, redrawKey, widthFactor = 1, visible = true }: { strokes: readonly InkStroke[]; redrawKey: string; widthFactor?: number; visible?: boolean }) {
+// 저장된 굵기에 곱하는 값. 이력은 칩 글자를 읽는 것이 먼저라 칠판에서 쓴 굵기의 절반으로 가늘게 그린다.
+const INK_WIDTH_FACTOR = 0.5;
+
+export function HistoryInk({ strokes, redrawKey }: { strokes: readonly InkStroke[]; redrawKey: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -53,7 +55,6 @@ export function HistoryInk({ strokes, redrawKey, widthFactor = 1, visible = true
       const layer = canvas.getBoundingClientRect();
       if (needsFit(canvas.width, canvas.height, layer.width, layer.height, window.devicePixelRatio || 1)) fitCanvas(canvas);
       clearCanvas(ctx);
-      if (!visible) return;
       const boxes = strokes.some((s) => s.anchor !== undefined) ? anchorBoxes(canvas) : new Map<string, Box>();
       const layouts = rowLayouts(canvas, strokes);
       // 표를 창 폭에 맞춰 확대·축소하면(transform) 화면 좌표가 그 배율로 재어지므로 선 굵기도 같은 배율로 그린다(주문 목록 PC 보기와 같은 방식).
@@ -64,7 +65,7 @@ export function HistoryInk({ strokes, redrawKey, widthFactor = 1, visible = true
         if (!points || points.length < 2) continue;
         ctx.strokeStyle = stroke.color;
         ctx.fillStyle = stroke.color;
-        ctx.lineWidth = Math.max(0.8, stroke.width * scale * widthFactor);
+        ctx.lineWidth = Math.max(0.8, stroke.width * scale * INK_WIDTH_FACTOR);
         ctx.globalAlpha = 0.85; // 겹친 칩 글자가 비쳐 보이게 한다
         drawPath(ctx, points);
       }
@@ -84,7 +85,7 @@ export function HistoryInk({ strokes, redrawKey, widthFactor = 1, visible = true
       observer.disconnect();
       window.removeEventListener('resize', schedule);
     };
-  }, [strokes, redrawKey, widthFactor, visible]);
+  }, [strokes, redrawKey]);
 
   return <canvas ref={ref} className="pointer-events-none absolute inset-0 z-10 h-full w-full" aria-hidden="true" />;
 }
