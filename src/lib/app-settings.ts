@@ -25,12 +25,16 @@ export interface AppSettings {
   // 시작이 종료보다 크면 자정을 넘기는 시간대(22~6), 같으면 하루 종일. 시간대 밖에서는 정기 이력을 남기지 않는다(필기가 크게 줄었을 때의 이력은 시간과 상관없이 남긴다). 키 이름도 DB와 같다(0070).
   boardInkSnapshotStartHour: number;
   boardInkSnapshotEndHour: number;
+  // 이력을 보관할 영업일 수. 오늘 이전·당일 날짜 중 이력이 있는 날짜를 최신순으로 N개만 남기고 오래된 날짜의 이력은 지운다(일요일·공휴일처럼 이력 없는 날은 세지 않는다). 키 이름도 DB와 같다(0071).
+  boardInkHistoryKeepDays: number;
 }
 
 export const BOARD_INK_SNAPSHOT_MINUTES_MIN = 5;
 export const BOARD_INK_SNAPSHOT_MINUTES_MAX = 240;
 export const BOARD_INK_SNAPSHOT_HOUR_MIN = 0;
 export const BOARD_INK_SNAPSHOT_HOUR_MAX = 23;
+export const BOARD_INK_HISTORY_KEEP_DAYS_MIN = 1;
+export const BOARD_INK_HISTORY_KEEP_DAYS_MAX = 30;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   sizeTolerancePct: 10,
@@ -46,6 +50,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   boardInkSnapshotMinutes: 10,
   boardInkSnapshotStartHour: 4,
   boardInkSnapshotEndHour: 16,
+  boardInkHistoryKeepDays: 2,
 };
 
 const num = (v: unknown, fallback: number, min: number, max: number) => {
@@ -76,5 +81,7 @@ export function mergeSettings(stored: Record<string, unknown> | null | undefined
     // 시각은 0~23 정수만 쓴다. 범위를 벗어나면 기본값으로 되돌린다.
     boardInkSnapshotStartHour: Math.round(num(s.boardInkSnapshotStartHour, d.boardInkSnapshotStartHour, BOARD_INK_SNAPSHOT_HOUR_MIN, BOARD_INK_SNAPSHOT_HOUR_MAX)),
     boardInkSnapshotEndHour: Math.round(num(s.boardInkSnapshotEndHour, d.boardInkSnapshotEndHour, BOARD_INK_SNAPSHOT_HOUR_MIN, BOARD_INK_SNAPSHOT_HOUR_MAX)),
+    // 영업일 수는 1~30 정수만 쓴다. 범위를 벗어나면 기본값으로 되돌린다.
+    boardInkHistoryKeepDays: Math.round(num(s.boardInkHistoryKeepDays, d.boardInkHistoryKeepDays, BOARD_INK_HISTORY_KEEP_DAYS_MIN, BOARD_INK_HISTORY_KEEP_DAYS_MAX)),
   };
 }
