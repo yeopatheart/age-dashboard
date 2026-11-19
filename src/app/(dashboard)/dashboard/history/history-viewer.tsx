@@ -1,6 +1,6 @@
 'use client';
 import { Download, Loader2, X, ZoomIn } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Segmented } from '@/components/segmented';
 import type { SnapshotMeta, SummaryCard } from '@/lib/ink/history-view';
@@ -17,6 +17,8 @@ interface Props {
   snapshotKey: string;
   caption: string; // 저장하는 이미지 위 띠와 확대 창 제목에 쓰는 글자("2026-11-18 · 모니터 1 · 10:32 기록")
   filename: string;
+  toolbar: ReactNode; // 이미지 저장 버튼과 같은 줄 왼쪽에 놓는 것(화면 탭)
+  children?: ReactNode; // 그 줄 아래·표 위에 놓는 안내
 }
 
 type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'done' } | { kind: 'error'; message: string };
@@ -64,7 +66,7 @@ function SaveButton({ state, onClick }: { state: SaveState; onClick: () => void 
   );
 }
 
-function ZoomModal({ cards, meta, strokes, snapshotKey, caption, filename, onClose }: Props & { onClose: () => void }) {
+function ZoomModal({ cards, meta, strokes, snapshotKey, caption, filename, onClose }: Omit<Props, 'toolbar' | 'children'> & { onClose: () => void }) {
   const [level, setLevel] = useState<ZoomKey>('fit');
   const bodyRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -107,7 +109,7 @@ function ZoomModal({ cards, meta, strokes, snapshotKey, caption, filename, onClo
   );
 }
 
-export function HistoryViewer(props: Props) {
+export function HistoryViewer({ toolbar, children, ...props }: Props) {
   const [zoomOpen, setZoomOpen] = useState(false);
   const boardRef = useRef<HTMLDivElement>(null);
   const { state, save } = useSave(props.caption, props.filename);
@@ -115,9 +117,11 @@ export function HistoryViewer(props: Props) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-auto text-xs text-slate-500">화면을 누르면 확대됩니다</span>
+        {toolbar}
+        <span className="flex-1" />
         <SaveButton state={state} onClick={() => void save(boardRef.current)} />
       </div>
+      {children}
       <div
         ref={boardRef}
         role="button"
