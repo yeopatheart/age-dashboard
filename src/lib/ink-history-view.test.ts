@@ -10,6 +10,11 @@ import {
   formatKst,
   itemIsUndecided,
   groupLabel,
+  isSepCompact,
+  SEP_COMPACT_DEFAULT_WIDTH,
+  SEP_COMPACT_FROM,
+  SEP_DEFAULT_WIDTH,
+  sepInnerWidth,
   groupOfMonitor,
   cardsOfGroup,
   parseMeta,
@@ -42,9 +47,13 @@ test('parseSummary: v2 카드와 상품의 모든 값을 읽는다', () => {
   const c = cards[0];
   assert.deepEqual({ id: c.id, number: c.number, name: c.name, businessId: c.businessId, round: c.round, terminal: c.terminal, totalBoxes: c.totalBoxes, separate: c.separate, parcel: c.parcel }, { id: 'c1', number: 2, name: '스시미로', businessId: 'b1', round: 2, terminal: '대구', totalBoxes: 3, separate: false, parcel: false });
   assert.equal(c.items.length, 2);
-  assert.deepEqual(c.items[0], { id: 'i1', seq: 1, name: '활전갱이', qty: 5, unit: '미', size: '(키로 2미)', status: 'modified', packed: true, unshipped: 2, unshippedReason: '품절', isMulbong: true, hasAerator: false });
+  assert.deepEqual(c.items[0], { id: 'i1', seq: 1, name: '활전갱이', qty: 5, unit: '미', size: '(키로 2미)', status: 'modified', packed: true, unshipped: 2, unshippedReason: '품절', isMulbong: true, hasAerator: false, secondaryKg: null });
   assert.equal(c.items[1].unshipped, 0);
   assert.equal(c.items[1].size, null);
+  assert.deepEqual({ memo: c.memo, defaultName: c.defaultName, hasMerge: c.hasMerge }, { memo: null, defaultName: '스시미로', hasMerge: false });
+  const extra = parseSummary([{ ...v2Card, memo: '오전 도착', merge_groups: [[1, 2]], items: [{ ...v2Card.items[0], secondary_kg: 2.5 }] }]);
+  assert.ok(extra);
+  assert.deepEqual({ memo: extra[0].memo, hasMerge: extra[0].hasMerge, kg: extra[0].items[0].secondaryKg }, { memo: '오전 도착', hasMerge: true, kg: 2.5 });
 });
 
 test('parseSummary: 옛 형식(v1)은 빠진 값을 기본값으로 읽는다', () => {
@@ -55,6 +64,7 @@ test('parseSummary: 옛 형식(v1)은 빠진 값을 기본값으로 읽는다', 
   assert.equal(cards[0].totalBoxes, null);
   assert.equal(cards[0].separate, false);
   assert.equal(cards[0].items[0].isMulbong, false);
+  assert.deepEqual({ memo: cards[0].memo, defaultName: cards[0].defaultName, hasMerge: cards[0].hasMerge, kg: cards[0].items[0].secondaryKg }, { memo: null, defaultName: '', hasMerge: false, kg: null });
 });
 
 test('parseSummary: 배열이 아니면 null, 읽을 수 없는 카드·상품은 건너뛴다', () => {
@@ -238,4 +248,22 @@ test('kstTime: 밀리초를 한국 시간 HH:mm으로', () => {
   assert.equal(kstTime(Date.parse('2026-11-17T20:06:41Z')), '05:06');
   assert.equal(kstTime(Date.parse('2026-11-18T00:20:00Z')), '09:20');
   assert.equal(kstTime(Number.NaN), '');
+});
+
+test('isSepCompact: 변경 시작일(2026-11-20)부터 새 표, 그 전 날짜는 옛 표', () => {
+  assert.equal(SEP_COMPACT_FROM, '2026-11-20');
+  assert.equal(isSepCompact('2026-11-19'), false);
+  assert.equal(isSepCompact('2026-11-20'), true);
+  assert.equal(isSepCompact('2026-12-01'), true);
+});
+
+test('sepInnerWidth: 필기가 쓰일 때의 줄 폭(가장 많은 값)을 따르고, 없으면 팝업 보통 폭, 열이 많으면 최소 폭', () => {
+  const st = (anchor: string | undefined, w?: number) => ({ id: 'x', color: '#000', width: 2, pts: [0, 0, 1, 1], anchor, lay: w === undefined ? undefined : { w, t: [] } });
+  assert.equal(sepInnerWidth([], 4, false), SEP_DEFAULT_WIDTH);
+  assert.equal(sepInnerWidth([], 4, true), SEP_COMPACT_DEFAULT_WIDTH);
+  assert.equal(sepInnerWidth([st('row:a'), st('i1', 900)], 4, false), SEP_DEFAULT_WIDTH); // lay 없는 줄 획·칩 획은 무시
+  assert.equal(sepInnerWidth([st('row:a', 900.4), st('row:b', 900), st('row:c', 1000)], 4, true), 900);
+  assert.equal(sepInnerWidth([st('row:a', 900), st('row:b', 1000)], 4, true), 1000); // 같은 수면 넓은 쪽
+  assert.equal(sepInnerWidth([st('row:a', 300), st('row:b', 5000)], 4, true), SEP_COMPACT_DEFAULT_WIDTH); // 범위 밖(500~1600) 값은 버린다
+  assert.equal(sepInnerWidth([st('row:a', 700)], 12, true), 44 + 76 + 150 + 64 + 12 * 104); // 열이 많으면 최소 폭 이상
 });

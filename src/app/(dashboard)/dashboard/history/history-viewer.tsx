@@ -3,7 +3,7 @@ import { Download, Loader2, X, ZoomIn } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Segmented } from '@/components/segmented';
-import type { SnapshotMeta, SummaryCard } from '@/lib/ink/history-view';
+import type { BoardGroup, SnapshotMeta, SummaryCard } from '@/lib/ink/history-view';
 import type { InkStroke } from '@/lib/ink/store';
 import { saveBoardImage } from './board-image';
 import { HistoryBoard } from './history-board';
@@ -15,6 +15,8 @@ interface Props {
   meta: SnapshotMeta;
   strokes: InkStroke[];
   snapshotKey: string;
+  group: BoardGroup; // 버스 주문·별도 주문(표 모양이 다르다)
+  sepCompact: boolean; // 별도 주문 표가 새 촘촘한 모양인지(날짜로 정한다)
   caption: string; // 저장하는 이미지 위 띠와 확대 창 제목에 쓰는 글자("2026-11-18 · 모니터 1 · 10:32 기록")
   filename: string;
   toolbar: ReactNode; // 이미지 저장 버튼과 같은 줄 왼쪽에 놓는 것(화면 탭)
@@ -66,7 +68,7 @@ function SaveButton({ state, onClick }: { state: SaveState; onClick: () => void 
   );
 }
 
-function ZoomModal({ cards, meta, strokes, snapshotKey, caption, filename, onClose }: Omit<Props, 'toolbar' | 'children'> & { onClose: () => void }) {
+function ZoomModal({ cards, meta, strokes, snapshotKey, group, sepCompact, caption, filename, onClose }: Omit<Props, 'toolbar' | 'children'> & { onClose: () => void }) {
   const [level, setLevel] = useState<ZoomKey>('fit');
   const bodyRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -101,7 +103,7 @@ function ZoomModal({ cards, meta, strokes, snapshotKey, caption, filename, onClo
           </button>
         </div>
         <div ref={bodyRef} className="min-h-0 flex-1 overflow-auto bg-slate-100 p-3">
-          <HistoryBoard cards={cards} meta={meta} strokes={strokes} snapshotKey={`${snapshotKey}-zoom`} fixedScale={scale} maxScale={3} />
+          <HistoryBoard cards={cards} meta={meta} strokes={strokes} snapshotKey={`${snapshotKey}-zoom`} group={group} sepCompact={sepCompact} fixedScale={scale} maxScale={3} />
         </div>
       </div>
     </div>,
@@ -136,7 +138,7 @@ export function HistoryViewer({ toolbar, children, ...props }: Props) {
         }}
         className="group relative cursor-zoom-in rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-slate-900/60"
       >
-        <HistoryBoard cards={props.cards} meta={props.meta} strokes={props.strokes} snapshotKey={props.snapshotKey} />
+        <HistoryBoard cards={props.cards} meta={props.meta} strokes={props.strokes} snapshotKey={props.snapshotKey} group={props.group} sepCompact={props.sepCompact} />
         <span className="pointer-events-none absolute right-2 top-2 hidden items-center gap-1 rounded-full bg-slate-900/80 px-2.5 py-1 text-xs font-semibold text-white group-hover:inline-flex group-focus-visible:inline-flex">
           <ZoomIn size={13} /> 눌러서 확대
         </span>

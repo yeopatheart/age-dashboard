@@ -1,6 +1,7 @@
 // 필기 이력 화면(/dashboard/history)이 쓰는 순수 함수. 주문 목록·필기 코드와 따로 쓰고, 이 파일에서 그쪽을 바꾸지 않는다.
 // 이력 행(board_ink_history)의 rows_summary·meta(JSON)를 화면 데이터로 읽고, 목록에 보일 글자(시각·급감 비율)를 만든다.
 // 값은 DB가 준 것이라 믿지 않고 하나씩 좁혀 읽는다(옛 형식 v1은 터미널·박스·물봉 등이 없다).
+import type { InkStroke } from './store.ts';
 import { isCardCancelled, isCardComplete, isUndecidedQuantity, type OrderItem } from '../orders.ts'; // 상대 경로+.ts: 단위 테스트(node --test)가 @ 별칭을 못 푼다
 
 export type ItemStatus = 'new' | 'modified' | 'cancelled' | 'none';
@@ -18,6 +19,7 @@ export interface SummaryItem {
   unshippedReason: string | null;
   isMulbong: boolean;
   hasAerator: boolean;
+  secondaryKg: number | null; // 보조 중량(kg). 별도 주문 칩에 "(2.5kg)"으로 붙는다(v1은 없다)
 }
 
 export interface SummaryCard {
@@ -30,6 +32,9 @@ export interface SummaryCard {
   separate: boolean;
   parcel: boolean;
   totalBoxes: number | null;
+  memo: string | null; // 카드 메모(별도 주문 표의 고객명 칸에 "메모: …"로 붙는다. v1은 없다)
+  defaultName: string; // 고객사 관리의 이름. name과 다르면 "(변경)"을 붙인다(v1은 빈 글자)
+  hasMerge: boolean; // 합포장 묶음이 있는지
   items: SummaryItem[];
 }
 
@@ -71,6 +76,7 @@ function parseItem(raw: unknown): SummaryItem | null {
     unshippedReason: strOrNull(raw.unshipped_reason),
     isMulbong: bool(raw.mulbong),
     hasAerator: bool(raw.aerator),
+    secondaryKg: typeof raw.secondary_kg === 'number' && Number.isFinite(raw.secondary_kg) ? raw.secondary_kg : null,
   };
 }
 
@@ -88,6 +94,9 @@ function parseCard(raw: unknown): SummaryCard | null {
     separate: bool(raw.separate),
     parcel: bool(raw.parcel),
     totalBoxes: typeof boxes === 'number' && Number.isFinite(boxes) ? boxes : null,
+    memo: strOrNull(raw.memo),
+    defaultName: str(raw.default_name),
+    hasMerge: Array.isArray(raw.merge_groups) && raw.merge_groups.length > 0,
     items,
   };
 }
@@ -189,4 +198,31 @@ export function kstTime(ms: number): string {
   const t = new Date(ms);
   if (Number.isNaN(t.getTime())) return '';
   return t.toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(11, 16);
+}
+
+// 별도 주문 표의 열 구성은 칠판의 별도 주문 팝업(dashboard-client.tsx)과 같다. 표 폭은 그 필기가 쓰일 때 줄 폭(lay.w)을 따라
+// 열 폭(1fr)이 같아지게 한다: 필기가 칩 안에 같은 비율로 놓이려면 칩 폭도 같아야 한다. lay가 없으면(옛 필기) 팝업의 보통 폭을 쓴다.
+// 팝업은 2026-11-20 영업부터 한 쪽에 20줄씩, 줄 29px의 촘촘한 표다(compact). 그 전 날짜는 줄 51px의 옛 표(legacy)다.
+// 옛 표 코드는 이력 보관(2영업일)이 지난 뒤 삭제한다: SEP_COMPACT_FROM 이전 날짜가 이력에서 모두 사라지는 날(2026-11-23 이후) 삭제 이슈 참고.
+export const SEP_COMPACT_FROM = '2026-11-20';
+export const isSepCompact = (orderDate: string): boolean => orderDate >= SEP_COMPACT_FROM;
+export const SEP_DEFAULT_WIDTH = 1118; // 옛 팝업 max-w-6xl(1152) − 안쪽 여백 32 − 테두리 2
+export const SEP_COMPACT_DEFAULT_WIDTH = 1006; // 새 팝업 1248(칠판 창 1280 − 바깥 여백 32) − 안쪽 여백 16 − 테두리 2 − 오른쪽 품목별 수량 패널과 간격(약 224)
+const sepMinWidth = (slots: number): number => 44 + 76 + 150 + 64 + slots * 104;
+export function sepInnerWidth(strokes: readonly InkStroke[], slots: number, compact: boolean): number {
+  const counts = new Map<number, number>();
+  for (const st of strokes) {
+    if (!st.lay || st.anchor === undefined || !st.anchor.startsWith('row:')) continue;
+    const w = Math.round(st.lay.w);
+    if (Number.isFinite(w) && w >= 500 && w <= 1600) counts.set(w, (counts.get(w) ?? 0) + 1);
+  }
+  let best = compact ? SEP_COMPACT_DEFAULT_WIDTH : SEP_DEFAULT_WIDTH;
+  let bestCount = 0;
+  for (const [w, n] of counts) {
+    if (n > bestCount || (n === bestCount && w > best)) {
+      best = w;
+      bestCount = n;
+    }
+  }
+  return Math.max(best, sepMinWidth(slots));
 }
