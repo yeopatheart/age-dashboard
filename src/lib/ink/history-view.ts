@@ -161,21 +161,18 @@ export function buildHistoryIndex(rows: readonly { order_date: string; monitor: 
   return { dates, monitorsByDate };
 }
 
-export const monitorLabel = (monitor: string): string => (monitor === '1' || monitor === '2' ? `모니터 ${monitor}` : /^s\d$/.test(monitor) ? `별도 주문 ${monitor.slice(1)}` : monitor);
-// 시각 목록처럼 좁은 곳에 쓰는 짧은 이름.
-export const monitorShortLabel = (monitor: string): string => (monitor === '1' || monitor === '2' ? `모니터 ${monitor}` : /^s\d$/.test(monitor) ? `별도 ${monitor.slice(1)}` : monitor);
+// 화면 두 묶음: 버스 주문(모니터 1·2)과 별도 주문(별도 1·2 = s1·s2). 1·2가 아닌 모니터는 별도 주문으로 본다.
+export type BoardGroup = 'bus' | 'sep';
+export const groupOfMonitor = (monitor: string): BoardGroup => (monitor === '1' || monitor === '2' ? 'bus' : 'sep');
+export const groupLabel = (group: BoardGroup): string => (group === 'bus' ? '버스 주문' : '별도 주문');
+// 묶음에 속한 카드만(별도 주문 탭은 별도·택배 카드, 버스 주문 탭은 그 나머지).
+export const cardsOfGroup = <C extends { separate: boolean; parcel: boolean }>(cards: readonly C[], group: BoardGroup): C[] => cards.filter((c) => (c.separate || c.parcel) === (group === 'sep'));
 
 // 한국 시간 "MM-DD HH:mm" (목록용). 읽을 수 없는 값은 빈 글자.
 export function formatKst(iso: string): string {
   const t = new Date(iso);
   if (Number.isNaN(t.getTime())) return '';
   return t.toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(5, 16);
-}
-
-// 급감: 직전 점 수 대비 줄어든 비율(%). 직전이 0 이하이거나 모르면 null.
-export function dropPercent(prev: number | null, next: number | null): number | null {
-  if (prev === null || next === null || !(prev > 0)) return null;
-  return Math.round(((prev - next) / prev) * 100);
 }
 
 // 스냅샷의 필기와 요약 시각이 얼마나 어긋날 수 있는지(분). 정기(interval) 스냅샷은 같은 순간이라 어긋나지 않는다.

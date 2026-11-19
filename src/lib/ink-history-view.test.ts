@@ -7,11 +7,11 @@ import {
   cardIsCancelled,
   cardIsComplete,
   driftMinutes,
-  dropPercent,
   formatKst,
   itemIsUndecided,
-  monitorLabel,
-  monitorShortLabel,
+  groupLabel,
+  groupOfMonitor,
+  cardsOfGroup,
   parseMeta,
   parseSummary,
   productSlotCount,
@@ -123,27 +123,32 @@ test('buildHistoryIndex: 날짜는 최신순, 모니터는 1·2·s1·s2 순', ()
   assert.deepEqual(buildHistoryIndex([]), { dates: [], monitorsByDate: {} });
 });
 
-test('monitorLabel', () => {
-  assert.equal(monitorLabel('1'), '모니터 1');
-  assert.equal(monitorLabel('2'), '모니터 2');
-  assert.equal(monitorLabel('s3'), '별도 주문 3');
-  assert.equal(monitorShortLabel('s1'), '별도 1');
-  assert.equal(monitorLabel('x'), 'x');
+test('groupOfMonitor·groupLabel: 모니터 1·2는 버스 주문, 그 밖(s1·s2)은 별도 주문', () => {
+  assert.equal(groupOfMonitor('1'), 'bus');
+  assert.equal(groupOfMonitor('2'), 'bus');
+  assert.equal(groupOfMonitor('s1'), 'sep');
+  assert.equal(groupOfMonitor('s2'), 'sep');
+  assert.equal(groupOfMonitor('x'), 'sep');
+  assert.equal(groupLabel('bus'), '버스 주문');
+  assert.equal(groupLabel('sep'), '별도 주문');
+});
+
+test('cardsOfGroup: 별도·택배 카드는 별도 주문, 나머지는 버스 주문', () => {
+  const cards = [
+    { id: 'a', separate: false, parcel: false },
+    { id: 'b', separate: true, parcel: false },
+    { id: 'c', separate: false, parcel: true },
+    { id: 'd', separate: true, parcel: true },
+  ];
+  assert.deepEqual(cardsOfGroup(cards, 'bus').map((c) => c.id), ['a']);
+  assert.deepEqual(cardsOfGroup(cards, 'sep').map((c) => c.id), ['b', 'c', 'd']);
+  assert.deepEqual(cardsOfGroup([], 'bus'), []);
 });
 
 test('formatKst: UTC를 한국 시간으로', () => {
   assert.equal(formatKst('2026-11-17T20:06:41.657371+00:00'), '11-18 05:06');
   assert.equal(formatKst('2026-11-18T00:20:00Z'), '11-18 09:20');
   assert.equal(formatKst('이상한 값'), '');
-});
-
-test('dropPercent: 직전 대비 줄어든 비율', () => {
-  assert.equal(dropPercent(100, 60), 40);
-  assert.equal(dropPercent(1200, 310), 74);
-  assert.equal(dropPercent(100, 0), 100);
-  assert.equal(dropPercent(0, 0), null);
-  assert.equal(dropPercent(null, 10), null);
-  assert.equal(dropPercent(10, null), null);
 });
 
 test('driftMinutes: 정기(v2)는 어긋나지 않고, 급감·옛 형식은 저장 시각과의 차이를 알린다', () => {
@@ -179,7 +184,7 @@ test('needsMigration: 이력 테이블·열이 없을 때만 안내한다', () =
   assert.equal(needsMigration('relation "other_table" does not exist'), false);
 });
 
-import { buildTimePoints, monitorsAt, snapshotAt } from './ink/history-timeline.ts';
+import { buildTimePoints, groupSnapshotsAt, groupsAt, snapshotAt } from './ink/history-timeline.ts';
 import type { SnapshotInfo } from './ink/history-queries.ts';
 
 const snap = (id: number, monitor: string, at: string, reason: 'interval' | 'drop' = 'interval', extra: Partial<SnapshotInfo> = {}): SnapshotInfo => ({
@@ -193,21 +198,31 @@ const INFOS = [
   snap(5, '1', '2026-11-18T01:42:30Z', 'drop', { prevPointCount: 100, newPointCount: 20 }),
 ];
 
-test('buildTimePoints: 분 단위로 묶고 최신순, 급감은 따로 알린다', () => {
+test('buildTimePoints: 분 단위로 묶고 최신순, 묶음(버스·별도)과 급감을 알린다', () => {
   const points = buildTimePoints(INFOS);
-  assert.deepEqual(points.map((p) => p.monitors), [['1'], ['1', 's1'], ['1', '2']]);
+  assert.deepEqual(points.map((p) => p.groups), [['bus'], ['bus', 'sep'], ['bus']]);
   assert.equal(points[0].key, Date.parse('2026-11-18T01:42:00Z'));
   assert.equal(points[0].endMs, Date.parse('2026-11-18T01:42:59.999Z'));
-  assert.deepEqual(points[0].drops, [{ monitor: '1', prev: 100, next: 20 }]);
-  assert.deepEqual(points[1].drops, []);
+  assert.deepEqual(points[0].dropGroups, ['bus']);
+  assert.deepEqual(points[1].dropGroups, []);
+  assert.deepEqual(buildTimePoints([snap(6, 's2', '2026-11-18T02:00:10Z', 'drop')])[0].dropGroups, ['sep']);
   assert.deepEqual(buildTimePoints([]), []);
   assert.deepEqual(buildTimePoints([snap(9, '1', '이상한 값')]), []);
 });
 
-test('monitorsAt: 그 시각까지 기록이 있던 화면만, 1·2·별도 순', () => {
-  assert.deepEqual(monitorsAt(INFOS, Date.parse('2026-11-18T01:00:59Z')), ['1', '2']); // 별도 1은 아직 없었다
-  assert.deepEqual(monitorsAt(INFOS, Date.parse('2026-11-18T01:30:59Z')), ['1', '2', 's1']);
-  assert.deepEqual(monitorsAt(INFOS, Date.parse('2026-11-18T00:59:00Z')), []);
+test('groupsAt: 그 시각까지 기록이 있던 묶음만, 버스·별도 순', () => {
+  assert.deepEqual(groupsAt(INFOS, Date.parse('2026-11-18T01:00:59Z')), ['bus']); // 별도 주문은 아직 없었다
+  assert.deepEqual(groupsAt(INFOS, Date.parse('2026-11-18T01:30:59Z')), ['bus', 'sep']);
+  assert.deepEqual(groupsAt(INFOS, Date.parse('2026-11-18T00:59:00Z')), []);
+});
+
+test('groupSnapshotsAt: 묶음 안 각 모니터의 그 시각 화면(모니터 1·2 순), 기록 없는 모니터는 빠진다', () => {
+  const ids = (g: 'bus' | 'sep', at: string) => groupSnapshotsAt(INFOS, g, Date.parse(at)).map((i) => i.id);
+  assert.deepEqual(ids('bus', '2026-11-18T01:30:59Z'), [4, 2]); // 모니터 1은 01:30 기록, 모니터 2는 그 전 기록
+  assert.deepEqual(ids('bus', '2026-11-18T01:59:59Z'), [5, 2]);
+  assert.deepEqual(ids('bus', '2026-11-18T01:00:59Z'), [1, 2]);
+  assert.deepEqual(ids('sep', '2026-11-18T01:00:59Z'), []); // 별도 주문은 아직 기록이 없다
+  assert.deepEqual(ids('sep', '2026-11-18T01:59:59Z'), [3]); // 별도 2는 기록이 없어 별도 1만
 });
 
 test('snapshotAt: 그 시각까지 가장 최근 스냅샷, 같은 순간이면 id가 큰 것', () => {
