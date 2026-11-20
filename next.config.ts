@@ -42,6 +42,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // 성능 계측 기록에 배포 버전(커밋 7자리)을 붙여 배포 전후를 비교한다(src/lib/perf-client.ts). 로컬 빌드는 'local'.
+  env: { NEXT_PUBLIC_BUILD_SHA: (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7) },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },

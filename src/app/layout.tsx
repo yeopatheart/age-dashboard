@@ -7,6 +7,7 @@ import "@fontsource/noto-sans-kr/600.css";
 import "@fontsource/noto-sans-kr/700.css";
 import "@fontsource/noto-sans-kr/800.css";
 import "./globals.css";
+import { PerfProbe } from "@/components/perf-probe";
 
 export const metadata: Metadata = {
   title: "통영아재수산 관리자 시스템",
@@ -34,7 +35,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        <PerfProbe />
+        {children}
+      </body>
     </html>
   );
 }

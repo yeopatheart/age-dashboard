@@ -23,6 +23,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 린트: `npm run lint` (현재 오류·경고 0건)
 - 타입 체크: `npx tsc --noEmit`
 - 빌드: `npm run build`
+- 성능 계측(2026-11-20): 기기가 "열릴 때 멈춤·화면 갱신·메뉴 이동" 시간을 `/api/perf`로 보내 `perf_events`(0073, 14일 보관)에 쌓는다. 조회 SQL은 `docs/perf-queries.sql`, 끄기·결정은 `docs/decisions/2026-11-20-perf-telemetry.md`. 성능을 바꾸는 작업은 이 기록의 배포 버전별 값으로 전후를 비교한다.
 - CI(`.github/workflows`, 2026-11-20): PR마다 타입 체크·린트·테스트·빌드(`ci.yml`)와 마이그레이션 게이트(`migration-gate.yml`)가 돈다. 새 마이그레이션 파일이 있는 PR은 운영 Supabase에 SQL을 적용한 사람이 `sql-applied` 라벨을 붙여야 게이트가 통과하고, 기존 마이그레이션 파일을 수정·삭제하면 항상 실패한다. 라벨을 붙이기 전에는 머지하지 않는다.
 
 ## 스택
