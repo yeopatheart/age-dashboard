@@ -1,16 +1,19 @@
 // 상차 완료 카카오톡 메시지의 "형식"(템플릿): 문구 + {변수}. 시스템 설정에서 바꾸고 상차 스캔 화면이 읽어 쓴다.
 // 순수 함수와 값만 둔다(DB·화면 접근 없음). 서버·클라이언트·테스트가 모두 쓴다.
 //
-// 글은 네 줄 종류로 이뤄진다(순서 고정): 첫 줄 → 업체별 줄(업체마다 반복) → 합계 줄 → 미상차 줄(미상차가 있을 때만).
+// 글은 여섯 줄 종류로 이뤄진다(순서 고정): 첫 줄 → 업체별 줄(업체마다 반복) → 합계 줄 → 합포장 안내 줄 → 합포장 묶음 줄(묶음마다 반복) → 미상차 줄.
+// 합포장 안내·묶음 줄은 고객사 간 합포장(두 고객의 각 1박스를 한 박스로 내보냄)이 상차된 터미널에만 나온다(2026-11-20).
 // 각 줄은 한 줄짜리 글이고, 그 줄에서 쓸 수 있는 변수만 {변수명}으로 넣는다. 줄을 비우면 그 줄은 글에서 빠진다.
 
-export type ShareSlot = 'header' | 'line' | 'total' | 'pending';
+export type ShareSlot = 'header' | 'line' | 'total' | 'mergeHeader' | 'merge' | 'pending';
 export type ShareDateFormat = 'md-weekday' | 'korean' | 'iso';
 
 export interface ScanShareTemplate {
   header: string;
   line: string;
   total: string;
+  mergeHeader: string;
+  merge: string;
   pending: string;
   showPending: boolean; // 끄면 미상차 줄은 미상차가 있어도 넣지 않는다
   dateFormat: ShareDateFormat;
@@ -19,19 +22,23 @@ export interface ScanShareTemplate {
 // 기본값은 변수 기능을 넣기 전의 고정 문구와 똑같이 만든다(설정을 건드리지 않으면 글이 달라지지 않는다).
 export const DEFAULT_SCAN_SHARE_TEMPLATE: ScanShareTemplate = {
   header: '{날짜} {터미널명} 상차 완료',
-  line: '{고객사명} {박스수}박스',
+  line: '{고객사명} {박스수}박스{합포장표시}',
   total: '합계 {합계}박스',
+  mergeHeader: '※ 합포장 {합포장수}건 (합계는 합포장을 1박스로 센 수입니다). 받으시면 분리해서 각각 배송 부탁드립니다',
+  merge: '· {고객1} + {고객2}',
   pending: '⚠ 미상차: {미상차목록}',
   showPending: true,
   dateFormat: 'md-weekday',
 };
 
-export const SHARE_SLOTS: ShareSlot[] = ['header', 'line', 'total', 'pending'];
+export const SHARE_SLOTS: ShareSlot[] = ['header', 'line', 'total', 'mergeHeader', 'merge', 'pending'];
 
 export const SHARE_SLOT_LABEL: Record<ShareSlot, string> = {
   header: '첫 줄',
   line: '업체별 줄 (업체마다 한 줄씩 반복)',
   total: '합계 줄',
+  mergeHeader: '합포장 안내 줄 (합포장이 있을 때만)',
+  merge: '합포장 묶음 줄 (묶음마다 한 줄씩 반복)',
   pending: '미상차 줄 (미상차가 있을 때만)',
 };
 
@@ -48,12 +55,22 @@ export const SHARE_VARIABLES: Record<ShareSlot, { name: string; hint: string }[]
     { name: '박스수', hint: '모두 상차면 숫자, 일부만 상차면 "3/5"' },
     { name: '상차박스', hint: '상차한 박스 수(숫자)' },
     { name: '전체박스', hint: '전체 박스 수(숫자)' },
+    { name: '합포장표시', hint: '합포장 고객이면 " (합포장)", 아니면 빈 글자' },
   ],
   total: [
     { name: '합계', hint: '상차한 박스 합계' },
     { name: '업체수', hint: '상차가 끝난 박스가 있는 고객사 수' },
     { name: '날짜', hint: '주문 날짜' },
     { name: '터미널명', hint: '이 글을 보내는 터미널' },
+  ],
+  mergeHeader: [
+    { name: '합포장수', hint: '합포장으로 묶인 쌍의 수' },
+    { name: '날짜', hint: '주문 날짜' },
+    { name: '터미널명', hint: '이 글을 보내는 터미널' },
+  ],
+  merge: [
+    { name: '고객1', hint: '묶인 두 고객 중 목록에서 먼저 나오는 고객' },
+    { name: '고객2', hint: '묶인 두 고객 중 나중 고객' },
   ],
   pending: [
     { name: '미상차목록', hint: '"업체 2박스 / 업체 1박스" 모양의 목록' },
@@ -93,6 +110,8 @@ export function normalizeScanShareTemplate(raw: unknown): ScanShareTemplate {
     header: str(v.header, d.header),
     line: str(v.line, d.line),
     total: str(v.total, d.total),
+    mergeHeader: str(v.mergeHeader, d.mergeHeader),
+    merge: str(v.merge, d.merge),
     pending: str(v.pending, d.pending),
     showPending: typeof v.showPending === 'boolean' ? v.showPending : d.showPending,
     dateFormat: SHARE_DATE_FORMATS.some((f) => f.key === v.dateFormat) ? (v.dateFormat as ShareDateFormat) : d.dateFormat,

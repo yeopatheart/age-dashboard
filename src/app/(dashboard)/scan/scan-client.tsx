@@ -7,6 +7,7 @@ import { AlertTriangle, Camera, CheckCircle2, ChevronDown, Keyboard, ScanLine, U
 import { scanBarcode, undoScan, type ScanResult } from './actions';
 import { useCan } from '@/components/permissions-context';
 import { playTone, unlockAudio } from '@/lib/sound/tones';
+import { linkedCounts } from '@/lib/box-link';
 import { NO_TERMINAL, type PackageCount } from '@/lib/scan-share-text';
 import { undoneSummary, type UndoneBox } from '@/lib/scan-text';
 import { normalizeBarcodeInput } from '@/lib/labels/barcode';
@@ -20,6 +21,7 @@ export interface ScanCard {
   loaded: number;
   total: number;
   packages: PackageCount; // 합포장을 한 덩이로 센 박스 수(퀵 기사님께 보내는 목록용)
+  linkId: string | null; // 고객사 간 합포장의 짝 카드 id(0072). 한 쌍은 합계에서 한 박스로 센다
 }
 
 interface Banner {
@@ -118,7 +120,12 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
       let next: Banner;
       if (result.status === 'loaded') {
         const b = result.box;
-        next = { tone: 'ok', title: `${b.business} ${b.boxNo}번`, detail: `${b.terminal || '터미널 없음'}${b.mergedSeqs.length ? ` · 합포장 ${b.mergedSeqs.join('·')}번 함께 상차` : ''}`, labelId: b.labelId, box: { business: b.business, boxNo: b.boxNo, mergedSeqs: b.mergedSeqs }, progress: { loaded: b.loadedCount, total: b.totalCount }, done: b.loadedCount >= b.totalCount, warning: result.packingChanged ? '⚠ 박스를 정한 뒤 주문이 바뀐 고객입니다. 박스 내용을 확인하세요' : undefined };
+        const linkedLoaded = result.linked?.loaded ? result.linked.business : null; // 고객사 간 합포장으로 함께 상차된 짝 고객
+        const warnings = [
+          result.packingChanged ? '⚠ 박스를 정한 뒤 주문이 바뀐 고객입니다. 박스 내용을 확인하세요' : '',
+          result.linked && !result.linked.loaded ? `⚠ 합포장 짝 ${result.linked.business}의 라벨이 아직 없어 함께 상차되지 않았습니다. 라벨을 출력한 뒤 그 박스도 스캔하세요` : '',
+        ].filter(Boolean);
+        next = { tone: 'ok', title: `${b.business} ${b.boxNo}번`, detail: `${b.terminal || '터미널 없음'}${b.mergedSeqs.length ? ` · 합포장 ${b.mergedSeqs.join('·')}번 함께 상차` : ''}${linkedLoaded ? ` · 합포장 ${linkedLoaded}도 함께 상차` : ''}`, labelId: b.labelId, box: { business: b.business, boxNo: b.boxNo, mergedSeqs: b.mergedSeqs, linkedWith: linkedLoaded }, progress: { loaded: b.loadedCount, total: b.totalCount }, done: b.loadedCount >= b.totalCount, warning: warnings.length ? warnings.join(' / ') : undefined };
       } else if (result.status === 'duplicate') {
         const b = result.box;
         const at = b.loadedAt ? new Date(b.loadedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
@@ -303,19 +310,22 @@ export function ScanClient({ orderDate, today, cards }: { orderDate: string; tod
 
 
   // 터미널별 합계(상차 몇 박스 / 전체 몇 박스). 퀵 기사님께 보내는 상차 완료 글은 보내기 화면에서 만든다.
+  // 고객사 간 합포장 한 쌍은 한 박스로 센다(둘 다 상차돼야 상차). 업체 카드 목록은 업체별 그대로 보여 준다.
+  const unitCounts = useMemo(() => linkedCounts(cards.map((c) => ({ id: c.id, linkId: c.linkId, loaded: c.loaded, total: c.total }))), [cards]);
   const terminals = useMemo(() => {
     const map = new Map<string, { loaded: number; total: number }>();
     for (const c of cards) {
       const key = c.terminal || NO_TERMINAL;
       const t = map.get(key) ?? { loaded: 0, total: 0 };
-      t.loaded += c.loaded;
-      t.total += c.total;
+      const n = unitCounts.get(c.id) ?? c;
+      t.loaded += n.loaded;
+      t.total += n.total;
       map.set(key, t);
     }
     return [...map.entries()].map(([name, v]) => ({ name, ...v }));
-  }, [cards]);
-  const totalLoaded = cards.reduce((s, c) => s + c.loaded, 0);
-  const totalBoxes = cards.reduce((s, c) => s + c.total, 0);
+  }, [cards, unitCounts]);
+  const totalLoaded = cards.reduce((s, c) => s + (unitCounts.get(c.id)?.loaded ?? c.loaded), 0);
+  const totalBoxes = cards.reduce((s, c) => s + (unitCounts.get(c.id)?.total ?? c.total), 0);
   const visibleCards = onlyPending ? cards.filter((c) => c.loaded < c.total) : cards;
   const isToday = orderDate === today;
 

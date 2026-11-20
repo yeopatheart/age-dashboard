@@ -74,3 +74,47 @@ export function linkPairBlockReason(a: LinkCandidate, b: LinkCandidate): string 
   if (a.terminal !== b.terminal) return '터미널이 다른 고객은 합포장할 수 없습니다';
   return linkBlockReason(b);
 }
+
+// ── 상차 스캔·퀵기사 글: 연결된 두 카드를 한 덩이(한 박스)로 센다 ──────────────────────────────
+
+export interface LinkedCardRef {
+  id: string;
+  linkId: string | null;
+}
+
+// 서로를 가리키는 쌍만 찾아 카드 id → 짝 카드 id를 돌려준다(양쪽 카드가 모두 목록에 있을 때만).
+export function linkedPartners(cards: LinkedCardRef[]): Map<string, string> {
+  const byId = new Map(cards.map((c) => [c.id, c]));
+  const partners = new Map<string, string>();
+  for (const c of cards) {
+    if (!c.linkId || c.linkId === c.id) continue;
+    const mate = byId.get(c.linkId);
+    if (mate && mate.linkId === c.id) partners.set(c.id, mate.id);
+  }
+  return partners;
+}
+
+export interface CardCount {
+  loaded: number;
+  total: number;
+}
+
+// 카드마다 "한 덩이로 센" 상차 수를 돌려준다. 연결된 쌍은 목록에서 먼저 나오는 카드가 쌍 전체를 맡고(둘 다 상차돼야 상차로 센다) 다른 카드는 0/0이다.
+// 연결되지 않은 카드는 자기 수 그대로다. 터미널별·전체 합계를 낼 때 이 값을 더한다.
+export function linkedCounts<T extends LinkedCardRef & CardCount>(cards: T[]): Map<string, CardCount> {
+  const partners = linkedPartners(cards);
+  const byId = new Map(cards.map((c) => [c.id, c]));
+  const counts = new Map<string, CardCount>();
+  const order = new Map(cards.map((c, i) => [c.id, i]));
+  for (const c of cards) {
+    const pid = partners.get(c.id);
+    if (!pid) {
+      counts.set(c.id, { loaded: c.loaded, total: c.total });
+      continue;
+    }
+    const mate = byId.get(pid)!;
+    const first = (order.get(c.id) ?? 0) < (order.get(pid) ?? 0);
+    counts.set(c.id, first ? { loaded: Math.min(c.loaded, mate.loaded), total: Math.max(c.total, mate.total) } : { loaded: 0, total: 0 });
+  }
+  return counts;
+}

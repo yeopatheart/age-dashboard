@@ -15,3 +15,14 @@ test('합포장이면 함께 취소된 박스 번호를 알려 준다', () => {
     detail: '이 박스들은 다시 상차 전 상태입니다. · 합포장 1·2번 함께 취소',
   });
 });
+
+test('고객사 간 합포장이면 함께 취소된 짝 고객을 알려 준다', () => {
+  assert.deepEqual(undoneSummary({ business: '스시렌', boxNo: 1, mergedSeqs: [], linkedWith: '스시쿄세이' }), {
+    title: '스시렌 1번 상차를 취소했습니다',
+    detail: '이 박스는 다시 상차 전 상태입니다. · 합포장 스시쿄세이도 함께 취소',
+  });
+  assert.deepEqual(undoneSummary({ business: '스시렌', boxNo: 1, mergedSeqs: [], linkedWith: null }), {
+    title: '스시렌 1번 상차를 취소했습니다',
+    detail: '이 박스는 다시 상차 전 상태입니다.',
+  });
+});
