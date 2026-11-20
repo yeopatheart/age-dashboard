@@ -123,6 +123,32 @@ export async function reorderDailyBusinesses(orderedIds: string[]): Promise<{ er
   return { error: error?.message ?? null };
 }
 
+// 고객사 간 합포장 연결(0072): 서로 다른 두 고객의 각 1박스를 한 박스로 내보낸다. 조건(같은 터미널·박스 1개·미상차 등)은 DB 함수가 확인하고 위반 사유를 메시지로 돌려준다.
+export async function linkBoxPair(aId: string, bId: string): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
+  const supabase = await createClient();
+  const guard = (await dailyDateError(supabase, aId)) ?? (await dailyDateError(supabase, bId));
+  if (guard) return { error: guard };
+  const { error } = await supabase.rpc('link_box_pair', { p_a: aId, p_b: bId });
+  if (error) return { error: error.message };
+  revalidatePath('/dashboard');
+  revalidatePath('/scan');
+  return { error: null };
+}
+
+// 합포장 연결 해제: 어느 쪽 고객을 넘겨도 두 카드가 함께 풀린다.
+export async function unlinkBoxPair(dailyBusinessId: string): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
+  const supabase = await createClient();
+  const guard = await dailyDateError(supabase, dailyBusinessId);
+  if (guard) return { error: guard };
+  const { error } = await supabase.rpc('unlink_box_pair', { p_id: dailyBusinessId });
+  if (error) return { error: error.message };
+  revalidatePath('/dashboard');
+  revalidatePath('/scan');
+  return { error: null };
+}
+
 // 업체명은 businesses 테이블 소속이라 바꾸면 다른 날짜의 과거 기록 표시에도 영향을 준다.
 // 터미널은 그날 카드(daily_businesses)의 값이라 이 주문만 바뀌고, 업체의 기본 터미널과 다른 날짜는 그대로다.
 // 같은 날·차수·업체에 이미 그 터미널의 카드가 있으면 합칠 수 없어 오류를 돌려준다.

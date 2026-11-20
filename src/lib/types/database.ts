@@ -104,6 +104,8 @@ type DailyBusiness = {
   terminal_id: string | null;
   // 합포장 묶음(0039): 박스 순번 묶음의 배열. 예) [[1,2],[4,5]] — src/lib/box-merge.ts
   merge_groups: unknown;
+  // 고객사 간 합포장의 짝 카드(0072). 양쪽 카드가 서로를 가리킨다 — src/lib/box-link.ts
+  box_link_id: string | null;
   created_at: string;
 };
 
@@ -502,6 +504,7 @@ export type Database = {
           display_name?: string | null;
           terminal_id?: string | null;
           merge_groups?: unknown;
+          box_link_id?: string | null;
           created_at?: string;
         }
       >;
@@ -717,6 +720,15 @@ export type Database = {
       assign_product_sequence: {
         Args: { p_daily_business_id: string };
         Returns: number;
+      };
+      // 고객사 간 합포장 연결·해제(0072). 조건 위반은 한국어 메시지의 예외로 돌려준다.
+      link_box_pair: {
+        Args: { p_a: string; p_b: string };
+        Returns: undefined;
+      };
+      unlink_box_pair: {
+        Args: { p_id: string };
+        Returns: undefined;
       };
       // 상품명 변경 시 정산 매입내역의 이전 이름을 함께 바꾼다(0045, products:edit 권한을 함수 안에서 확인).
       rename_purchase_product: {

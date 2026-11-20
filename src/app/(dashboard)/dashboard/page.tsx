@@ -49,7 +49,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       supabase.from('terminals').select('id, name, fill_color, border_color, is_separate, is_parcel').order('name'),
       supabase
         .from('daily_businesses')
-        .select('id, business_id, business_number, round, memo, terminal_id, display_name, merge_groups')
+        .select('id, business_id, business_number, round, memo, terminal_id, display_name, merge_groups, box_link_id')
         .eq('order_date', orderDate)
         .order('sort_order')
         .order('business_number'), // 같은 순서 값이면 발급 번호순(화면 번호가 매번 같게)
@@ -124,6 +124,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         memo: daily.memo,
         parcel,
         mergeGroups: normalizeMergeGroups(daily.merge_groups, totalBoxes ?? 99),
+        boxLinkId: daily.box_link_id,
         boxStates: parcel ? [] : boxStatesOf(totalBoxes, labelsByDaily.get(daily.id) ?? []),
       },
     ];

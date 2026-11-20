@@ -1,3 +1,4 @@
+import { boxLinkSkipIds } from './box-link.ts'; // 상대 경로+.ts: 단위 테스트(node --test)가 @ 별칭을 못 푼다
 import type { MergeGroups } from '@/lib/box-merge';
 import type { BoxState } from '@/lib/overview';
 
@@ -45,6 +46,8 @@ export interface OrderRow {
   packingChanged?: boolean;
   // 합포장 묶음(포장 뒤 함께 테이핑하는 박스 번호들). 없으면 빈 배열
   mergeGroups: MergeGroups;
+  // 고객사 간 합포장의 짝 카드(0072): 서로 다른 두 고객의 각 1박스를 한 박스로 내보낸다. 없으면 null — src/lib/box-link.ts
+  boxLinkId: string | null;
   // 택배 터미널(택배사 송장을 붙인다): 박스 라벨을 출력·스캔하지 않는다
   parcel: boolean;
   // 박스 번호별 라벨 상태(미출력·출력·상차). 박스 수를 모르면 빈 배열
@@ -256,9 +259,12 @@ export function getProductSummary(items: OrderItem[]): ProductSummaryRow[] {
 
 // rows(daily_business) 기준으로 집계한다 — 상품이 하나도 없는 업체도 박스 수는 갖고 있으므로
 // items가 아니라 rows에서 집계해야 빠지지 않는다.
+// 고객사 간 합포장은 두 박스를 한 박스로 내보내므로 쌍 가운데 한 카드만 센다.
 export function getTerminalBoxTotals(rows: OrderRow[]) {
   const totals = new Map<string, number>();
+  const linkedSkip = boxLinkSkipIds(rows);
   for (const row of rows) {
+    if (linkedSkip.has(row.dailyBusinessId)) continue;
     totals.set(row.terminal, (totals.get(row.terminal) ?? 0) + (row.totalBoxes ?? 0));
   }
   return Array.from(totals.entries()).map(([terminal, boxes]) => ({ terminal, boxes }));
