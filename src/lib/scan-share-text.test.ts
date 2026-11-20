@@ -94,3 +94,74 @@ test('터미널별 목록은 처음 나온 순서이고 상차/전체 박스를 
   assert.equal(list[1].text, null);
   assert.deepEqual(terminalShareList('2026-11-06', []), []);
 });
+
+// 고객사 간 합포장: 서로 다른 두 고객의 각 1박스를 한 박스로 내보낸다(2026-11-20).
+const pairCard = (id: string, linkId: string | null, business: string, loaded: number, terminal = '남부'): ShareCard => ({ id, linkId, business, terminal, packages: { loaded, total: 1 } });
+
+test('합포장이 N건이면 업체별 줄에 표시하고 합계는 한 쌍을 1박스로 세며 안내 줄과 묶음 줄이 따라온다', () => {
+  const list = [
+    pairCard('a', 'b', '스시렌', 1),
+    pairCard('b', 'a', '스시쿄세이', 1),
+    pairCard('c', null, '스시시류', 1),
+    pairCard('d', 'e', '스시노아야', 1),
+    pairCard('e', 'd', '스시이로', 1),
+  ];
+  assert.equal(
+    buildLoadedListText('2026-11-20', list, '남부'),
+    [
+      '11/20(금) 남부 상차 완료',
+      '스시렌 1박스 (합포장)',
+      '스시쿄세이 1박스 (합포장)',
+      '스시시류 1박스',
+      '스시노아야 1박스 (합포장)',
+      '스시이로 1박스 (합포장)',
+      '합계 3박스',
+      '※ 합포장 2건 (합계는 합포장을 1박스로 센 수입니다). 받으시면 분리해서 각각 배송 부탁드립니다',
+      '· 스시렌 + 스시쿄세이',
+      '· 스시노아야 + 스시이로',
+    ].join('\n'),
+  );
+});
+
+test('합포장 한 쌍이 아직 상차 전이면 미상차 줄에 한 덩이로 올리고 업체별 줄·합계에는 넣지 않는다', () => {
+  const list = [pairCard('a', 'b', '스시렌', 0), pairCard('b', 'a', '스시쿄세이', 0), pairCard('c', null, '스시시류', 1)];
+  assert.equal(
+    buildLoadedListText('2026-11-20', list, '남부'),
+    ['11/20(금) 남부 상차 완료', '스시시류 1박스', '합계 1박스', '⚠ 미상차: 스시렌 + 스시쿄세이 1박스'].join('\n'),
+  );
+});
+
+test('합포장 한쪽만 상차됐으면 쌍은 아직 상차 전이다(둘 다 상차돼야 완료)', () => {
+  const list = [pairCard('a', 'b', '스시렌', 1), pairCard('b', 'a', '스시쿄세이', 0), pairCard('c', null, '스시시류', 1)];
+  const text = buildLoadedListText('2026-11-20', list, '남부') ?? '';
+  assert.ok(text.includes('⚠ 미상차: 스시렌 + 스시쿄세이 1박스'));
+  assert.ok(!text.includes('스시렌 1박스'));
+  assert.ok(text.includes('합계 1박스'));
+});
+
+test('짝이 목록에 없거나 서로 가리키지 않으면 합포장으로 보지 않는다', () => {
+  const list = [pairCard('a', 'zzz', '스시렌', 1), pairCard('b', 'c', '스시쿄세이', 1), pairCard('c', null, '스시시류', 1)];
+  assert.equal(buildLoadedListText('2026-11-20', list, '남부'), ['11/20(금) 남부 상차 완료', '스시렌 1박스', '스시쿄세이 1박스', '스시시류 1박스', '합계 3박스'].join('\n'));
+});
+
+test('합포장이 없는 터미널의 글은 합포장 기능이 없을 때와 같다', () => {
+  const list = [pairCard('a', 'b', '스시렌', 1), pairCard('b', 'a', '스시쿄세이', 1), pairCard('x', null, '인천집', 1, '인천')];
+  assert.equal(buildLoadedListText('2026-11-20', list, '인천'), ['11/20(금) 인천 상차 완료', '인천집 1박스', '합계 1박스'].join('\n'));
+});
+
+test('합포장 줄 문구를 바꾸거나 비울 수 있고, 업체별 줄을 직접 쓴 템플릿에도 안내·묶음 줄은 나온다', () => {
+  const list = [pairCard('a', 'b', '스시렌', 1), pairCard('b', 'a', '스시쿄세이', 1)];
+  const text = buildLoadedListText('2026-11-20', list, '남부', withTemplate({ line: '{고객사명} {박스수}박스', mergeHeader: '', merge: '{고객1}+{고객2}' }));
+  assert.equal(text, ['11/20(금) 남부 상차 완료', '스시렌 1박스', '스시쿄세이 1박스', '합계 1박스', '스시렌+스시쿄세이'].join('\n'));
+});
+
+test('터미널별 상차/전체 박스도 합포장 한 쌍을 한 박스로 센다', () => {
+  const list = [
+    { ...pairCard('a', 'b', '스시렌', 1), loaded: 1, total: 1 },
+    { ...pairCard('b', 'a', '스시쿄세이', 1), loaded: 1, total: 1 },
+    { ...pairCard('c', null, '스시시류', 0), loaded: 0, total: 2 },
+  ];
+  const [south] = terminalShareList('2026-11-20', list);
+  assert.equal(south.loaded, 1);
+  assert.equal(south.total, 3);
+});

@@ -11,6 +11,12 @@ import { requirePermission } from '@/lib/permissions/access';
 import { cardBoxes, loadSubmittedBoxCounts } from '@/lib/scan-boxes';
 import { findChangedAfterPackingIgnoringRenames } from '@/lib/packing/server';
 
+// 고객사 간 합포장(0072)의 짝 고객: 한 박스로 합쳐 내보내므로 한쪽을 스캔하면 짝의 박스도 함께 상차한다. loaded = 짝의 박스가 상차된 상태(짝의 라벨이 없으면 false)
+export interface LinkedBox {
+  business: string;
+  loaded: boolean;
+}
+
 // 스캔 결과 화면에 보여줄 박스 정보
 export interface ScannedBox {
   labelId: string;
@@ -27,7 +33,7 @@ export interface ScannedBox {
 }
 
 export type ScanResult =
-  | { status: 'loaded'; box: ScannedBox; packingChanged: boolean } // 방금 상차 완료로 처리됨. packingChanged = 박스 구성을 정한 뒤 주문이 바뀐 고객(경고만 한다)
+  | { status: 'loaded'; box: ScannedBox; packingChanged: boolean; linked: LinkedBox | null } // 방금 상차 완료로 처리됨. packingChanged = 박스 구성을 정한 뒤 주문이 바뀐 고객(경고만 한다). linked = 고객사 간 합포장의 짝 고객(0072)
   | { status: 'duplicate'; box: ScannedBox } // 이미 상차 완료된 박스를 다시 스캔함
   | { status: 'invalid'; code: string; reason: BarcodeProblem } // 우리 바코드가 아님: format = 숫자 12자리가 아님, check = 확인 숫자가 맞지 않음
   | { status: 'unknown'; code: string } // 형식은 맞지만 발급된 적 없는 번호
@@ -67,6 +73,16 @@ async function describe(supabase: Awaited<ReturnType<typeof createClient>>, labe
 async function mergedSeqsOf(supabase: Awaited<ReturnType<typeof createClient>>, dailyBusinessId: string, seq: number): Promise<number[]> {
   const { data } = await supabase.from('daily_businesses').select('merge_groups').eq('id', dailyBusinessId).maybeSingle();
   return mergeGroupOf(normalizeMergeGroups(data?.merge_groups), seq) ?? [];
+}
+
+// 고객사 간 합포장(0072)의 짝 카드. 두 카드가 서로를 가리킬 때만 짝이다(연결이 없거나 한쪽만 가리키면 null).
+async function linkedPartnerOf(supabase: Awaited<ReturnType<typeof createClient>>, dailyBusinessId: string): Promise<{ id: string; business: string } | null> {
+  const { data: daily } = await supabase.from('daily_businesses').select('box_link_id').eq('id', dailyBusinessId).maybeSingle();
+  if (!daily?.box_link_id) return null;
+  const { data: partner } = await supabase.from('daily_businesses').select('id, business_id, display_name, box_link_id').eq('id', daily.box_link_id).maybeSingle();
+  if (!partner || partner.box_link_id !== dailyBusinessId) return null;
+  const { data: business } = await supabase.from('businesses').select('name').eq('id', partner.business_id).maybeSingle();
+  return { id: partner.id, business: partner.display_name ?? business?.name ?? '' };
 }
 
 // 박스 구성을 정한 뒤 주문이 바뀐 고객인지(주문 목록의 "박스 재확인"과 같은 기준). 경고 표시용이라 읽지 못해도 상차를 막지 않는다.
@@ -130,14 +146,25 @@ export async function scanBarcode(raw: string): Promise<ScanResult> {
   const { data: mates } = merged.length
     ? await supabase.from('box_labels').update({ loaded_at: loadedAt, loaded_by: userId }).eq('daily_business_id', label.daily_business_id).in('seq', merged).is('loaded_at', null).select('id')
     : { data: [] };
+  // 고객사 간 합포장(0072): 두 고객의 박스가 한 박스로 나가므로 짝 고객의 박스(1개)도 함께 상차한다. 짝의 주문이 모두 취소됐으면 상차하지 않는다.
+  let linked: LinkedBox | null = null;
+  let partnerScanned: { id: string }[] = [];
+  const partner = await linkedPartnerOf(supabase, label.daily_business_id);
+  if (partner && (await cancelledCardIds(supabase, [partner.id])).size === 0) {
+    const { data: partnerUpdated } = await supabase.from('box_labels').update({ loaded_at: loadedAt, loaded_by: userId }).eq('daily_business_id', partner.id).eq('seq', 1).is('loaded_at', null).select('id');
+    partnerScanned = partnerUpdated ?? [];
+    // 방금 상차했거나 이미 상차돼 있으면 loaded, 짝의 라벨이 아직 없으면(출력 전) 함께 상차하지 못한 것이다.
+    const { data: partnerLabel } = partnerScanned.length ? { data: { loaded_at: loadedAt } } : await supabase.from('box_labels').select('loaded_at').eq('daily_business_id', partner.id).eq('seq', 1).maybeSingle();
+    linked = { business: partner.business, loaded: !!partnerLabel?.loaded_at };
+  }
   // 이력 기록과 결과 화면용 조회는 서로 무관해서 같이 보낸다.
   const [, box, packingChanged] = await Promise.all([
-    supabase.from('box_label_events').insert([label.id, ...(mates ?? []).map((m) => m.id)].map((label_id) => ({ label_id, event: 'scan' as const, created_by: userId }))),
+    supabase.from('box_label_events').insert([label.id, ...(mates ?? []).map((m) => m.id), ...partnerScanned.map((m) => m.id)].map((label_id) => ({ label_id, event: 'scan' as const, created_by: userId }))),
     describe(supabase, { ...label, loaded_at: loadedAt }),
     packingChangedOf(supabase, label.daily_business_id),
   ]);
   revalidatePath('/scan');
-  return { status: 'loaded', box, packingChanged };
+  return { status: 'loaded', box, packingChanged, linked };
 }
 
 // 잘못 스캔한 박스를 상차 전 상태로 되돌린다.
@@ -151,7 +178,12 @@ export async function undoScan(labelId: string): Promise<{ error: string | null 
     ? await supabase.from('box_labels').update({ loaded_at: null, loaded_by: null }).eq('daily_business_id', label.daily_business_id).in('seq', merged).select('id')
     : await supabase.from('box_labels').update({ loaded_at: null, loaded_by: null }).eq('id', labelId).select('id');
   if (error) return { error: error.message };
-  const ids = [...new Set([labelId, ...(undone ?? []).map((u) => u.id)])];
+  // 고객사 간 합포장(0072)으로 함께 상차된 짝 고객의 박스도 같이 되돌린다.
+  const partner = label ? await linkedPartnerOf(supabase, label.daily_business_id) : null;
+  const { data: partnerUndone } = partner
+    ? await supabase.from('box_labels').update({ loaded_at: null, loaded_by: null }).eq('daily_business_id', partner.id).eq('seq', 1).not('loaded_at', 'is', null).select('id')
+    : { data: [] };
+  const ids = [...new Set([labelId, ...(undone ?? []).map((u) => u.id), ...(partnerUndone ?? []).map((u) => u.id)])];
   await supabase.from('box_label_events').insert(ids.map((label_id) => ({ label_id, event: 'undo' as const, created_by: access.userId })));
   revalidatePath('/scan');
   return { error: null };

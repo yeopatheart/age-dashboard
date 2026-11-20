@@ -11,7 +11,7 @@ import { cancelledCardIds } from '@/lib/card-cancelled';
 
 export async function loadScanCards(supabase: SupabaseClient<Database>, orderDate: string): Promise<ScanCard[]> {
   const [{ data: dailies, error }, { data: businesses }, { data: terminals }] = await Promise.all([
-    supabase.from('daily_businesses').select('id, business_id, terminal_id, business_number, round, sort_order, display_name, merge_groups').eq('order_date', orderDate).order('sort_order'),
+    supabase.from('daily_businesses').select('id, business_id, terminal_id, business_number, round, sort_order, display_name, merge_groups, box_link_id').eq('order_date', orderDate).order('sort_order'),
     fetchAll((from, to) => supabase.from('businesses').select('id, name').order('id').range(from, to), '업체 조회 실패: ').then((data) => ({ data })),
     supabase.from('terminals').select('id, name'),
   ]);
@@ -44,6 +44,7 @@ export async function loadScanCards(supabase: SupabaseClient<Database>, orderDat
         loaded: boxes.filter((b) => b.loaded).length,
         total: boxes.length,
         packages: packageCounts(boxes, d.merge_groups),
+        linkId: d.box_link_id,
       },
     ];
   });

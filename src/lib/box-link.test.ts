@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BOX_LINK_COLORS, boxLinkInfos, boxLinkSkipIds, linkBlockReason, linkPairBlockReason, type BoxLinkRowRef, type LinkCandidate } from './box-link.ts';
+import { BOX_LINK_COLORS, boxLinkInfos, boxLinkSkipIds, linkBlockReason, linkedCounts, linkedPartners, linkPairBlockReason, type BoxLinkRowRef, type LinkCandidate } from './box-link.ts';
 
 const row = (id: string, boxLinkId: string | null = null, businessName = id): BoxLinkRowRef => ({ dailyBusinessId: id, boxLinkId, businessName });
 const cand = (over: Partial<LinkCandidate> = {}): LinkCandidate => ({ id: 'a', terminal: '남부', parcel: false, totalBoxes: 1, linked: false, cancelled: false, loaded: false, ...over });
@@ -59,4 +59,23 @@ test('linkPairBlockReason: 같은 고객·다른 터미널은 막고, 두 번째
   assert.match(linkPairBlockReason(cand({ id: 'a' }), cand({ id: 'b', terminal: '대구' })) ?? '', /터미널/);
   assert.match(linkPairBlockReason(cand({ id: 'a' }), cand({ id: 'b', totalBoxes: 3 })) ?? '', /1개/);
   assert.equal(linkPairBlockReason(cand({ id: 'a' }), cand({ id: 'b' })), null);
+});
+
+test('linkedPartners: 서로 가리키고 둘 다 목록에 있는 쌍만 짝으로 본다', () => {
+  const cards = [{ id: 'a', linkId: 'b' }, { id: 'b', linkId: 'a' }, { id: 'c', linkId: 'zzz' }, { id: 'd', linkId: 'e' }, { id: 'e', linkId: null }];
+  const partners = linkedPartners(cards);
+  assert.equal(partners.get('a'), 'b');
+  assert.equal(partners.get('b'), 'a');
+  assert.equal(partners.has('c'), false);
+  assert.equal(partners.has('d'), false);
+});
+
+test('linkedCounts: 쌍은 앞 카드가 한 덩이로 맡고 둘 다 상차돼야 상차로 센다', () => {
+  const card = (id: string, linkId: string | null, loaded: number, total: number) => ({ id, linkId, loaded, total });
+  const counts = linkedCounts([card('a', 'b', 1, 1), card('b', 'a', 1, 1), card('c', null, 0, 2), card('d', 'e', 1, 1), card('e', 'd', 0, 1)]);
+  assert.deepEqual(counts.get('a'), { loaded: 1, total: 1 });
+  assert.deepEqual(counts.get('b'), { loaded: 0, total: 0 });
+  assert.deepEqual(counts.get('c'), { loaded: 0, total: 2 });
+  assert.deepEqual(counts.get('d'), { loaded: 0, total: 1 }); // 한쪽만 상차: 쌍은 아직 상차 전
+  assert.deepEqual(counts.get('e'), { loaded: 0, total: 0 });
 });
