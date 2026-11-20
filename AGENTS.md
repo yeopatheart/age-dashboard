@@ -23,6 +23,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 린트: `npm run lint` (현재 오류·경고 0건)
 - 타입 체크: `npx tsc --noEmit`
 - 빌드: `npm run build`
+- CI(`.github/workflows`, 2026-11-20): PR마다 타입 체크·린트·테스트·빌드(`ci.yml`)와 마이그레이션 게이트(`migration-gate.yml`)가 돈다. 새 마이그레이션 파일이 있는 PR은 운영 Supabase에 SQL을 적용한 사람이 `sql-applied` 라벨을 붙여야 게이트가 통과하고, 기존 마이그레이션 파일을 수정·삭제하면 항상 실패한다. 라벨을 붙이기 전에는 머지하지 않는다.
 
 ## 스택
 Next.js (App Router) + TypeScript · Tailwind · Supabase (Postgres + Auth + Storage, Prisma 없음) · Anthropic API(카카오 주문 문장 보정) · Vercel
