@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { businessIdsInBothRounds, formatDelta, getProductCustomers, getProductSummary, productDelta, isCardCancelled, nameWithRound, roundLabel, type OrderItem } from './orders.ts';
+import { businessIdsInBothRounds, formatDelta, getProductCustomers, getProductSummary, getTerminalBoxTotals, productDelta, isCardCancelled, nameWithRound, roundLabel, type OrderItem, type OrderRow } from './orders.ts';
 
 test('1·2차가 둘 다 있는 업체만 이름에 차수를 붙인다', () => {
   const split = businessIdsInBothRounds([
@@ -123,4 +123,15 @@ test('고객사 취소: 상품이 하나 이상이고 전부 취소일 때만 �
   assert.equal(isCardCancelled([item({ changeStatus: 'cancelled' }), item({ changeStatus: 'none' })]), false);
   assert.equal(isCardCancelled([item({ changeStatus: 'modified' })]), false);
   assert.equal(isCardCancelled([]), false); // 빈 카드는 취소가 아니다
+});
+
+test('터미널 박스 수: 고객사 간 합포장 쌍은 한 박스로 센다', () => {
+  const r = (id: string, terminal: string, totalBoxes: number | null, boxLinkId: string | null = null) =>
+    ({ dailyBusinessId: id, terminal, totalBoxes, boxLinkId, businessName: id }) as unknown as OrderRow;
+  const rows = [r('a', '남부', 1, 'b'), r('b', '남부', 1, 'a'), r('c', '남부', 2), r('d', '대구', 3)];
+  assert.deepEqual(getTerminalBoxTotals(rows), [{ terminal: '남부', boxes: 3 }, { terminal: '대구', boxes: 3 }]);
+  // 짝이 취소돼 목록에서 빠지면 남은 카드는 그대로 센다
+  assert.deepEqual(getTerminalBoxTotals([r('b', '남부', 1, 'a'), r('c', '남부', 2)]), [{ terminal: '남부', boxes: 3 }]);
+  // 연결이 없으면 이전과 같다
+  assert.deepEqual(getTerminalBoxTotals([r('a', '남부', 1), r('b', '남부', 1)]), [{ terminal: '남부', boxes: 2 }]);
 });

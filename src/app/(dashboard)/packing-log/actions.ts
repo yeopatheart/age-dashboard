@@ -41,7 +41,7 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
 
   const { data: daily } = await supabase
     .from('daily_businesses')
-    .select('id, order_date, business_id, terminal_id')
+    .select('id, order_date, business_id, terminal_id, box_link_id')
     .eq('id', input.dailyBusinessId)
     .maybeSingle();
   if (!daily) return { error: '업체 주문을 찾지 못했습니다.' };
@@ -194,6 +194,8 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   const dailyUpdate: { total_boxes: number; merge_groups?: number[][] } = { total_boxes: input.boxes.length };
   if (input.mergeGroups !== undefined) dailyUpdate.merge_groups = normalizeMergeGroups(input.mergeGroups, input.boxes.length);
   await supabase.from('daily_businesses').update(dailyUpdate).eq('id', daily.id);
+  // 고객사 간 합포장(0072)은 각 고객 1박스일 때만 성립한다. 박스 수가 1이 아니게 되면 두 카드의 연결을 함께 푼다.
+  if (daily.box_link_id && input.boxes.length !== 1) await supabase.rpc('unlink_box_pair', { p_id: daily.id });
 
   // 제출 이력(0055): 재제출하면 위에서 packing_records를 지우고 다시 만들기 때문에, 제출마다 한 줄씩 따로 쌓아 둔다(재제출 횟수·최초 제출 때의 추천 적중 등).
   // 리포트용 기록이라 실패해도 현장 제출을 막지 않는다 — 서버 로그에만 남기고, 마이그레이션 전(테이블 없음)에는 조용히 건너뛴다.
@@ -318,7 +320,7 @@ export async function assignItemsToBoxes(input: {
 export async function deletePackingRecord(dailyBusinessId: string): Promise<{ error: string | null }> {
   await requirePermission('packing:delete');
   const supabase = await createClient();
-  const { data: daily } = await supabase.from('daily_businesses').select('order_date').eq('id', dailyBusinessId).maybeSingle();
+  const { data: daily } = await supabase.from('daily_businesses').select('order_date, box_link_id').eq('id', dailyBusinessId).maybeSingle();
   if (daily) {
     const dateError = editableDateError(daily.order_date, (await loadAppSettings(supabase)).allowPastOrderEdit, { allowTomorrow: true });
     if (dateError) return { error: dateError };
@@ -326,6 +328,8 @@ export async function deletePackingRecord(dailyBusinessId: string): Promise<{ er
   const { error } = await supabase.from('packing_records').delete().eq('daily_business_id', dailyBusinessId);
   if (error) return { error: error.message };
   await supabase.from('daily_businesses').update({ total_boxes: 1 }).eq('id', dailyBusinessId);
+  // 박스 기록을 지우면 박스 수를 알 수 없으므로 고객사 간 합포장 연결(0072)도 푼다.
+  if (daily?.box_link_id) await supabase.rpc('unlink_box_pair', { p_id: dailyBusinessId });
   revalidatePath('/packing-log');
   revalidatePath('/dashboard');
   return { error: null };

@@ -25,11 +25,16 @@ import { BoardEnvReporter } from './board-env-reporter';
 import { useTouchDesktop } from '@/lib/use-touch-desktop';
 import { useHydrated } from '@/lib/use-hydrated';
 import { useToast, useUndoToast } from '@/components/toast';
+import { boxLinkInfos, linkBlockReason, linkPairBlockReason, type LinkCandidate } from '@/lib/box-link';
+import { useLongPress } from '@/lib/use-long-press';
+import { useBoxLinkPending } from '@/lib/realtime/use-box-link-pending';
 import {
   setProductHighlight,
   clearProductHighlights,
   togglePacked,
   reorderDailyBusinesses,
+  linkBoxPair,
+  unlinkBoxPair,
   createManualOrder,
   loadBusinessDirectory,
   updateOrder,
@@ -795,17 +800,17 @@ function ItemFormModal({
 }
 
 // ─── 삭제 확인 모달 ────────────────────────────────────────────────────────────
-function ConfirmModal({ message, onConfirm, onClose }: { message: string; onConfirm: () => void; onClose: () => void }) {
+function ConfirmModal({ message, onConfirm, onClose, title = '삭제 확인', confirmLabel = '삭제', closeLabel = '취소' }: { message: string; onConfirm: () => void; onClose: () => void; title?: string; confirmLabel?: string; closeLabel?: string }) {
   return (
-    <Modal title="삭제 확인" onClose={onClose}>
+    <Modal title={title} onClose={onClose}>
       <p className="text-sm text-slate-700 mb-6 whitespace-pre-line">{message}</p>
       <div className="flex justify-end gap-2">
-        <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors">취소</button>
+        <button onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors">{closeLabel}</button>
         <button
           onClick={() => { onConfirm(); onClose(); }}
           className="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-bold hover:bg-rose-600 transition-colors"
         >
-          삭제
+          {confirmLabel}
         </button>
       </div>
     </Modal>
@@ -996,6 +1001,82 @@ export function DashboardClient({
   // 주문이 모두 취소된 고객사의 박스는 터미널별 박스 수에 세지 않는다.
   const cancelledCardSet = new Set(mainRows.filter((r) => isCardCancelled(itemsOf(r.dailyBusinessId))).map((r) => r.dailyBusinessId));
   const terminalBoxTotals = getTerminalBoxTotals(mainRows.filter((r) => !cancelledCardSet.has(r.dailyBusinessId)));
+
+  // ── 고객사 간 합포장 연결(0072, docs/decisions/2026-11-20-customer-box-link.md) ──
+  // 고객명을 꾹 누르면 연결 대기가 시작되고(모니터 1·2가 다른 기기여도 broadcast로 나눈다), 다른 고객명을 탭하면 바로 연결된다. 연결된 고객명을 꾹 누르면 해제 확인창이 뜬다.
+  const boxLinkInfo = boxLinkInfos(allRows);
+  const { pending: linkPending, start: startLinkPending, clear: clearLinkPending } = useBoxLinkPending(orderDate);
+  const [linkHint, setLinkHint] = useState<{ text: string; color: string } | null>(null);
+  const linkHintTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [unlinkTarget, setUnlinkTarget] = useState<string | null>(null);
+  const linkingRef = useRef(false);
+  useEffect(() => () => clearTimeout(linkHintTimer.current), []);
+  const rowById = (id: string) => allRows.find((r) => r.dailyBusinessId === id);
+  const linkCandidateOf = (row: OrderRow): LinkCandidate => ({
+    id: row.dailyBusinessId,
+    terminal: row.terminal,
+    parcel: row.parcel,
+    totalBoxes: row.totalBoxes,
+    linked: row.boxLinkId !== null,
+    cancelled: isCardCancelled(itemsOf(row.dailyBusinessId)),
+    loaded: row.boxStates.includes('loaded'),
+  });
+  const linkFirst = linkPending ? rowById(linkPending.dailyBusinessId) : undefined;
+  const linkFirstCandidate = linkFirst ? linkCandidateOf(linkFirst) : null;
+  const longPress = useLongPress((id) => {
+    const row = rowById(id);
+    if (!row || readOnly || linkPending) return; // 대기 중에는 탭으로 짝을 고른다
+    if (boxLinkInfo.has(id)) {
+      setUnlinkTarget(id);
+      return;
+    }
+    const reason = linkBlockReason(linkCandidateOf(row));
+    if (reason) {
+      showToast(reason);
+      return;
+    }
+    startLinkPending(id, row.businessName);
+  });
+  // 고객명 칸을 눌렀을 때: 연결 대기 중이면 짝으로 고르고, 아니면 주문 패널을 연다.
+  const handleNameTap = async (row: OrderRow, el: HTMLElement) => {
+    if (!linkPending || !linkFirst || !linkFirstCandidate) {
+      openCustomerPanel(row.dailyBusinessId, el);
+      return;
+    }
+    if (row.dailyBusinessId === linkFirst.dailyBusinessId) {
+      clearLinkPending(); // 먼저 고른 고객을 다시 누르면 대기를 끝낸다
+      return;
+    }
+    const reason = linkPairBlockReason(linkFirstCandidate, linkCandidateOf(row));
+    if (reason) {
+      showToast(reason);
+      return;
+    }
+    if (linkingRef.current) return;
+    linkingRef.current = true;
+    try {
+      const result = await linkBoxPair(linkFirst.dailyBusinessId, row.dailyBusinessId);
+      if (result.error) {
+        showToast(result.error);
+        return;
+      }
+      clearLinkPending();
+      showUndo(`${linkFirst.businessName} + ${row.businessName} 합포장으로 연결했습니다`, async () => {
+        const undone = await unlinkBoxPair(linkFirst.dailyBusinessId);
+        if (undone.error) showToast(undone.error);
+      });
+    } finally {
+      linkingRef.current = false;
+    }
+  };
+  const showLinkHint = (rowId: string) => {
+    const info = boxLinkInfo.get(rowId);
+    const row = rowById(rowId);
+    if (!info || !row) return;
+    clearTimeout(linkHintTimer.current);
+    setLinkHint({ text: `합${info.letter}: ${row.businessName} ↔ ${info.partnerName} (한 박스로 나갑니다)`, color: info.color });
+    linkHintTimer.current = setTimeout(() => setLinkHint(null), 4000);
+  };
 
   // 표의 상품 열은 더 이상 "오늘 등록된 품목 종류"(columns) 기준이 아니라 "업체 한 곳이
   // 가장 많이 주문한 상품 수 + 1"(마지막은 항상 추가 버튼) 기준이다 — 열 개수가 품목 종류
@@ -1550,6 +1631,33 @@ export function DashboardClient({
           onClose={() => setEditItemModal(null)}
         />
       )}
+      {(linkPending || linkHint) && (
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] flex max-w-[94vw] items-center gap-3 rounded-xl py-2 pl-4 pr-2 text-sm font-bold text-white shadow-lg"
+          style={{ backgroundColor: linkPending ? '#6d28d9' : linkHint?.color }}
+        >
+          {linkPending ? <span>{linkPending.name} 선택됨 · 한 박스로 합칠 고객의 이름을 누르세요</span> : <span>{linkHint?.text}</span>}
+          {linkPending && (
+            <button type="button" className="rounded-lg bg-white px-3 py-1 text-slate-900 hover:bg-slate-100" onClick={clearLinkPending}>
+              취소
+            </button>
+          )}
+        </div>
+      )}
+      {unlinkTarget && boxLinkInfo.has(unlinkTarget) && rowById(unlinkTarget) && (
+        <ConfirmModal
+          title="합포장 연결 취소"
+          confirmLabel="연결 취소"
+          closeLabel="닫기"
+          message={`${rowById(unlinkTarget)?.businessName} ↔ ${boxLinkInfo.get(unlinkTarget)?.partnerName}\n합포장 연결을 취소할까요?\n(두 고객은 각각 따로 나갑니다)`}
+          onConfirm={async () => {
+            const result = await unlinkBoxPair(unlinkTarget);
+            if (result.error) showToast(result.error);
+          }}
+          onClose={() => setUnlinkTarget(null)}
+        />
+      )}
       {confirmDelete && (
         <ConfirmModal
           message={
@@ -1901,7 +2009,7 @@ export function DashboardClient({
                   >
                     {(handle) => (
                     <>
-                    <div className={`border-r border-slate-100 px-2 flex items-center justify-center font-bold text-slate-400 bg-slate-50 ${dense ? 'text-[11px] leading-none' : 'text-xs'}`}>
+                    <div className={`border-r border-slate-100 px-2 flex items-center justify-center font-bold text-slate-400 bg-slate-50 ${dense ? 'text-[11px] leading-none' : 'text-xs'}`} style={boxLinkInfo.has(row.dailyBusinessId) ? { boxShadow: `inset 4px 0 0 ${boxLinkInfo.get(row.dailyBusinessId)?.color}` } : undefined}>
                       {handle ? (
                         <div
                           ref={handle.ref}
@@ -1923,18 +2031,22 @@ export function DashboardClient({
                       </span>
                     </div>
                     <div
-                      className={`relative border-r border-slate-100 px-2 flex items-center overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : isCardCancelled(rowItems) ? 'bg-rose-50' : ''} ${readOnly ? '' : 'cursor-pointer hover:bg-slate-100/70'}`}
+                      className={`relative border-r border-slate-100 px-2 flex items-center overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : isCardCancelled(rowItems) ? 'bg-rose-50' : ''} ${readOnly ? '' : 'cursor-pointer hover:bg-slate-100/70 select-none [-webkit-touch-callout:none]'} ${linkFirst?.dailyBusinessId === row.dailyBusinessId ? 'ring-2 ring-inset ring-violet-600 bg-violet-50' : ''} ${linkFirstCandidate && linkFirst?.dailyBusinessId !== row.dailyBusinessId && linkPairBlockReason(linkFirstCandidate, linkCandidateOf(row)) !== null ? 'opacity-40' : ''}`}
                       {...(readOnly
                         ? {}
                         : {
                             role: 'button',
                             tabIndex: 0,
-                            title: '누르면 이 고객의 상품 추가·수정·미출고·취소·삭제',
-                            onClick: (e: React.MouseEvent<HTMLDivElement>) => openCustomerPanel(row.dailyBusinessId, e.currentTarget),
+                            title: linkPending ? '눌러서 이 고객과 합포장으로 연결' : '누르면 이 고객의 상품 추가·수정·미출고·취소·삭제 · 꾹 누르면 합포장 연결',
+                            ...longPress.bind(row.dailyBusinessId),
+                            onClick: (e: React.MouseEvent<HTMLDivElement>) => {
+                              if (longPress.consumeClick()) return; // 꾹 누르고 손을 뗄 때 따라오는 클릭은 무시한다
+                              void handleNameTap(row, e.currentTarget);
+                            },
                             onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
                               if (e.key !== 'Enter' && e.key !== ' ') return;
                               e.preventDefault();
-                              openCustomerPanel(row.dailyBusinessId, e.currentTarget);
+                              void handleNameTap(row, e.currentTarget);
                             },
                           })}
                     >
@@ -1960,6 +2072,21 @@ export function DashboardClient({
                       <span className={`font-bold tabular-nums ${dense ? 'text-xs leading-none' : 'text-sm'} ${row.totalBoxes == null || isCardCancelled(rowItems) ? 'text-slate-300' : row.packingChanged ? 'text-rose-700' : 'text-slate-700'}`} title="박스 할당에서 정한 박스 수">{isCardCancelled(rowItems) ? '-' : (row.totalBoxes ?? '-')}</span>
                       {row.packingChanged && !isCardCancelled(rowItems) && <TriangleAlert className={`shrink-0 text-rose-600 ${dense ? 'w-3 h-3' : 'w-3.5 h-3.5'}`} strokeWidth={2.5} aria-label="박스 재확인 필요" />}
                       {row.mergeGroups.length > 0 && <span className={`rounded border border-emerald-300 bg-emerald-50 px-1 text-[10px] font-bold text-emerald-800 ${dense ? 'leading-[10px]' : ''}`} title={`합포장: ${row.mergeGroups.map((g) => g.join('·') + '번').join(', ')}`} aria-label="합포장">합</span>}
+                      {boxLinkInfo.has(row.dailyBusinessId) && (
+                        <span
+                          role="button"
+                          className={`rounded px-1 text-[10px] font-bold text-white ${dense ? 'leading-[10px]' : ''}`}
+                          style={{ backgroundColor: boxLinkInfo.get(row.dailyBusinessId)?.color }}
+                          title={`고객사 간 합포장: ${boxLinkInfo.get(row.dailyBusinessId)?.partnerName}과(와) 한 박스로 나갑니다`}
+                          aria-label={`합포장 ${boxLinkInfo.get(row.dailyBusinessId)?.letter}`}
+                          onClick={(e) => {
+                            e.stopPropagation(); // 박스 칸 전체의 박스 할당 열기와 겹치지 않게 한다
+                            showLinkHint(row.dailyBusinessId);
+                          }}
+                        >
+                          합{boxLinkInfo.get(row.dailyBusinessId)?.letter}
+                        </span>
+                      )}
                     </div>
 
                     {Array.from({ length: productSlotCount }).map((_, slotIndex) => {
