@@ -619,6 +619,10 @@ export type Database = {
       >;
       suppliers: TableDef<Supplier, Pick<Supplier, "name"> & { id?: string; phone?: string | null; memo?: string | null; created_at?: string }>;
       product_suppliers: TableDef<ProductSupplier, Pick<ProductSupplier, "product_id" | "supplier_id"> & { created_at?: string }>;
+      perf_events: TableDef<
+        { id: number; created_at: string; metric: string; value_ms: number; extra_ms: number | null; page: string; monitor: string | null; pointer: string | null; platform: string | null; viewport: string | null; build: string | null; api: string | null },
+        { metric: string; value_ms: number; page: string; extra_ms?: number | null; monitor?: string | null; pointer?: string | null; platform?: string | null; viewport?: string | null; build?: string | null; api?: string | null }
+      >;
       app_settings: TableDef<
         { key: string; value: unknown; updated_at: string },
         { key: string; value: unknown; updated_at?: string }
@@ -725,6 +729,11 @@ export type Database = {
       link_box_pair: {
         Args: { p_a: string; p_b: string };
         Returns: undefined;
+      };
+      // 성능 계측 기록 중 14일이 지난 것을 지운다(0073). 저장 API가 시간당 한 번 부른다.
+      purge_perf_events: {
+        Args: Record<string, never>;
+        Returns: number;
       };
       unlink_box_pair: {
         Args: { p_id: string };

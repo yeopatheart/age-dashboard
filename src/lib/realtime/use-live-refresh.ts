@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import type { ItemChange } from '@/lib/sound/apply-item-change';
+import { recordRefreshDuration } from '@/lib/perf-client';
 import { dailyChangeInScope, itemChangeInScope, type LiveScope, type RowChange } from './change-scope';
 
 export type LiveStatus = 'off' | 'connecting' | 'live' | 'down';
@@ -64,6 +65,17 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
       dirtyRef.current = false;
       flushRef.current();
     }
+  }, [refreshing]);
+  // 성능 계측: 새로고침(다시 받기)이 끝날 때 걸린 시간을 기록한다(src/lib/perf-client.ts). 상태를 바꾸지 않고, 새로고침 동작에는 영향이 없다.
+  const perfWasRefreshing = useRef(false);
+  useEffect(() => {
+    if (refreshing) {
+      perfWasRefreshing.current = true;
+      return;
+    }
+    if (!perfWasRefreshing.current) return;
+    perfWasRefreshing.current = false;
+    recordRefreshDuration(Date.now() - refreshStartedAt.current);
   }, [refreshing]);
   const [status, setStatus] = useState<Exclude<LiveStatus, 'off'>>('connecting');
   const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
