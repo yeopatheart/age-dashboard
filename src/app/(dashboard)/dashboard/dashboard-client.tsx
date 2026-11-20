@@ -7,6 +7,7 @@ import { Check, GripVertical, Plus, Pencil, X, Inbox, ChevronDown, ChevronLeft, 
 import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors, softenColors } from '@/lib/color-palette';
+import { fitInRounds } from '@/lib/pill-fit';
 import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { DashboardMobile } from './dashboard-mobile';
@@ -1290,27 +1291,34 @@ export function DashboardClient({
       const key = `${el.innerHTML}|${el.dataset.sizes ?? ''}|${pillInnerHeight}|${pillSlack}|${el.clientWidth}|${fontEpoch}`;
       if (el.dataset.fitKey !== key) dirty.push({ el, key });
     }
-    for (const { el, key } of dirty) {
-      const steps = (el.dataset.sizes ?? '').split('|').map((p) => p.split(','));
-      let step = 0;
-      const apply = (n: number) => {
+    if (dirty.length === 0) return;
+    // 팁마다 따로 "쓰고 읽고"를 되풀이하면 읽을 때마다 화면 전체 레이아웃이 다시 계산된다(2026-11-20 실측: 팁 144개 화면이 처음 열릴 때 4초, 폰트 로드 뒤 2초 멈춤).
+    // 그래서 라운드 방식으로 맞춘다: 전부에 같은 단계를 쓰고, 한 번에 읽고, 아직 넘치는 팁만 다음 단계로 내린다(src/lib/pill-fit.ts). 결과는 팁마다 따로 맞춘 것과 같다.
+    // 이 효과 안에서 쓰기와 읽기를 팁 단위로 섞지 않는다(같은 문제가 2026-11-14에 부분 수정만 되고 남아 있었다).
+    const pills = dirty.map(({ el }) => ({ el, steps: (el.dataset.sizes ?? '').split('|').map((p) => p.split(',')) }));
+    for (const { el } of pills) el.style.setProperty('--pshift', '0px');
+    fitInRounds(pills, {
+      lastStep: (p) => p.steps.length - 1,
+      apply: ({ el, steps }, n) => {
         el.style.setProperty('--pq', `${steps[n][0]}px`);
         el.style.setProperty('--pn', `${steps[n][1]}px`);
         el.style.setProperty('--pl', steps[n][2]);
         el.style.setProperty('--po', `${steps[n][3]}px`);
-      };
-      el.style.setProperty('--pshift', '0px');
-      apply(step);
-      while (el.scrollHeight > pillInnerHeight - pillSlack && step < steps.length - 1) apply(++step);
-      // 옵션이 둘째 줄로 내려간 칩은 첫 줄의 큰 수량과 둘째 줄의 작은 옵션의 글자 상자 차이 때문에 글자가 칩 가운데보다 0.5~0.7px 위에 놓인다
-      // (옵션이 7px까지 작아지면서 세로 중앙 점검에서 위·아래 여백이 1.1px 어긋났다, 2026-11-14). 크기가 정해진 뒤에 그만큼만 내려 맞춘다.
+      },
+      overflowing: (ps) => ps.map(({ el }) => el.scrollHeight > pillInnerHeight - pillSlack),
+    });
+    // 옵션이 둘째 줄로 내려간 칩은 첫 줄의 큰 수량과 둘째 줄의 작은 옵션의 글자 상자 차이 때문에 글자가 칩 가운데보다 0.5~0.7px 위에 놓인다
+    // (옵션이 7px까지 작아지면서 세로 중앙 점검에서 위·아래 여백이 1.1px 어긋났다, 2026-11-14). 크기가 정해진 뒤에 그만큼만 내려 맞춘다.
+    // 옵션 바로 앞 조각(수량·단위). 옵션이 그 아래 줄에 혼자 놓였을 때만 내린다. 같은 줄이면 옵션의 윗선이 앞 조각의 아랫선보다 위에 있다(기준선 정렬이라 글자 크기가 달라도 겹친다).
+    // 예전에는 첫 조각(품목명)과 비교해서, 품목명만 첫 줄에 있고 "수량 + 옵션"이 둘째 줄에 같이 놓인 칩(칸이 좁을 때)도 내려 0.5px 아래로 쏠렸다(2026-11-14, #161 뒤 점검에서 발견).
+    // 읽기를 전부 끝낸 뒤에 쓴다.
+    const shifted = pills.filter(({ el }) => {
       const option = el.querySelector<HTMLElement>('[data-pill-opt]');
-      // 옵션 바로 앞 조각(수량·단위). 옵션이 그 아래 줄에 혼자 놓였을 때만 내린다. 같은 줄이면 옵션의 윗선이 앞 조각의 아랫선보다 위에 있다(기준선 정렬이라 글자 크기가 달라도 겹친다).
-      // 예전에는 첫 조각(품목명)과 비교해서, 품목명만 첫 줄에 있고 "수량 + 옵션"이 둘째 줄에 같이 놓인 칩(칸이 좁을 때)도 내려 0.5px 아래로 쏠렸다(2026-11-14, #161 뒤 점검에서 발견).
       const before = option?.previousElementSibling;
-      if (option && before instanceof HTMLElement && option.offsetTop >= before.offsetTop + before.offsetHeight - 1) el.style.setProperty('--pshift', '0.6px');
-      el.dataset.fitKey = key;
-    }
+      return !!option && before instanceof HTMLElement && option.offsetTop >= before.offsetTop + before.offsetHeight - 1;
+    });
+    for (const { el } of shifted) el.style.setProperty('--pshift', '0.6px');
+    for (const { el, key } of dirty) el.dataset.fitKey = key;
   });
 
   // 툴바는 무조건 한 줄이다(두 줄로 꺾이면 그만큼 표의 행을 잃는다). 터미널별 박스 수 칩이 남는 폭에 안 들어가면 글자·여백을 단계적으로 줄이고,
