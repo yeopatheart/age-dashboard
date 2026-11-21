@@ -121,6 +121,9 @@ export function DashboardShell({
 
   const visible = (menu: MenuKey | 'users') => (menu === 'users' ? isMaster : isMaster || allowedMenus.includes(menu));
   const inPath = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  // 주문 목록(/dashboard)은 화면 갱신(router.refresh·revalidatePath)이 잦고, 갱신 때마다 Router Cache가 비면 화면 안 메뉴 Link가 다시 미리 불러온다(갱신 1회에 _rsc 8건 추가).
+  // 이 화면에서만 미리 불러오기를 끈다. 다른 화면은 기본값(undefined) 그대로다.
+  const menuPrefetch = pathname === '/dashboard' ? false : undefined;
   // 지금 보고 있는 메뉴(가장 길게 맞는 주소). 모바일 상단 바에 제목으로 보여 주고, 접힌 그룹 머리글을 강조하는 데 쓴다.
   const allMenus: (MenuKey | 'users')[] = [...MAIN_MENUS, ...NAV_GROUPS.flatMap((g) => g.menus)];
   const currentEntry = allMenus
@@ -134,6 +137,7 @@ export function DashboardShell({
       <Link
         key={href}
         href={href}
+        prefetch={menuPrefetch}
         className={`sidebar-nav-item ${nested ? 'sidebar-nav-sub' : ''} ${inPath(href) ? 'active' : ''}`}
         aria-current={inPath(href) ? 'page' : undefined}
         onClick={() => setSidebarOpen(false)}
@@ -268,7 +272,7 @@ export function DashboardShell({
             const { href } = navEntry(menu);
             const active = pathname === href || pathname.startsWith(`${href}/`);
             return (
-              <Link key={menu} href={href} className={active ? 'bottom-tab bottom-tab-on' : 'bottom-tab'} aria-current={active ? 'page' : undefined}>
+              <Link key={menu} href={href} prefetch={menuPrefetch} className={active ? 'bottom-tab bottom-tab-on' : 'bottom-tab'} aria-current={active ? 'page' : undefined}>
                 {(() => { const Icon = NAV_ITEMS.find((n) => n.menu === menu)!.icon; return <Icon size={22} />; })()}
                 <span>{BOTTOM_TAB_LABELS[menu]}</span>
               </Link>
