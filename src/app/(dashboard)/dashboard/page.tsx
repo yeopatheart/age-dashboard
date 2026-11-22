@@ -10,6 +10,7 @@ import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { missingTable } from '@/lib/supabase/missing-table';
 import { headers } from 'next/headers';
 import { todayKST } from '@/lib/order-date';
+import type { ItemSticker } from '@/lib/stickers';
 
 const ORDER_ITEM_COLUMNS = 'id, daily_business_id, product_sequence, product_id, product_name_raw, quantity, unit, secondary_weight_kg, measured_weight_kg, size_request, is_mulbong, has_aerator, is_packed, unshipped_quantity, unshipped_reason, change_status';
 
@@ -69,16 +70,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const businessIds = [...new Set(dailyBusinessRows.map((d) => d.business_id))];
 
   // 2단계: 오늘 카드 id가 정해지면 주문 줄·박스 제출 기록·추천 기록을 한 번에 읽는다.
-  const [{ data: orderItemRows }, { data: packingRecordRows }, { data: recommendationRows }, { data: labelRows }, { data: businessData, error: businessError }] = dailyBusinessIds.length
+  const [{ data: orderItemRows }, { data: packingRecordRows }, { data: recommendationRows }, { data: labelRows }, { data: businessData, error: businessError }, { data: stickerRows, error: stickerError }] = dailyBusinessIds.length
     ? await Promise.all([
         loadOrderItemRows(supabase, dailyBusinessIds),
         supabase.from('packing_records').select('id, daily_business_id, order_signature').in('daily_business_id', dailyBusinessIds),
         supabase.from('packing_recommendations').select('daily_business_id, order_signature, created_at').in('daily_business_id', dailyBusinessIds).order('created_at'),
         selectAll((from, to) => supabase.from('box_labels').select('daily_business_id, seq, loaded_at').in('daily_business_id', dailyBusinessIds).order('id').range(from, to), '라벨 조회 실패: '),
         supabase.from('businesses').select('id, name').in('id', businessIds),
+        // 스티커는 업체 카드 id로 주문 줄과 같은 단계에서 읽는다(주문 줄을 읽은 뒤 또 읽는 왕복이 없다).
+        supabase.from('order_item_stickers').select('id, order_item_id, label, fill_color, border_color, quantity').in('daily_business_id', dailyBusinessIds).order('created_at').order('id'),
       ])
-    : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [], error: null }];
+    : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [], error: null }, { data: [], error: null }];
   if (businessError) throw new Error(`업체 조회 실패: ${businessError.message}`);
+  // 스티커는 주문 목록을 돕는 보조 표시다. 아직 마이그레이션(0075)이 적용 전이거나 일시적으로 못 읽었다고 주문 목록 전체를 오류 화면으로 바꾸지 않고 스티커만 빼고 보여 준다
+  // (강조 상품과 같은 방식). 다음 갱신에 돌아오며, 원인은 서버 로그에서 알아볼 수 있다.
+  if (stickerError) console.error(`스티커 조회 실패(마이그레이션 0075 미적용이거나 일시 오류): ${stickerError.message}`);
+  const stickers: ItemSticker[] = (stickerRows ?? []).map((s) => ({ id: s.id, orderItemId: s.order_item_id, label: s.label, fillColor: s.fill_color, borderColor: s.border_color, quantity: s.quantity }));
   const businessRows = businessData ?? [];
 
   // 3단계: "박스" 열은 박스 할당에서 제출한 박스 수다 — 대시보드에서 따로 입력하지 않으므로 제출 기록에서 바로 센다.
@@ -192,6 +199,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       unshippedReasons={settings.unshippedReasons}
       allowPast={settings.allowPastOrderEdit}
       highlights={(highlightRows ?? []).map((h) => h.product_name)}
+      stickers={stickers}
       initialMobile={initialMobile}
       productColors={Object.fromEntries(productRows.map((p) => [p.name, { fill: p.fill_color, border: p.border_color }]))}
       today={today}
