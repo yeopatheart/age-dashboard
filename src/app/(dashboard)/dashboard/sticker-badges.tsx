@@ -11,6 +11,8 @@ export function StickerBadges({ stickers, fontSize }: { stickers: ItemSticker[];
         return (
           <span
             key={s.id}
+            data-sticker-id={s.id}
+            data-sticker-item={s.orderItemId}
             className="whitespace-nowrap rounded-[3px] px-[3px] font-semibold"
             style={{ fontSize, lineHeight: 1.15, background: c.fill, color: c.text, boxShadow: `inset 0 0 0 1px ${c.border}` }}
           >

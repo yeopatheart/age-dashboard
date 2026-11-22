@@ -5,7 +5,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import type { ItemChange } from '@/lib/sound/apply-item-change';
 import { recordRefreshDuration } from '@/lib/perf-client';
-import { dailyChangeInScope, itemChangeInScope, type LiveScope, type RowChange } from './change-scope';
+import { dailyChangeInScope, itemChangeInScope, stickerChangeInScope, type LiveScope, type RowChange } from './change-scope';
 
 export type LiveStatus = 'off' | 'connecting' | 'live' | 'down';
 
@@ -138,6 +138,12 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
       if (current && !itemChangeInScope(current, change, incomingDailyIds)) return;
       refreshSoon();
     };
+    // 스티커(order_item_stickers)가 붙거나 바뀌거나 떼어지면 다른 기기도 화면을 새로 받는다. 소리는 내지 않는다(주문 줄 변경만 소리 대상).
+    const onStickerChange = (change: RowChange) => {
+      const current = scopeRef.current;
+      if (current && !stickerChangeInScope(current, change)) return;
+      refreshSoon();
+    };
     // 새로고침 직후 첫 구독이 로그인 토큰 없이 붙으면 RLS 때문에 변경 신호가 오지 않는다(칩은 "실시간"인데 갱신이 없다).
     // 그래서 토큰을 먼저 받아 소켓에 싣고 구독한다. 채널 이름은 매번 달리해, 막 지운 같은 이름의 채널을 supabase-js가 되돌려주는 일을 막는다.
     let seq = 0;
@@ -154,6 +160,7 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
           .channel(`board-orders-${++seq}`)
           .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, (payload) => onItemRowChange({ eventType: payload.eventType, new: payload.new, old: payload.old }))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_businesses' }, (payload) => onDailyChange({ eventType: payload.eventType, new: payload.new, old: payload.old }))
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'order_item_stickers' }, (payload) => onStickerChange({ eventType: payload.eventType, new: payload.new, old: payload.old }))
           .subscribe((s) => {
             if (cancelled || channel !== mine) return; // 이미 지운 옛 채널의 닫힘 신호가 새 채널의 상태를 덮어쓰지 않게 한다
             if (s === 'SUBSCRIBED') {

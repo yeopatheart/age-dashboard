@@ -34,3 +34,11 @@ export function itemChangeInScope(scope: LiveScope, change: RowChange, extraDail
   const id = str(change.old.id) || str(change.new.id);
   return id ? scope.itemIds.has(id) : true;
 }
+
+// order_item_stickers 변경(0075): 이 화면의 카드에 속한 스티커면 해당한다. 새 줄·수정 신호는 daily_business_id를 담지만 삭제 신호는 기본키(id)만 담아
+// 어느 카드의 것인지 알 수 없다 — 스티커를 떼는 일은 드물고 새로 받는 비용이 작으므로 삭제는 항상 새로 받는다.
+export function stickerChangeInScope(scope: LiveScope, change: RowChange): boolean {
+  if (change.eventType === 'DELETE') return true;
+  const dailyId = str(change.new.daily_business_id);
+  return dailyId ? scope.dailyIds.has(dailyId) : true;
+}

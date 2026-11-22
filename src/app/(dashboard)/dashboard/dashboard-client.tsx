@@ -8,9 +8,10 @@ import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Pre
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors, softenColors } from '@/lib/color-palette';
 import { fitInRounds, type PillFitOps } from '@/lib/pill-fit';
-import type { ItemSticker } from '@/lib/stickers';
+import { stickerQuantityError, type ItemSticker, type StickerPresetOption } from '@/lib/stickers';
 import { alternativesFor, decodeAlternatives, encodeAlternatives, type Alternative } from '@/lib/sticker-placement';
 import { StickerBadges } from './sticker-badges';
+import { StickerLayer } from './sticker-layer';
 import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { DashboardMobile } from './dashboard-mobile';
@@ -51,6 +52,9 @@ import {
   restoreOrderItem,
   setItemUnshipped,
   deleteOrderItem,
+  addItemSticker,
+  setItemStickerQuantity,
+  removeItemSticker,
   type ManualItemFields,
 } from './actions';
 
@@ -832,7 +836,8 @@ export function DashboardClient({
   unshippedReasons,
   allowPast,
   highlights,
-  stickers,
+  stickers: serverStickers,
+  stickerPresets,
   initialMobile,
 }: {
   rows: OrderRow[];
@@ -845,6 +850,7 @@ export function DashboardClient({
   allowPast: boolean;
   highlights: string[];
   stickers: ItemSticker[];
+  stickerPresets: StickerPresetOption[];
   initialMobile: boolean;
 }) {
   const router = useRouter();
@@ -869,6 +875,15 @@ export function DashboardClient({
     return map;
   }, [items]);
   const itemsOf = (dailyBusinessId: string): OrderItem[] => itemsByDaily.get(dailyBusinessId) ?? NO_ITEMS;
+  // 스티커를 붙이거나 고치거나 떼면 서버 응답을 기다리지 않고 바로 보여 준다(서버가 새 화면을 보내면 그 값으로 바뀐다). 실패하면 원래대로 돌아온다.
+  const [stickers, setOptimisticStickers] = useOptimistic(
+    serverStickers,
+    (state: ItemSticker[], change: { type: 'add'; sticker: ItemSticker } | { type: 'quantity'; id: string; quantity: number } | { type: 'remove'; id: string }) => {
+      if (change.type === 'add') return [...state, change.sticker];
+      if (change.type === 'remove') return state.filter((s) => s.id !== change.id);
+      return state.map((s) => (s.id === change.id ? { ...s, quantity: change.quantity } : s));
+    },
+  );
   // 상품 칸별 스티커(붙인 순서). 서버가 이미 붙인 순서로 보낸다.
   const stickersByItem = useMemo(() => {
     const map = new Map<string, ItemSticker[]>();
@@ -890,10 +905,16 @@ export function DashboardClient({
   // 펜이 켜져 있는 동안은 카드 탭을 막고, 펜을 끄면 일반 모드(카드 탭 = 포장 완료)로 돌아간다. 실시간 알림(`board-mode`)과는 따로 둔다.
   // 펜 버튼은 터치 입력이 있는 데스크톱 기기(스마트 칠판)에만 보인다. 주소에 &pen=1이면 강제로 보이고 &pen=0이면 숨긴다(기기 판별이 틀렸을 때 쓰는 우회).
   const [penActive, setPenActive] = useState(false);
+  // 스티커 붙이기 모드(도구 묶음의 스티커 버튼). 펜과 함께 켤 수 없다: 펜이 켜지면 꺼지고, 켜면 펜이 꺼진다(InkLayer).
+  const [stickerMode, setStickerMode] = useState(false);
+  const handlePenActive = useCallback((active: boolean) => {
+    setPenActive(active);
+    if (active) setStickerMode(false);
+  }, []);
   const penAvailable = useTouchDesktop(searchParams.get('pen'));
   const [inkHidden, setInkHidden] = useLocalFlag(INK_HIDDEN_KEY);
   const hydrated = useHydrated(); // 펜 그림 층은 렌더 중 window를 읽으므로 서버에서는 그리지 않는다
-  const readOnly = penActive || (isPast && !allowPast) || !can('dashboard:edit');
+  const readOnly = penActive || stickerMode || (isPast && !allowPast) || !can('dashboard:edit');
   const [toastNode, showToast] = useToast();
   const [undoNode, showUndo] = useUndoToast();
 
@@ -1466,6 +1487,33 @@ export function DashboardClient({
   const handleSetPackedMany = (lineIds: string[], packed: boolean) => {
     for (const id of lineIds) handleSetPacked(id, packed);
   };
+  // ── 스티커 붙이기·고치기·떼기(칠판). 서버 규칙은 actions.ts, 붙이는 규칙은 src/lib/stickers.ts. 실패하면 화면 위쪽에 안내하고 원래대로 돌아온다.
+  const [, startStickerTransition] = useTransition();
+  const handleAddSticker = (itemId: string, preset: StickerPresetOption, quantity: number | null) => {
+    if (readOnly && !stickerMode) return;
+    startStickerTransition(async () => {
+      setOptimisticStickers({ type: 'add', sticker: { id: `pending-${preset.id}-${itemId}`, orderItemId: itemId, label: preset.label, fillColor: preset.fillColor, borderColor: preset.borderColor, quantity } });
+      const { error } = await addItemSticker(itemId, preset.id, quantity);
+      if (error) showToast(error);
+    });
+  };
+  const handleSetStickerQuantity = (sticker: ItemSticker, quantity: number) => {
+    if (sticker.quantity === quantity) return;
+    const problem = stickerQuantityError(true, quantity);
+    if (problem) return showToast(problem);
+    startStickerTransition(async () => {
+      setOptimisticStickers({ type: 'quantity', id: sticker.id, quantity });
+      const { error } = await setItemStickerQuantity(sticker.id, quantity);
+      if (error) showToast(error);
+    });
+  };
+  const handleRemoveSticker = (sticker: ItemSticker) => {
+    startStickerTransition(async () => {
+      setOptimisticStickers({ type: 'remove', id: sticker.id });
+      const { error } = await removeItemSticker(sticker.id);
+      if (error) showToast(error);
+    });
+  };
   // 팝업에서 수량을 바꾼다. 주문 수정과 같은 저장(updateOrderItemManual)이라 수정 표시·미출고 수량 보정도 같다.
   const handleChangeQuantity = (itemId: string, quantity: number) => {
     const item = items.find((i) => i.id === itemId);
@@ -1540,7 +1588,7 @@ export function DashboardClient({
   };
   // 박스 열을 누르면 그 업체의 박스 할당 팝업을 연다(박스 할당 보기 권한이 있고 펜이 꺼져 있을 때). 제출·고치기 권한은 팝업 안에서 따로 확인한다.
   const [boxModal, setBoxModal] = useState<{ dailyBusinessId: string; title: string } | null>(null);
-  const canOpenBox = can('packing:view') && !penActive;
+  const canOpenBox = can('packing:view') && !penActive && !stickerMode;
   const closeBoxModal = useCallback(() => setBoxModal(null), []);
   const closeCustomerPanel = useCallback(() => setCustomerPanel(null), []);
   const [picked, setPicked] = useState<{ scope: 'main' | 'separate'; productKey: string; anchor: { left: number; top: number; right: number; bottom: number } } | null>(null);
@@ -1871,7 +1919,7 @@ export function DashboardClient({
           </div>
           {separateNames.size > 0 && (
             <button
-              onClick={() => { setSepPage(0); setSeparateOpen(true); }}
+              onClick={() => { setSepPage(0); setStickerMode(false); setSeparateOpen(true); }}
               className={`${chrome.ctlH} px-2.5 inline-flex items-center gap-1.5 text-xs font-bold rounded-lg border transition-colors bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100`}
               title={`별도 주문 보기 (택배·직배송 등) — ${separateRows.length}건`}
               aria-label="별도 주문 보기"
@@ -2286,9 +2334,22 @@ export function DashboardClient({
         {/* 칠판 펜: 터치 기기(스마트 칠판)이고 수정 권한이 있고 오늘(또는 과거 편집 허용)인 모니터 1·2에서만 그릴 수 있다. 전체보기는 스크롤로 그림이 어긋나서 제외한다.
             그릴 수 없는 기기(PC 등)는 같은 그림을 읽기 전용으로 겹쳐 본다(서버에 저장된 그림, 툴바 버튼으로 숨길 수 있다). */}
         {separateOpen ? null : inkWriter ? (
-          <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} chipLayoutKey={summaryInkLayout} ready={inkLayoutReady} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={setPenActive} />
+          <InkLayer key={`${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} chipLayoutKey={summaryInkLayout} ready={inkLayoutReady} date={orderDate} monitor={effectiveMonitorMode} dry={inkDry} items={inkItems} onPack={(id) => handleSetPacked(id, true)} onUnpack={(id) => handleSetPacked(id, false)} onActiveChange={handlePenActive} stickerTool={{ active: stickerMode, onToggle: () => setStickerMode((on) => !on) }} />
         ) : (
           hydrated && isSplitMode && !inkHidden && <InkLayer key={`view|${orderDate}|${effectiveMonitorMode}`} layoutKey={inkLayoutKey} chipLayoutKey={summaryInkLayout} ready={inkLayoutReady} scale={stage.scale} viewOnly date={orderDate} monitor={effectiveMonitorMode} dry={false} items={inkItems} onPack={noopId} onUnpack={noopId} onActiveChange={noopActive} />
+        )}
+        {/* 스티커 붙이기: 도구 묶음의 스티커 버튼을 켠 동안 화면 전체가 상품 칸 탭을 받는다(포장 완료 탭은 일어나지 않는다). 별도 주문 팝업에서는 쓰지 않는다. */}
+        {!separateOpen && inkWriter && stickerMode && (
+          <StickerLayer
+            key={`stk|${orderDate}|${effectiveMonitorMode}`}
+            presets={stickerPresets}
+            stickersByItem={stickersByItem}
+            onAdd={handleAddSticker}
+            onSetQuantity={handleSetStickerQuantity}
+            onRemove={handleRemoveSticker}
+            onExit={() => setStickerMode(false)}
+            notify={showToast}
+          />
         )}
       </div>
     </div>
