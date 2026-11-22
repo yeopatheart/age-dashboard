@@ -31,6 +31,7 @@ import {
   ChevronDown,
   Database,
   SlidersHorizontal,
+  Stamp,
 } from 'lucide-react';
 
 // 하루 업무 순서대로: 주문 입력 → 박스 할당 → 대시보드, 그 아래는 접고 펼 수 있는 "관리"·"설정" 그룹.
@@ -49,6 +50,7 @@ const NAV_ITEMS: { menu: MenuKey | 'users'; icon: typeof Sparkles }[] = [
   { menu: 'terminals', icon: MapPinned },
   { menu: 'products', icon: Tag },
   { menu: 'boxes', icon: Package },
+  { menu: 'stickers', icon: Stamp },
   { menu: 'labels', icon: Barcode },
   { menu: 'settings', icon: Settings },
   { menu: 'users', icon: ShieldCheck },
@@ -59,7 +61,7 @@ const BOTTOM_TAB_LABELS: Partial<Record<MenuKey, string>> = { overview: '대시�
 // 자주 쓰는 메뉴는 항상 보이고, 관리·설정 메뉴는 그룹으로 묶어 접고 펼친다. 그룹 안의 메뉴는 사용자 권한으로 거르며, 보일 메뉴가 없는 그룹은 통째로 숨긴다.
 const MAIN_MENUS: (MenuKey | 'users')[] = ['overview', 'orders', 'packing', 'dashboard', 'scan', 'settlement', 'dispatch', 'reports'];
 const NAV_GROUPS: { id: string; label: string; icon: typeof Sparkles; menus: (MenuKey | 'users')[] }[] = [
-  { id: 'manage', label: '관리', icon: Database, menus: ['businesses', 'sellers', 'terminals', 'products', 'boxes'] },
+  { id: 'manage', label: '관리', icon: Database, menus: ['businesses', 'sellers', 'terminals', 'products', 'boxes', 'stickers'] },
   { id: 'config', label: '설정', icon: SlidersHorizontal, menus: ['labels', 'settings', 'users'] },
 ];
 const navEntry = (menu: MenuKey | 'users') => (menu === 'users' ? { href: '/users', label: '사용자 및 권한' } : { href: MENU_DEFS[menu].href, label: MENU_DEFS[menu].label });
