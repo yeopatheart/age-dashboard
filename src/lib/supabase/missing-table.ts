@@ -29,6 +29,7 @@ const MIGRATION_OF_TABLE: Record<string, string> = {
   shipping_rates: '0063_customer_seller_terminal_rates.sql', // terminals에 더한 배송비 기본 금액 열(bus_rate·quick_rate·parcel_rate)
   business_fields: '0063_customer_seller_terminal_rates.sql', // businesses에 더한 열(legal_name·seller_id·uses_quick)
   order_item_base: '0060_order_item_base_quantity.sql', // 테이블이 아니라 order_items에 더한 열(처음 입력한 수량·단위)
+  sticker_presets: '0074_sticker_presets.sql',
 };
 
 // 오류가 "테이블 없음"이면 그 테이블 이름(못 읽으면 'unknown'), 아니면 null.

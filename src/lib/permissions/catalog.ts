@@ -17,6 +17,7 @@ export const MENU_DEFS = {
   terminals: { label: '터미널 관리', href: '/terminals', paths: ['/terminals'], actions: { edit: '등록·수정', delete: '삭제' } },
   products: { label: '상품 관리', href: '/products', paths: ['/products'], actions: { edit: '등록·수정', delete: '삭제' } },
   boxes: { label: '박스 관리', href: '/boxes', paths: ['/boxes'], actions: { edit: '등록·수정', delete: '삭제' } },
+  stickers: { label: '스티커 관리', href: '/stickers', paths: ['/stickers'], actions: { edit: '등록·수정·순서 변경', delete: '삭제' } },
   labels: { label: '라벨 설정', href: '/labels', paths: ['/labels'], actions: { edit: '라벨 디자인 저장' } },
   settings: { label: '시스템 설정', href: '/settings', paths: ['/settings'], actions: { edit: '시스템 설정 변경' } },
 } as const;

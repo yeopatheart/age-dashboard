@@ -25,6 +25,17 @@ type AccessLog = {
 
 type CreatedVia = "order" | "manual";
 
+// 칠판 상품 칸에 붙이는 스티커의 종류(0074). 색은 color-palette의 key.
+type StickerPreset = {
+  id: string;
+  label: string;
+  fill_color: string;
+  border_color: string;
+  uses_quantity: boolean;
+  sort_order: number;
+  created_at: string;
+};
+
 type Terminal = {
   id: string;
   name: string;
@@ -454,6 +465,10 @@ export type Database = {
       access_log: TableDef<
         AccessLog,
         Pick<AccessLog, "user_id"> & { id?: string; event?: string; created_at?: string }
+      >;
+      sticker_presets: TableDef<
+        StickerPreset,
+        Pick<StickerPreset, "label"> & { id?: string; fill_color?: string; border_color?: string; uses_quantity?: boolean; sort_order?: number; created_at?: string }
       >;
       terminals: TableDef<
         Terminal,
