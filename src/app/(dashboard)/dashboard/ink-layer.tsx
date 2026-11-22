@@ -1,21 +1,23 @@
 'use client';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Eraser, Palette, PenLine, Undo2 } from 'lucide-react';
+import { Eraser, GripHorizontal, PenLine, Trash2, Undo2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { fetchBoardInk, fetchBoardInkStamp, subscribeBoardInk } from '@/lib/ink/board-ink-client';
 import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, needsFit, redrawLive, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
 import { eraseStroke } from '@/lib/ink/erase';
 import { classifyStroke, pathLength, REASON_LABEL, startsTwoFingerTap, TWO_FINGER } from '@/lib/ink/gesture';
 import { popHistory, pushHistory, type HistoryEntry } from '@/lib/ink/history';
-import { cardPosition, clampToViewport, stackPositions } from '@/lib/ink/menu-layout';
+import { barLayout, cardPosition, clampBar, type BarSpec } from '@/lib/ink/menu-layout';
+import { useLongPress } from '@/lib/use-long-press';
 import { anchorLegacyStrokes, pickRowAnchor } from '@/lib/ink/row-anchor';
 import { chipTargets, isProductAnchor, isSumAnchor, pickSumAnchor, sumAnchor } from '@/lib/ink/summary-anchor';
 import { limitInkStrokes, MAX_STROKES, remapStroke, resolvePoints, rowLayoutFrom, STORE_MIN_STEP, toAnchoredStroke, toFreeStroke, toPieceStroke, type Box, type InkStroke, type RowLayout } from '@/lib/ink/store';
 import { saveBoardInk } from './actions';
 
-// 칠판 펜 기능의 그림 층: 주문표 위에 얹는 캔버스 + 플로팅 버튼 + 세로로 쌓이는 메뉴.
-// 확정 설계는 docs/decisions/2026-11-14-board-pen-feature.md. 요약:
-// - 플로팅 버튼을 짧게 누르면 펜 켜기/끄기, 길게 누르면 메뉴(펜 설정·지우개·되돌리기)가 버튼 위(또는 아래)로 세로로 쌓인다. 끌면 위치를 옮긴다.
+// 칠판 펜 기능의 그림 층: 주문표 위에 얹는 캔버스 + 세로 한 줄 도구 묶음(펜·지우개·되돌리기).
+// 확정 설계는 docs/decisions/2026-11-14-board-pen-feature.md(2026-11-22 변경: 도구 묶음). 요약:
+// - 도구 버튼은 처음부터 세로 한 줄로 보인다. 펜을 누르면 켜기/끄기, 지우개를 누르면 지우개(다시 누르면 펜으로 복귀), 되돌리기는 누르면 바로 된다.
+//   펜·지우개는 길게 누르면 설정 카드(펜: 색·굵기, 지우개: 크기·전체 지우기)가 열린다. 맨 위 손잡이를 끌면 묶음 전체가 움직인다.
 //   색·굵기·지우개 크기는 한 번 정하면 계속 쓰므로, 설정 카드는 설정할 때만 뜨고 그리기 시작하면 닫힌다(2026-11-14 현장 요청).
 // - 펜·손가락·지우개가 모두 touch로 들어오므로(진단 결과) 도구 선택으로 구분하고, 손바닥은 접촉 크기로 거른다.
 // - 동그라미·직선은 해당 상품 칸을 포장 완료로 올리고(뒤에서 처리, 표시 없음), 그 획은 상품 칸에 붙는다. 시험 모드(&ink=dry)는 결과만 보여 준다.
@@ -23,11 +25,10 @@ import { saveBoardInk } from './actions';
 //   전체 지우기는 그림만 지우고 포장 상태는 유지한다.
 
 const PALM_PX = 24; // 진단: 손가락·펜 1×1px, 손바닥 52×62px
-const FAB = 45; // 플로팅 버튼 지름(예전 56px의 80%, 2026-11-14 — 내용을 덜 가리게)
-const STACK_PITCH = 53; // 세로 메뉴의 버튼 간격(버튼 45px + 여백 8px)
-const EDGE_MARGIN = 36;
-const LONG_PRESS_MS = 500; // 플로팅 버튼을 이 시간 누르고 있으면 메뉴
-const HOLD_MS = 1000; // 지우개를 이 시간 누르고 있으면 전체 지우기
+// 도구 묶음: 손잡이 + 버튼 지름 40px(예전 플로팅 버튼 45px에서 한 번 더 줄였다 — 버튼이 늘어도 주문 목록을 덜 가리게, 2026-11-22).
+const BAR: BarSpec = { button: 40, gap: 6, handle: 22 };
+const BAR_BUTTONS = 3; // 펜·지우개·되돌리기
+const BAR_SIZE = barLayout({ x: 0, y: 0 }, BAR_BUTTONS, BAR); // 묶음 크기(위치와 상관없다)
 const CARD_W = 264;
 const COLORS = [
   { name: '빨강', hex: '#dc2626' },
@@ -39,7 +40,7 @@ const COLORS = [
 const PEN_RANGE = { min: 1, max: 24 };
 const ERASER_RANGE = { min: 8, max: 120 };
 const PREFS_KEY = 'board-ink-prefs';
-const POS_KEY = 'board-ink-pos';
+const POS_KEY = 'board-ink-bar-pos'; // 도구 묶음의 가운데 위치(화면 비율). 예전 플로팅 버튼 위치('board-ink-pos')와는 기준이 달라 따로 둔다.
 const NOTE_MS = 6000;
 const SAVE_DELAY_MS = 500; // 그린 뒤 이 시간 안의 변경은 한 번의 저장으로 묶는다
 const LEGACY_SETTLE_MS = 2000; // 예전 필기를 줄에 붙이거나 다른 모니터에서 넘어온 필기를 가져오기 전에 줄 위치가 이 시간 동안 더 바뀌지 않기를 기다린다(표 높이·글꼴이 자리잡는 중에 붙이면 엉뚱한 줄에 붙는다)
@@ -97,14 +98,15 @@ function loadPrefs(): Prefs {
   }
 }
 
+// 처음엔 화면 오른쪽 가장자리, 세로 가운데에 둔다(손이 닿기 쉽고 설정 카드는 왼쪽에 뜬다).
 function defaultPos(): Pt {
-  return { x: window.innerWidth - 56, y: window.innerHeight - 150 };
+  return clampBar({ x: window.innerWidth - 40, y: window.innerHeight / 2 }, BAR_SIZE, { width: window.innerWidth, height: window.innerHeight });
 }
 
 function loadPos(): Pt {
   try {
     const raw = JSON.parse(localStorage.getItem(POS_KEY) ?? 'null') as { fx?: number; fy?: number } | null;
-    if (typeof raw?.fx === 'number' && typeof raw.fy === 'number') return clampToViewport({ x: raw.fx * window.innerWidth, y: raw.fy * window.innerHeight }, { width: window.innerWidth, height: window.innerHeight }, FAB / 2);
+    if (typeof raw?.fx === 'number' && typeof raw.fy === 'number') return clampBar({ x: raw.fx * window.innerWidth, y: raw.fy * window.innerHeight }, BAR_SIZE, { width: window.innerWidth, height: window.innerHeight });
   } catch {
     // 저장된 위치가 없거나 읽을 수 없으면 기본 위치
   }
@@ -198,14 +200,12 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
   const [state, setState] = useState<InkState>(() => ({ strokes: [], history: [] }));
   const stateRef = useRef(state);
   const [tool, setTool] = useState<Tool | null>(null); // 그리는 중인 도구(없으면 터치가 그대로 통과한다)
-  const [menuOpen, setMenuOpen] = useState(false); // 길게 눌러 연 메뉴(펜 설정·지우개·되돌리기)
-  const [card, setCard] = useState<Tool | null>(null); // 설정 카드(펜: 색·굵기, 지우개: 크기). 그리기 시작하면 닫힌다.
+  const [card, setCard] = useState<Tool | null>(null); // 설정 카드(펜: 색·굵기, 지우개: 크기·전체 지우기). 펜·지우개를 길게 누르면 열리고, 그리기 시작하면 닫힌다.
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [pos, setPos] = useState<Pt>(loadPos);
   const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
   const [layoutTick, setLayoutTick] = useState(0);
   const [note, setNote] = useState<{ text: string; x: number; y: number } | null>(null);
-  const [holding, setHolding] = useState(false);
 
   const toolRef = useRef<Tool | null>(null);
   const prefsRef = useRef(prefs);
@@ -214,10 +214,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
   const idCounter = useRef(0);
   const redrawFrame = useRef(0);
   const noteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const longTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const holdFired = useRef(false);
-  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean; long: boolean } | null>(null);
+  const dragRef = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null); // 손잡이를 끄는 중
 
   useEffect(() => {
     toolRef.current = tool;
@@ -448,8 +445,6 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     () => () => {
       cancelAnimationFrame(redrawFrame.current);
       clearTimeout(noteTimer.current);
-      clearTimeout(holdTimer.current);
-      clearTimeout(longTimer.current);
     },
     [],
   );
@@ -471,12 +466,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     noteTimer.current = setTimeout(() => setNote(null), NOTE_MS);
   };
 
-  const closeMenu = () => {
-    setMenuOpen(false);
-    setCard(null);
-    setHolding(false);
-    clearTimeout(holdTimer.current);
-  };
+  const closeCard = () => setCard(null);
 
   // ── 입력 ──────────────────────────────────────────────────────────────────
   const local = (e: { clientX: number; clientY: number }): Pt => {
@@ -568,7 +558,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
       }
       return; // 한 획이 진행 중일 때 들어오는 다른 접촉은 무시한다
     }
-    closeMenu(); // 그리기 시작하면 열려 있던 메뉴·설정 카드를 닫는다
+    closeCard(); // 그리기 시작하면 열려 있던 설정 카드를 닫는다
     try {
       canvas.setPointerCapture(e.pointerId);
     } catch {
@@ -774,109 +764,61 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     commit({ strokes: [], history: pushHistory(cur.history, { before: cur.strokes }) }); // 포장 상태는 그대로 두고 그림만 지운다
   };
 
-  const openPenSettings = () => {
-    if (tool === 'pen' && card === 'pen') {
-      setCard(null); // 설정 카드가 열려 있을 때 다시 누르면 닫는다(펜은 켜 둔 채)
-      return;
-    }
-    setTool('pen');
-    setCard('pen');
-  };
-
-  const eraserDown = () => {
-    holdFired.current = false;
-    if (tool !== 'eraser') return;
-    setHolding(true);
-    holdTimer.current = setTimeout(() => {
-      holdFired.current = true;
-      setHolding(false);
-      clearAll();
-    }, HOLD_MS);
-  };
-  const eraserUp = () => {
-    clearTimeout(holdTimer.current);
-    setHolding(false);
-    if (holdFired.current) {
-      holdFired.current = false;
-      return;
-    }
-    if (tool !== 'eraser') {
-      setTool('eraser');
-      setCard('eraser');
-    } else {
-      setTool('pen'); // 이미 지우개면 다시 눌러 취소 = 펜으로 복귀(펜을 다시 켜는 한 번을 아낀다, 2026-11-14)
+  // 설정 카드: 펜·지우개를 길게 누르면 열린다(그 도구도 함께 켠다). 그 카드가 이미 열려 있으면 닫는다.
+  const openSettings = (which: Tool) => {
+    if (tool === which && card === which) {
       setCard(null);
+      return;
     }
+    setTool(which);
+    setCard(which);
   };
-  const eraserCancel = () => {
-    clearTimeout(holdTimer.current);
-    setHolding(false);
+  const { bind: bindLongPress, consumeClick } = useLongPress((key) => openSettings(key as Tool));
+
+  // 펜 버튼: 짧게 누르면 펜 켜기/끄기(켜면 이전에 정한 색·굵기를 그대로 쓴다). 지우개를 쓰는 중이면 끄지 않고 펜으로 돌아간다. 펜을 끄려면 펜 상태에서 한 번 더 누른다.
+  const tapPen = () => {
+    setCard(null);
+    setTool((t) => (t === 'pen' ? null : 'pen'));
+  };
+  // 지우개 버튼: 짧게 누르면 지우개, 지우개를 쓰는 중에 다시 누르면 펜으로 돌아간다(펜을 다시 켜는 한 번을 아낀다, 2026-11-14).
+  const tapEraser = () => {
+    setCard(null);
+    setTool((t) => (t === 'eraser' ? 'pen' : 'eraser'));
   };
 
-  // 플로팅 버튼: 짧게 누르면 펜 켜기/끄기, 길게 누르면 메뉴, 끌면 위치 이동.
-  const fabDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+  // 손잡이를 끌면 묶음 전체가 움직이고, 놓으면 위치를 이 기기에 저장한다.
+  const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
-      // 캡처하지 못해도 누르기·끌기는 동작한다
+      // 캡처하지 못해도 끌기는 동작한다
     }
-    const drag = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, originX: pos.x, originY: pos.y, moved: false, long: false };
-    dragRef.current = drag;
-    clearTimeout(longTimer.current);
-    longTimer.current = setTimeout(() => {
-      if (dragRef.current === drag && !drag.moved) {
-        drag.long = true;
-        setMenuOpen((open) => !open);
-        setCard(null);
-      }
-    }, LONG_PRESS_MS);
+    dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, originX: pos.x, originY: pos.y };
   };
-  const fabMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+  const dragTarget = (d: NonNullable<typeof dragRef.current>, e: React.PointerEvent<HTMLDivElement>): Pt => clampBar({ x: d.originX + e.clientX - d.startX, y: d.originY + e.clientY - d.startY }, BAR_SIZE, viewport);
+  const handleMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-    if (!d.moved && Math.hypot(dx, dy) > 10) {
-      d.moved = true;
-      clearTimeout(longTimer.current);
-    }
-    if (d.moved) setPos(clampToViewport({ x: d.originX + dx, y: d.originY + dy }, viewport, FAB / 2));
+    setPos(dragTarget(d, e));
   };
-  const fabUp = (e: React.PointerEvent<HTMLButtonElement>) => {
-    clearTimeout(longTimer.current);
+  const handleUp = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
     dragRef.current = null;
-    if (d.moved) {
-      const finalPos = clampToViewport({ x: d.originX + (e.clientX - d.startX), y: d.originY + (e.clientY - d.startY) }, viewport, FAB / 2);
-      setPos(finalPos);
-      try {
-        localStorage.setItem(POS_KEY, JSON.stringify({ fx: finalPos.x / viewport.width, fy: finalPos.y / viewport.height }));
-      } catch {
-        // 저장이 막혀 있으면 이 화면에서만 바뀐다
-      }
-      return;
+    const finalPos = dragTarget(d, e);
+    setPos(finalPos);
+    try {
+      localStorage.setItem(POS_KEY, JSON.stringify({ fx: finalPos.x / viewport.width, fy: finalPos.y / viewport.height }));
+    } catch {
+      // 저장이 막혀 있으면 이 화면에서만 바뀐다
     }
-    if (d.long) return; // 길게 눌러 메뉴를 열었으면 펜을 켜고 끄지 않는다
-    if (tool === 'eraser') {
-      closeMenu();
-      setTool('pen'); // 지우개를 쓰는 중에 플로팅 버튼을 누르면 펜으로 복귀한다(끄지 않는다). 펜을 끄려면 펜 상태에서 한 번 더 누른다.
-      return;
-    }
-    if (menuOpen) {
-      closeMenu(); // 메뉴가 열려 있을 때 짧게 누르면 메뉴만 닫는다
-      return;
-    }
-    setTool((t) => (t ? null : 'pen')); // 짧게 누르면 펜 켜기/끄기(지우개 중이면 위에서 펜으로 복귀)(켜면 이전에 정한 색·굵기를 그대로 쓴다)
   };
 
-  // 메뉴는 플로팅 버튼 위(화면 아래쪽에 있을 때) 또는 아래로 세로로 쌓고, 설정 카드는 눌린 버튼 옆에 둔다.
-  const [penPos, eraserPos, undoPos] = stackPositions(pos, 3, STACK_PITCH, viewport, EDGE_MARGIN);
-  const selectedPos = card === 'pen' ? penPos : card === 'eraser' ? eraserPos : null;
-  const cardPos = selectedPos ? cardPosition(pos, selectedPos.y, { width: CARD_W, height: card === 'pen' ? 188 : 132 }, FAB, viewport) : { x: 0, y: 0 };
+  // 도구 버튼은 묶음 안에서 위에서 아래로 펜·지우개·되돌리기 순서다. 설정 카드는 길게 눌린 버튼 옆에 둔다.
+  const bar = barLayout(pos, BAR_BUTTONS, BAR);
+  const cardPos = card ? cardPosition(pos, bar.buttons[card === 'pen' ? 0 : 1].y, { width: CARD_W, height: card === 'pen' ? 216 : 236 }, BAR.button, viewport) : { x: 0, y: 0 };
   const canUndo = state.history.length > 0;
-  const menuButton = (active: boolean) => `fixed z-40 flex h-[45px] w-[45px] flex-col items-center justify-center gap-px rounded-full border-2 shadow-lg transition-colors ${active ? 'border-[#003057] bg-[#003057] text-white' : 'border-slate-300 bg-white text-slate-700'}`;
-  const FabIcon = tool === 'eraser' ? Eraser : PenLine;
+  const toolButton = (active: boolean) => `flex h-[40px] w-[40px] select-none items-center justify-center rounded-full border-2 shadow-lg transition-colors ${active ? 'border-[#003057] bg-[#003057] text-white' : 'border-[#003057] bg-white text-[#003057]'}`;
 
   // PC: 그림만 보여 준다. 캔버스는 입력을 받지 않아 아래의 표가 그대로 눌린다.
   if (viewOnly) return <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 z-30 h-full w-full" aria-hidden="true" />;
@@ -893,8 +835,6 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
         onPointerCancel={(e) => endPointer(e, true)}
         onContextMenu={(e) => e.preventDefault()}
       />
-      {/* 펜이 꺼져 있을 때 메뉴가 열려 있으면, 화면의 다른 곳을 누르는 것으로 메뉴를 닫는다. 펜이 켜져 있으면 그리기 시작이 메뉴를 닫는다. */}
-      {menuOpen && !tool && <div className="fixed inset-0 z-30" onPointerDown={closeMenu} />}
       <div ref={previewRef} className="pointer-events-none absolute left-0 top-0 z-30 hidden rounded-full border-2 border-slate-500 bg-white/40" />
       {saveError && (
         <button type="button" onClick={() => void flushSave()} className="absolute left-1/2 top-2 z-30 max-w-md -translate-x-1/2 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-bold leading-snug text-white shadow-lg" title="눌러서 다시 저장">
@@ -912,37 +852,14 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
         </div>
       )}
 
-      {menuOpen && penPos && eraserPos && undoPos && (
-        <>
-          <button type="button" aria-label="펜 설정(색·굵기)" aria-pressed={card === 'pen'} title="펜 설정 — 색과 굵기" onClick={openPenSettings} className={menuButton(card === 'pen')} style={{ left: penPos.x - FAB / 2, top: penPos.y - FAB / 2 }}>
-            <Palette className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            aria-label="지우개 (선택한 뒤 1초 누르고 있으면 전체 지우기)"
-            aria-pressed={tool === 'eraser'}
-            title="지우개 — 선택한 뒤 1초 누르고 있으면 전체 지우기"
-            onPointerDown={eraserDown}
-            onPointerUp={eraserUp}
-            onPointerCancel={eraserCancel}
-            onPointerLeave={eraserCancel}
-            onContextMenu={(e) => e.preventDefault()}
-            className={menuButton(tool === 'eraser')}
-            style={{ left: eraserPos.x - FAB / 2, top: eraserPos.y - FAB / 2, touchAction: 'none' }}
-          >
-            <Eraser className="h-5 w-5" />
-            <svg className="pointer-events-none absolute inset-0 -rotate-90" viewBox="0 0 56 56" aria-hidden="true">
-              <circle cx="28" cy="28" r="25" fill="none" stroke="#dc2626" strokeWidth="4" strokeLinecap="round" strokeDasharray="157" style={{ strokeDashoffset: holding ? 0 : 157, transition: holding ? `stroke-dashoffset ${HOLD_MS}ms linear` : 'none' }} />
-            </svg>
-          </button>
-          <button type="button" aria-label="되돌리기" title="되돌리기" disabled={!canUndo} onClick={undo} className={`${menuButton(false)} disabled:opacity-40`} style={{ left: undoPos.x - FAB / 2, top: undoPos.y - FAB / 2 }}>
-            <Undo2 className="h-5 w-5" />
-          </button>
-        </>
-      )}
-
-      {menuOpen && card && (
+      {card && (
         <div className="fixed z-40 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl" style={{ left: cardPos.x, top: cardPos.y, width: CARD_W }}>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-600">{card === 'pen' ? '펜 설정' : '지우개 설정'}</span>
+            <button type="button" aria-label="설정 닫기" onClick={closeCard} className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
           {card === 'pen' ? (
             <>
               <div className="flex items-center justify-between gap-1">
@@ -962,29 +879,69 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
               <SizeSlider label="굵기" value={prefs.penWidth} min={PEN_RANGE.min} max={PEN_RANGE.max} onChange={(v) => updatePrefs({ penWidth: v })} preview={<span className="block rounded-full" style={{ width: Math.max(prefs.penWidth, 2), height: Math.max(prefs.penWidth, 2), backgroundColor: prefs.color }} />} />
             </>
           ) : (
-            <SizeSlider label="지우개 크기" value={prefs.eraserSize} min={ERASER_RANGE.min} max={ERASER_RANGE.max} onChange={(v) => updatePrefs({ eraserSize: v })} preview={<span className="block rounded-full border-2 border-slate-500 bg-white/60" style={{ width: Math.min(prefs.eraserSize * 2, 64), height: Math.min(prefs.eraserSize * 2, 64) }} />} />
+            <>
+              <SizeSlider label="지우개 크기" value={prefs.eraserSize} min={ERASER_RANGE.min} max={ERASER_RANGE.max} onChange={(v) => updatePrefs({ eraserSize: v })} preview={<span className="block rounded-full border-2 border-slate-500 bg-white/60" style={{ width: Math.min(prefs.eraserSize * 2, 64), height: Math.min(prefs.eraserSize * 2, 64) }} />} />
+              {/* 전체 지우기: 그림만 지우고 포장 상태는 유지한다. 되돌리기로 복구되므로 확인 창은 두지 않는다. */}
+              <button type="button" onClick={clearAll} disabled={state.strokes.length === 0} className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-rose-50 text-sm font-bold text-rose-700 disabled:opacity-40">
+                <Trash2 className="h-4 w-4" />
+                전체 지우기
+              </button>
+              <p className="mt-1 text-center text-[11px] text-slate-500">되돌리기로 복구할 수 있습니다</p>
+            </>
           )}
         </div>
       )}
 
-      <button
-        type="button"
-        aria-label={tool ? '펜 끄기 (길게 누르면 메뉴)' : '펜 켜기 (길게 누르면 메뉴)'}
-        aria-pressed={tool !== null}
-        title="누르면 펜 켜기/끄기 · 길게 누르면 펜 설정·지우개·되돌리기 · 끌면 위치 이동"
-        onPointerDown={fabDown}
-        onPointerMove={fabMove}
-        onPointerUp={fabUp}
-        onPointerCancel={() => {
-          clearTimeout(longTimer.current);
-          dragRef.current = null;
-        }}
-        onContextMenu={(e) => e.preventDefault()}
-        className={`fixed z-40 flex h-[45px] w-[45px] items-center justify-center rounded-full border-2 shadow-xl ${tool ? 'border-[#003057] bg-[#003057] text-white' : 'border-[#003057] bg-white text-[#003057]'} ${menuOpen ? 'ring-4 ring-sky-300' : ''}`}
-        style={{ left: pos.x - FAB / 2, top: pos.y - FAB / 2, touchAction: 'none' }}
-      >
-        <FabIcon className="h-[22px] w-[22px]" />
-      </button>
+      <div className="fixed z-40 flex select-none flex-col items-center" style={{ left: bar.left, top: bar.top, width: bar.width, gap: BAR.gap, touchAction: 'none' }}>
+        <div
+          title="끌어서 옮기기"
+          aria-label="도구 묶음 옮기기"
+          onPointerDown={handleDown}
+          onPointerMove={handleMove}
+          onPointerUp={handleUp}
+          onPointerCancel={() => {
+            dragRef.current = null;
+          }}
+          onContextMenu={(e) => e.preventDefault()}
+          className="flex w-full cursor-grab items-center justify-center rounded-full bg-slate-200/90 text-slate-500 shadow active:cursor-grabbing"
+          style={{ height: BAR.handle, touchAction: 'none' }}
+        >
+          <GripHorizontal className="h-4 w-4" />
+        </div>
+        <button
+          type="button"
+          aria-label={tool === 'pen' ? '펜 끄기 (길게 누르면 펜 설정)' : '펜 켜기 (길게 누르면 펜 설정)'}
+          aria-pressed={tool === 'pen'}
+          title="누르면 펜 켜기/끄기 · 길게 누르면 색·굵기 설정"
+          {...bindLongPress('pen')}
+          onClick={() => {
+            if (consumeClick()) return; // 길게 눌러 설정 카드를 열었으면 펜을 켜고 끄지 않는다
+            tapPen();
+          }}
+          className={toolButton(tool === 'pen')}
+          style={{ touchAction: 'none' }}
+        >
+          <PenLine className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          aria-label={tool === 'eraser' ? '지우개 끄기 — 펜으로 돌아가기 (길게 누르면 지우개 설정)' : '지우개 켜기 (길게 누르면 지우개 설정)'}
+          aria-pressed={tool === 'eraser'}
+          title="누르면 지우개 · 다시 누르면 펜 · 길게 누르면 크기 설정과 전체 지우기"
+          {...bindLongPress('eraser')}
+          onClick={() => {
+            if (consumeClick()) return;
+            tapEraser();
+          }}
+          className={toolButton(tool === 'eraser')}
+          style={{ touchAction: 'none' }}
+        >
+          <Eraser className="h-5 w-5" />
+        </button>
+        <button type="button" aria-label="되돌리기" title="되돌리기" disabled={!canUndo} onClick={undo} className={`${toolButton(false)} disabled:opacity-40`} style={{ touchAction: 'none' }}>
+          <Undo2 className="h-5 w-5" />
+        </button>
+      </div>
     </>
   );
 }
