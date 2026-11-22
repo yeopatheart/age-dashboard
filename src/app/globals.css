@@ -380,3 +380,10 @@ body {
 .main-content-soft .bg-\[\#003057\] { background-color: var(--soft-head); }
 .main-content-soft .focus\:border-\[\#003057\]:focus, .main-content-soft .focus-within\:border-\[\#003057\]:focus-within { border-color: var(--soft-brass); }
 .main-content-soft .text-\[\#003057\] { color: var(--soft-head); }
+
+/* 상품 칸 스티커의 자리(src/lib/sticker-placement.ts, 결정: docs/decisions/2026-11-22-stickers.md).
+   칸 안(글자 흐름 끝)이 기본이고, 글자 맞춤 효과가 "바닥 크기로 줄여도 안 들어간다"고 판단한 칸만 data-stk-out을 달아 안쪽 스티커를 숨기고
+   이웃 칸·얹기 후보(.stk-alt) 중 하나에 data-on을 단다. 후보는 평소엔 숨겨져 있다. */
+.stk-alt { display: none; }
+.stk-alt[data-on="1"] { display: flex; }
+[data-pill][data-stk-out="1"] [data-stk-inline] { display: none; }
