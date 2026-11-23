@@ -4,6 +4,7 @@ import type { Database } from '@/lib/types/database';
 import { recommend, trainModel, type Confidence, type PackingItem, type PackingModel, type TrainingRecord } from './model';
 import { fetchAll } from '@/lib/supabase/fetch-all';
 import { isRenameOnly, type SubmittedBoxItem } from './rename-only';
+import { hasPackedItems } from './box-rules';
 
 type Client = SupabaseClient<Database>;
 
@@ -97,7 +98,7 @@ async function loadTrainingRecords(supabase: Client, beforeDate: string): Promis
         .sort((a, b) => a.position - b.position)
         .map((b) => ({ boxName: b.box_name, isMulbongBox: b.is_mulbong_box, items: itemsByBox.get(b.id) ?? [] })),
     }))
-    .filter((r) => r.boxes.length > 0);
+    .filter((r) => r.boxes.length > 0 && hasPackedItems(r.boxes)); // 수량 미정뿐인 고객사의 빈 박스 기록은 학습에서 뺀다
 }
 
 let cachedModel: { version: string; model: PackingModel } | null = null;
