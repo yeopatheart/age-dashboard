@@ -8,6 +8,8 @@ import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Pre
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors, softenColors } from '@/lib/color-palette';
 import { fitInRounds } from '@/lib/pill-fit';
+import type { ItemSticker } from '@/lib/stickers';
+import { ChipStickers } from './sticker-badges';
 import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
 import { DashboardMobile } from './dashboard-mobile';
@@ -829,6 +831,7 @@ export function DashboardClient({
   unshippedReasons,
   allowPast,
   highlights,
+  stickers,
   initialMobile,
 }: {
   rows: OrderRow[];
@@ -840,6 +843,7 @@ export function DashboardClient({
   unshippedReasons: string[];
   allowPast: boolean;
   highlights: string[];
+  stickers: ItemSticker[];
   initialMobile: boolean;
 }) {
   const router = useRouter();
@@ -864,6 +868,16 @@ export function DashboardClient({
     return map;
   }, [items]);
   const itemsOf = (dailyBusinessId: string): OrderItem[] => itemsByDaily.get(dailyBusinessId) ?? NO_ITEMS;
+  // 상품 칸별 스티커(붙인 순서). 서버가 이미 붙인 순서로 보낸다. 스티커는 칸의 글자를 조정하지 않고 칸의 오른쪽 위에 걸쳐 붙는다(결정: docs/decisions/2026-11-22-stickers.md).
+  const stickersByItem = useMemo(() => {
+    const map = new Map<string, ItemSticker[]>();
+    for (const s of stickers) {
+      const list = map.get(s.orderItemId);
+      if (list) list.push(s);
+      else map.set(s.orderItemId, [s]);
+    }
+    return map;
+  }, [stickers]);
 
   // 과거 날짜는 기본적으로 조회 전용 — 실수로 지난 기록을 고치지 않게 편집 수단을 숨긴다.
   // 설정에서 "과거 날짜 편집"을 켜면 오늘과 똑같이 편집할 수 있다.
@@ -1233,6 +1247,8 @@ export function DashboardClient({
   // 크기는 가장 큰 크기부터 1px씩 줄인 단계를 준비하고, 어느 단계가 필요한지는 그려진 결과(넘침)를 보고 아래 효과에서 팁마다 정한다.
   // 팁 안쪽 높이 = 행 높이 − 테두리 1 − 칸 여백 2 − 팁 테두리 2. (칸 여백을 4 → 2px로 줄여 글자를 키웠다, 2026-11-14 현장 요청)
   const pillInnerHeight = rowHeight - (dense ? 3 : 5);
+  // 스티커 글자 크기: 줄 높이에 맞춘다(18px 줄이면 9px, 높은 줄은 11px까지). 칸의 글자 크기 단계와는 무관하다.
+  const stickerFont = `${Math.max(7, Math.min(11, rowHeight - 9))}px`;
   const pillSlack = dense ? 1 : 3;
 
   // 열 개수는 "이 화면에 실제로 보이는 행" 중 상품이 가장 많은 업체 기준 + 1(추가 버튼 열)이다.
@@ -1992,7 +2008,7 @@ export function DashboardClient({
             {/* 본문 — 모니터 1/2는 측정된 가용 높이에 들어가는 만큼(ROW_HEIGHT 단위)만 그려 스크롤이 없다 */}
             <DndContext id="dashboard-dnd" sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
             <SortableContext items={displayedRows.map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
-            <div className={`flex flex-col ${isSplitMode ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
+            <div className={`flex flex-col ${isSplitMode ? 'flex-1 min-h-0 overflow-hidden stk-clip' : ''}`}>
               {Array.from({ length: rowSlotCount }).map((_, index) => {
                 const row = displayedRows[index];
 
@@ -2129,7 +2145,7 @@ export function DashboardClient({
                       const suffix = suffixParts.length ? ` (${suffixParts.join(', ')})` : '';
 
                       return (
-                        <div key={item.id} className={`border-r border-slate-100 last:border-r-0 flex min-w-0 ${dense ? '' : 'p-[1px]'}`}>
+                        <div key={item.id} className={`relative border-r border-slate-100 last:border-r-0 flex min-w-0 ${dense ? '' : 'p-[1px]'}`}>
                           <div data-chip={item.id} className={`relative w-full flex items-center justify-start ${dense ? 'px-1 rounded' : 'px-1.5 rounded-lg'} border overflow-hidden ${bg} ${border} group shadow-sm`}>
                             {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
                               <span
@@ -2163,6 +2179,7 @@ export function DashboardClient({
                               {suffix && <span data-pill-opt className="font-semibold text-sky-600" style={{ fontSize: 'var(--po)' }}>{suffix.trim()}</span>}
                             </div>
                           </div>
+                          {stickersByItem.get(item.id) && <ChipStickers stickers={stickersByItem.get(item.id) as ItemSticker[]} fontSize={stickerFont} />}
                         </div>
                       );
                     })}

@@ -380,3 +380,9 @@ body {
 .main-content-soft .bg-\[\#003057\] { background-color: var(--soft-head); }
 .main-content-soft .focus\:border-\[\#003057\]:focus, .main-content-soft .focus-within\:border-\[\#003057\]:focus-within { border-color: var(--soft-brass); }
 .main-content-soft .text-\[\#003057\] { color: var(--soft-head); }
+
+/* 상품 칸 스티커는 칸의 위쪽 경계에 걸쳐 붙어서 위로 조금 삐져나온다(결정: docs/decisions/2026-11-22-stickers.md). 모니터 1·2의 본문은 안 맞는 줄을 잘라 내려고 overflow:hidden인데,
+   그대로 두면 각 모니터 첫 줄의 스티커가 잘려서 안 보인다. 잘라내기는 그대로 두고(clip) 가장자리 여백만 둔다. 이 속성을 모르는 브라우저는 예전처럼 잘라낸다(첫 줄 스티커만 가려진다). */
+@supports (overflow-clip-margin: 1px) {
+  .stk-clip { overflow: clip; overflow-clip-margin: 14px; }
+}

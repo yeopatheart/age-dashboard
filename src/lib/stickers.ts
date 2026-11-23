@@ -6,6 +6,19 @@ import { isHueKey } from './color-palette.ts';
 export const STICKER_LABEL_MAX = 8;
 export const STICKER_DEFAULT_COLOR = 'amber';
 
+// 상품 칸에 붙은 스티커 하나(order_item_stickers, 0075). 이름·색은 붙일 당시 값이다.
+export interface ItemSticker {
+  id: string;
+  orderItemId: string;
+  label: string;
+  fillColor: string;
+  borderColor: string;
+  quantity: number | null;
+}
+
+// 칸에 보이는 글자: 수량이 있으면 "특대 2", 없으면 "냉동실".
+export const stickerText = (s: Pick<ItemSticker, 'label' | 'quantity'>): string => (s.quantity === null ? s.label : `${s.label} ${s.quantity}`);
+
 export type LabelResult = { ok: true; label: string } | { ok: false; error: string };
 
 // 앞뒤 공백을 지우고, 안쪽의 연속 공백은 한 칸으로 줄인다. 글자 수는 화면에 보이는 글자(코드 포인트) 기준.

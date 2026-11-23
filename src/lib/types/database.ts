@@ -25,6 +25,19 @@ type AccessLog = {
 
 type CreatedVia = "order" | "manual";
 
+// 상품 칸에 붙은 스티커(0075). 이름·색은 붙일 당시 값이고 preset_id는 참고용이다.
+type OrderItemSticker = {
+  id: string;
+  order_item_id: string;
+  daily_business_id: string;
+  preset_id: string | null;
+  label: string;
+  fill_color: string;
+  border_color: string;
+  quantity: number | null;
+  created_at: string;
+};
+
 // 칠판 상품 칸에 붙이는 스티커의 종류(0074). 색은 color-palette의 key.
 type StickerPreset = {
   id: string;
@@ -465,6 +478,10 @@ export type Database = {
       access_log: TableDef<
         AccessLog,
         Pick<AccessLog, "user_id"> & { id?: string; event?: string; created_at?: string }
+      >;
+      order_item_stickers: TableDef<
+        OrderItemSticker,
+        Pick<OrderItemSticker, "order_item_id" | "daily_business_id" | "label" | "fill_color" | "border_color"> & { id?: string; preset_id?: string | null; quantity?: number | null; created_at?: string }
       >;
       sticker_presets: TableDef<
         StickerPreset,

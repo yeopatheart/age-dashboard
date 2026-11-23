@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { STICKER_DEFAULT_COLOR, STICKER_LABEL_MAX, movedOrder, normalizeStickerLabel, stickerColorKey } from './stickers.ts';
+import { STICKER_DEFAULT_COLOR, STICKER_LABEL_MAX, movedOrder, normalizeStickerLabel, stickerColorKey, stickerText } from './stickers.ts';
+
+test('칸에 보이는 글자는 수량이 있을 때만 숫자가 붙는다', () => {
+  assert.equal(stickerText({ label: '특대', quantity: 2 }), '특대 2');
+  assert.equal(stickerText({ label: '냉동실', quantity: null }), '냉동실');
+});
 
 test('이름은 앞뒤 공백을 지우고 안쪽 공백을 한 칸으로 줄인다', () => {
   assert.deepEqual(normalizeStickerLabel('  왕대물  '), { ok: true, label: '왕대물' });
