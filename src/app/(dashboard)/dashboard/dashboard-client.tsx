@@ -7,10 +7,9 @@ import { Check, GripVertical, Plus, Pencil, X, Inbox, ChevronDown, ChevronLeft, 
 import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Prep, roundLabel, getProductSummary, getProductCustomers, getTerminalBoxTotals, isCardComplete, isUndecidedQuantity, type OrderItem, type OrderRow, type ProductSummaryRow, type ChangeStatus, type OrderRound } from '@/lib/orders';
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors, softenColors } from '@/lib/color-palette';
-import { fitInRounds, type PillFitOps } from '@/lib/pill-fit';
+import { fitInRounds } from '@/lib/pill-fit';
 import { stickerQuantityError, type ItemSticker, type StickerPresetOption } from '@/lib/stickers';
-import { alternativesFor, decodeAlternatives, encodeAlternatives, type Alternative } from '@/lib/sticker-placement';
-import { StickerBadges } from './sticker-badges';
+import { ChipStickers } from './sticker-badges';
 import { StickerLayer } from './sticker-layer';
 import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
@@ -884,7 +883,7 @@ export function DashboardClient({
       return state.map((s) => (s.id === change.id ? { ...s, quantity: change.quantity } : s));
     },
   );
-  // 상품 칸별 스티커(붙인 순서). 서버가 이미 붙인 순서로 보낸다.
+  // 상품 칸별 스티커(붙인 순서). 서버가 이미 붙인 순서로 보낸다. 스티커는 칸의 글자를 조정하지 않고 칸의 오른쪽 위에 걸쳐 붙는다(결정: docs/decisions/2026-11-22-stickers.md).
   const stickersByItem = useMemo(() => {
     const map = new Map<string, ItemSticker[]>();
     for (const s of stickers) {
@@ -1269,6 +1268,8 @@ export function DashboardClient({
   // 크기는 가장 큰 크기부터 1px씩 줄인 단계를 준비하고, 어느 단계가 필요한지는 그려진 결과(넘침)를 보고 아래 효과에서 팁마다 정한다.
   // 팁 안쪽 높이 = 행 높이 − 테두리 1 − 칸 여백 2 − 팁 테두리 2. (칸 여백을 4 → 2px로 줄여 글자를 키웠다, 2026-11-14 현장 요청)
   const pillInnerHeight = rowHeight - (dense ? 3 : 5);
+  // 스티커 글자 크기: 줄 높이에 맞춘다(18px 줄이면 9px, 높은 줄은 11px까지). 칸의 글자 크기 단계와는 무관하다.
+  const stickerFont = `${Math.max(7, Math.min(11, rowHeight - 9))}px`;
   const pillSlack = dense ? 1 : 3;
 
   // 열 개수는 "이 화면에 실제로 보이는 행" 중 상품이 가장 많은 업체 기준 + 1(추가 버튼 열)이다.
@@ -1324,8 +1325,7 @@ export function DashboardClient({
     if (!root) return;
     const dirty: { el: HTMLElement; key: string }[] = [];
     for (const el of root.querySelectorAll<HTMLElement>('[data-pill]')) {
-      // 스티커 자리 후보(data-stk-alt)도 조건에 넣는다: 이웃 칸이 비었다 차면 자리가 달라져 다시 정해야 한다.
-      const key = `${el.innerHTML}|${el.dataset.sizes ?? ''}|${pillInnerHeight}|${pillSlack}|${el.clientWidth}|${fontEpoch}|${el.dataset.stkAlt ?? ''}`;
+      const key = `${el.innerHTML}|${el.dataset.sizes ?? ''}|${pillInnerHeight}|${pillSlack}|${el.clientWidth}|${fontEpoch}`;
       if (el.dataset.fitKey !== key) dirty.push({ el, key });
     }
     if (dirty.length === 0) return;
@@ -1334,21 +1334,7 @@ export function DashboardClient({
     // 이 효과 안에서 쓰기와 읽기를 팁 단위로 섞지 않는다(같은 문제가 2026-11-14에 부분 수정만 되고 남아 있었다).
     const pills = dirty.map(({ el }) => ({ el, steps: (el.dataset.sizes ?? '').split('|').map((p) => p.split(',')) }));
     for (const { el } of pills) el.style.setProperty('--pshift', '0px');
-    // 스티커가 붙은 칸은 먼저 "칸 안(글자 흐름 끝)에 끼워 넣고" 글자를 바닥까지 줄여 본다. 그래도 넘치면 이웃 자리로 옮긴다(아래).
-    // 그래서 이 칸들은 맞추기 전에 이전에 정한 자리를 지워 칸 안에서부터 다시 시작한다. 스티커가 없는 칸은 이 단계에서 아무것도 바뀌지 않는다.
-    const stickerPills = pills.filter(({ el }) => el.dataset.stk);
-    for (const { el } of pills) el.removeAttribute('data-stk-out');
-    const alternativeEls = new Map<string, HTMLElement[]>();
-    if (stickerPills.length > 0) {
-      for (const alt of root.querySelectorAll<HTMLElement>('[data-stk-for]')) {
-        const id = alt.dataset.stkFor as string;
-        alt.removeAttribute('data-on');
-        const list = alternativeEls.get(id);
-        if (list) list.push(alt);
-        else alternativeEls.set(id, [alt]);
-      }
-    }
-    const fitOps: PillFitOps<(typeof pills)[number]> = {
+    fitInRounds(pills, {
       lastStep: (p) => p.steps.length - 1,
       apply: ({ el, steps }, n) => {
         el.style.setProperty('--pq', `${steps[n][0]}px`);
@@ -1357,29 +1343,7 @@ export function DashboardClient({
         el.style.setProperty('--po', `${steps[n][3]}px`);
       },
       overflowing: (ps) => ps.map(({ el }) => el.scrollHeight > pillInnerHeight - pillSlack),
-    };
-    fitInRounds(pills, fitOps);
-    if (stickerPills.length > 0) {
-      // 글자가 바닥 크기까지 줄었는데도 스티커 때문에 넘치는 칸만 찾는다(읽기만, 한꺼번에).
-      const flags = fitOps.overflowing(stickerPills);
-      const stuck = stickerPills.filter((_, i) => flags[i]);
-      const moved: typeof stuck = [];
-      for (const pill of stuck) {
-        const { el } = pill;
-        // 가능한 첫 자리로 옮긴다: 오른쪽 빈 칸 → 아래 → 위 → 반투명 얹기(src/lib/sticker-placement.ts). 후보 자리의 요소가 실제로 있는 첫 자리를 쓰고(반투명 얹기는 언제나 있다), 요소가 없으면 다음 자리로 넘어간다.
-        const candidates = alternativeEls.get(el.dataset.stk as string) ?? [];
-        const target = decodeAlternatives(el.dataset.stkAlt)
-          .map((kind) => candidates.find((alt) => alt.dataset.stkKind === kind))
-          .find((alt) => alt !== undefined);
-        // 갈 자리를 못 찾으면 안쪽 스티커를 숨기지 않는다(스티커가 사라지는 것보다 칸에 넘쳐 보이는 편이 낫다).
-        if (!target) continue;
-        el.setAttribute('data-stk-out', '1');
-        target.setAttribute('data-on', '1');
-        moved.push(pill);
-      }
-      // 스티커가 칸 밖으로 나갔으니 글자는 스티커 없이 다시 가장 큰 크기로 맞춘다(바닥 크기로 남기지 않는다).
-      if (moved.length > 0) fitInRounds(moved, fitOps);
-    }
+    });
     // 옵션이 둘째 줄로 내려간 칩은 첫 줄의 큰 수량과 둘째 줄의 작은 옵션의 글자 상자 차이 때문에 글자가 칩 가운데보다 0.5~0.7px 위에 놓인다
     // (옵션이 7px까지 작아지면서 세로 중앙 점검에서 위·아래 여백이 1.1px 어긋났다, 2026-11-14). 크기가 정해진 뒤에 그만큼만 내려 맞춘다.
     // 옵션 바로 앞 조각(수량·단위). 옵션이 그 아래 줄에 혼자 놓였을 때만 내린다. 같은 줄이면 옵션의 윗선이 앞 조각의 아랫선보다 위에 있다(기준선 정렬이라 글자 크기가 달라도 겹친다).
@@ -1490,7 +1454,6 @@ export function DashboardClient({
   // ── 스티커 붙이기·고치기·떼기(칠판). 서버 규칙은 actions.ts, 붙이는 규칙은 src/lib/stickers.ts. 실패하면 화면 위쪽에 안내하고 원래대로 돌아온다.
   const [, startStickerTransition] = useTransition();
   const handleAddSticker = (itemId: string, preset: StickerPresetOption, quantity: number | null) => {
-    if (readOnly && !stickerMode) return;
     startStickerTransition(async () => {
       setOptimisticStickers({ type: 'add', sticker: { id: `pending-${preset.id}-${itemId}`, orderItemId: itemId, label: preset.label, fillColor: preset.fillColor, borderColor: preset.borderColor, quantity } });
       const { error } = await addItemSticker(itemId, preset.id, quantity);
@@ -2092,7 +2055,7 @@ export function DashboardClient({
             {/* 본문 — 모니터 1/2는 측정된 가용 높이에 들어가는 만큼(ROW_HEIGHT 단위)만 그려 스크롤이 없다 */}
             <DndContext id="dashboard-dnd" sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
             <SortableContext items={displayedRows.map((r) => r.dailyBusinessId)} strategy={verticalListSortingStrategy}>
-            <div className={`flex flex-col ${isSplitMode ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
+            <div className={`flex flex-col ${isSplitMode ? 'flex-1 min-h-0 overflow-hidden stk-clip' : ''}`}>
               {Array.from({ length: rowSlotCount }).map((_, index) => {
                 const row = displayedRows[index];
 
@@ -2105,14 +2068,6 @@ export function DashboardClient({
                 // 상품은 주문 입력(등록)된 순서 그대로 왼쪽부터 배치한다 — 입력하는 사람이 순서를 의도해서
                 // 쓰므로 시스템이 다시 정렬하지 않는다(productSequence = 입력 순서).
                 const rowItems = itemsOf(row.dailyBusinessId);
-                // 스티커가 칸 안에 안 들어갈 때 쓸 이웃 줄 정보(위·아래 줄의 상품 수와 메모 유무). 자리 규칙은 src/lib/sticker-placement.ts.
-                const aboveRow = index > 0 ? displayedRows[index - 1] : undefined;
-                const belowRow = displayedRows[index + 1];
-                const neighborInfo = (r: OrderRow | undefined) => (r ? { itemCount: itemsOf(r.dailyBusinessId).length, hasMemo: !!r.memo } : null);
-                const aboveInfo = neighborInfo(aboveRow);
-                const belowInfo = neighborInfo(belowRow);
-                // 칸 밖(이웃 칸·얹기)에 나온 스티커의 글자 크기: 줄 높이에 맞춘다(칸 안은 칸의 글자 크기 단계 변수를 따른다).
-                const stickerFont = `${Math.max(7, Math.min(11, rowHeight - 8))}px`;
 
                 return (
                   <SortableRow
@@ -2224,41 +2179,10 @@ export function DashboardClient({
                         }
                         // 빈 칸은 완전히 비워 둔다. 테두리는 다른 칸과 똑같이 그려서 열 경계가 행마다 어긋나 보이지 않게 한다
                         // (이 업체는 그만큼 상품이 없다는 뜻이라 "없음" 표시를 칸마다 반복할 이유가 없다).
-                        // 단, 이웃 상품 칸의 스티커가 칸 안에 안 들어갈 때 이 빈 칸으로 올 수 있으므로 후보를 그려 둔다(평소엔 숨김, 글자 맞춤이 끝난 뒤 자리가 정해지면 보인다).
-                        const stickersOf = (owner: OrderItem | undefined) => (owner ? stickersByItem.get(owner.id) : undefined);
-                        const sideOwner = slotIndex > 0 && slotIndex === rowItems.length ? rowItems[slotIndex - 1] : undefined; // 이 칸 왼쪽의 상품 → 스티커가 오른쪽(여기)으로
-                        const upperOwner = aboveRow ? itemsOf(aboveRow.dailyBusinessId)[slotIndex] : undefined; // 이 칸 위의 상품 → 스티커가 아래(여기)로
-                        const lowerOwner = belowRow ? itemsOf(belowRow.dailyBusinessId)[slotIndex] : undefined; // 이 칸 아래의 상품 → 스티커가 위(여기)로
-                        const sideStickers = stickersOf(sideOwner);
-                        const belowStickers = stickersOf(upperOwner);
-                        const aboveStickers = stickersOf(lowerOwner);
-                        return (
-                          <div key={slotIndex} className="relative border-r border-slate-100 last:border-r-0">
-                            {sideOwner && sideStickers && (
-                              <div data-stk-for={sideOwner.id} data-stk-kind="side" className="stk-alt pointer-events-none h-full max-w-full items-center gap-[2px] overflow-hidden px-1">
-                                <StickerBadges stickers={sideStickers} fontSize={stickerFont} />
-                              </div>
-                            )}
-                            {upperOwner && belowStickers && (
-                              <div data-stk-for={upperOwner.id} data-stk-kind="below" className="stk-alt pointer-events-none absolute left-1 z-20 max-w-[calc(100%-4px)] items-center gap-[2px] overflow-hidden" style={{ top: -2 }}>
-                                <StickerBadges stickers={belowStickers} fontSize={stickerFont} />
-                              </div>
-                            )}
-                            {lowerOwner && aboveStickers && (
-                              <div data-stk-for={lowerOwner.id} data-stk-kind="above" className="stk-alt pointer-events-none absolute left-1 z-20 max-w-[calc(100%-4px)] items-center gap-[2px] overflow-hidden" style={{ bottom: -2 }}>
-                                <StickerBadges stickers={aboveStickers} fontSize={stickerFont} />
-                              </div>
-                            )}
-                          </div>
-                        );
+                        return <div key={slotIndex} className="border-r border-slate-100 last:border-r-0" />;
                       }
 
                       const { bg, border, text } = getItemStyle(item.changeStatus, item.isPacked, item.unshippedQuantity, item.quantity);
-                      // 스티커: 칸 안(글자 흐름 끝)에 끼워 넣고, 안 들어가면 이웃 자리로 간다. 자리 후보는 data-stk-alt, 정하는 곳은 글자 맞춤 효과.
-                      const itemStickers = stickersByItem.get(item.id);
-                      const stickerAlternatives: Alternative[] | null = itemStickers
-                        ? alternativesFor({ slotIndex, ownItemCount: rowItems.length, ownHasMemo: !!row.memo, slotCount: productSlotCount, above: aboveInfo, below: belowInfo })
-                        : null;
                       // 강조 상품은 이름만 색을 바꾼다. 취소·포장 완료 칸은 상태 표시(취소선, 회색)가 우선한다.
                       const highlightColor = item.changeStatus !== 'cancelled' && !item.isPacked ? hlColor.get(item.productName) : undefined;
                       const suffixParts: string[] = [];
@@ -2268,7 +2192,7 @@ export function DashboardClient({
                       const suffix = suffixParts.length ? ` (${suffixParts.join(', ')})` : '';
 
                       return (
-                        <div key={item.id} className={`border-r border-slate-100 last:border-r-0 flex min-w-0 ${dense ? '' : 'p-[1px]'}`}>
+                        <div key={item.id} className={`relative border-r border-slate-100 last:border-r-0 flex min-w-0 ${dense ? '' : 'p-[1px]'}`}>
                           <div data-chip={item.id} className={`relative w-full flex items-center justify-start ${dense ? 'px-1 rounded' : 'px-1.5 rounded-lg'} border overflow-hidden ${bg} ${border} group shadow-sm`}>
                             {item.unshippedQuantity > 0 && item.changeStatus !== 'cancelled' && (
                               <span
@@ -2281,17 +2205,9 @@ export function DashboardClient({
                             {item.isPacked && item.changeStatus !== 'cancelled' && (
                               <Check className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-slate-400/30" strokeWidth={4} />
                             )}
-                            {itemStickers && (
-                              // 마지막 수단(자리 4순위): 칸 오른쪽에 반투명하게 얹는다. 평소엔 숨김.
-                              <span data-stk-for={item.id} data-stk-kind="overlay" className="stk-alt pointer-events-none absolute right-1 top-1/2 z-20 -translate-y-1/2 items-center gap-[2px] opacity-70">
-                                <StickerBadges stickers={itemStickers} fontSize={stickerFont} />
-                              </span>
-                            )}
                             <div
                               data-pill
                               data-sizes={pillStepsAttr}
-                              data-stk={itemStickers ? item.id : undefined}
-                              data-stk-alt={stickerAlternatives ? encodeAlternatives(stickerAlternatives) : undefined}
                               onClick={() => !readOnly && handleTogglePacked(item)}
                               className="w-full min-w-0 flex flex-wrap items-baseline justify-start text-left gap-x-1 z-10 cursor-pointer select-none break-keep [overflow-wrap:anywhere]"
                               // 컨테이너의 글자 크기도 칩 글자 크기에 맞춘다: 안 맞추면 수량을 감싼 상자의 보이지 않는 줄 높이(strut)가 부모의 큰 기본 글자
@@ -2308,14 +2224,9 @@ export function DashboardClient({
                                 </span>
                               )}
                               {suffix && <span data-pill-opt className="font-semibold text-sky-600" style={{ fontSize: 'var(--po)' }}>{suffix.trim()}</span>}
-                              {itemStickers && (
-                                // 자리 1순위: 글자 흐름 끝에 끼워 넣는다. 글자를 바닥 크기까지 줄여도 안 들어가면 숨기고 이웃 자리로 간다(글자 맞춤 효과).
-                                <span data-stk-inline className="inline-flex items-baseline gap-[2px]">
-                                  <StickerBadges stickers={itemStickers} fontSize="var(--po)" />
-                                </span>
-                              )}
                             </div>
                           </div>
+                          {stickersByItem.get(item.id) && <ChipStickers stickers={stickersByItem.get(item.id) as ItemSticker[]} fontSize={stickerFont} />}
                         </div>
                       );
                     })}
