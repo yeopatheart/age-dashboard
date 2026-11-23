@@ -1,6 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { emptyBoxMessage, firstEmptyBoxIndex, printableSeqError, removalShiftsPrintedLabels } from './packing/box-rules.ts';
+import { emptyBoxesAllowed, emptyBoxMessage, firstEmptyBoxIndex, hasPackedItems, printableSeqError, removalShiftsPrintedLabels } from './packing/box-rules.ts';
+
+test('빈 박스 제출은 담을 상품이 없고 수량 미정 상품만 있을 때만 허용한다', () => {
+  assert.equal(emptyBoxesAllowed(0, 1), true);
+  assert.equal(emptyBoxesAllowed(0, 3), true);
+  assert.equal(emptyBoxesAllowed(2, 1), false); // 확정 상품이 섞이면 지금처럼 빈 박스를 막는다
+  assert.equal(emptyBoxesAllowed(0, 0), false); // 미정도 없으면(전량 미출고 등) 막는다
+  assert.equal(emptyBoxesAllowed(1, 0), false);
+});
+
+test('추천 학습에는 상품이 담긴 기록만 쓴다', () => {
+  assert.equal(hasPackedItems([]), false);
+  assert.equal(hasPackedItems([{ items: [] }, { items: [] }]), false);
+  assert.equal(hasPackedItems([{ items: [] }, { items: [1] }]), true);
+});
 
 test('빈 박스는 첫 번째 위치를 돌려주고 없으면 -1이다', () => {
   assert.equal(firstEmptyBoxIndex([]), -1);

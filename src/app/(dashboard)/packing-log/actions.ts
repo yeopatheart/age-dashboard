@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase/server';
 import { loadAppSettings } from '@/lib/settings-server';
 import { editableDateError, todayKST } from '@/lib/order-date';
 import { assignToBoxes, trainModel, type PackingItem } from '@/lib/packing/model';
-import { emptyBoxMessage, firstEmptyBoxIndex } from '@/lib/packing/box-rules';
+import { emptyBoxesAllowed, emptyBoxMessage, firstEmptyBoxIndex } from '@/lib/packing/box-rules';
+import { excludedReason } from '@/lib/packing/excluded-items';
 import { compareWithRecommendation, getTodayModel, orderSignature } from '@/lib/packing/server';
 import { requirePermission } from '@/lib/permissions/access';
 import { normalizeMergeGroups } from '@/lib/box-merge';
@@ -36,8 +37,6 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
   const userId = access.userId;
 
   if (input.boxes.length === 0) return { error: '박스를 하나 이상 추가해주세요.' };
-  const emptyAt = firstEmptyBoxIndex(input.boxes);
-  if (emptyAt >= 0) return { error: emptyBoxMessage(emptyAt) };
 
   const { data: daily } = await supabase
     .from('daily_businesses')
@@ -70,6 +69,11 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
     .filter((i) => i.quantity > EPSILON);
   const itemById = new Map(liveItems.map((i) => [i.id, i]));
   const boxById = new Map((boxRows ?? []).map((b) => [b.id, b]));
+
+  // 빈 박스는 막는다. 단, 담을 상품이 없고 수량 미정 상품만 있는 고객사는 빈 박스로 제출할 수 있다(라벨을 붙일 박스는 실제로 있다).
+  const undecidedCount = (items ?? []).filter((i) => i.change_status !== 'cancelled' && excludedReason(Number(i.quantity), i.unit, Number(i.unshipped_quantity ?? 0)) === 'undecided').length;
+  const emptyAt = firstEmptyBoxIndex(input.boxes);
+  if (emptyAt >= 0 && !emptyBoxesAllowed(liveItems.length, undecidedCount)) return { error: emptyBoxMessage(emptyAt) };
 
   // 모든 상품이 빠짐없이, 수량이 정확히 맞게 담겼는지 서버에서도 다시 확인한다.
   const placed = new Map<string, number>();
@@ -178,8 +182,11 @@ export async function submitPacking(input: PackingSubmission): Promise<{ error: 
       };
     }),
   );
-  const { error: itemError } = await supabase.from('packing_box_items').insert(itemRows);
-  if (itemError) return rollback(itemError.message);
+  // 빈 박스만 제출하는 경우(수량 미정 상품뿐인 고객사)에는 넣을 줄이 없다.
+  if (itemRows.length > 0) {
+    const { error: itemError } = await supabase.from('packing_box_items').insert(itemRows);
+    if (itemError) return rollback(itemError.message);
+  }
 
   // 실측 중량(선택 입력)
   const weightUpdates = Object.entries(input.weights)
