@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { balloonPosition, pickStickerTarget } from './sticker-ui.ts';
+import { BUSINESS_INSIDE_RATIO, balloonPosition, businessInsidePx, pickStickerTarget, scopeAreas, stickerHeightPx } from './sticker-ui.ts';
 
 const chip = (itemId: string, left: number, top: number, w = 80, h = 18) => ({ itemId, rect: { left, top, right: left + w, bottom: top + h } });
 const badge = (stickerId: string, itemId: string, left: number, top: number, w = 24, h = 11) => ({ stickerId, itemId, rect: { left, top, right: left + w, bottom: top + h } });
@@ -71,4 +71,48 @@ test('고객사 스티커와 상품 칸 스티커가 겹치지 않으면 각자 
   const badges = [bizBadge('b1', 'd1', 55, 3), badge('i1', 'a', 150, 3)];
   assert.deepEqual(pickStickerTarget(60, 5, badges, [chip('a', 100, 0)], [nameCell('d1', 0, 0)]), { kind: 'business-badge', stickerId: 'b1', dailyBusinessId: 'd1' });
   assert.deepEqual(pickStickerTarget(160, 5, badges, [chip('a', 100, 0)], [nameCell('d1', 0, 0)]), { kind: 'badge', stickerId: 'i1', itemId: 'a' });
+});
+
+
+test('고객사 스티커는 높이의 65%가 자기 칸 안에 들어온다', () => {
+  assert.equal(BUSINESS_INSIDE_RATIO, 0.65);
+  assert.equal(stickerHeightPx(9), 10.35);
+  assert.equal(businessInsidePx(9), 6.7); // 10.35 × 0.65 = 6.73
+  assert.equal(businessInsidePx(11), 8.2); // 12.65 × 0.65 = 8.22
+  assert.ok(businessInsidePx(7) < stickerHeightPx(7) && businessInsidePx(7) > stickerHeightPx(7) / 2); // 절반보다 많이, 전부는 아니게
+});
+
+const geo = {
+  body: { left: 100, top: 50, right: 1000, bottom: 600 },
+  row: { left: 100, top: 50, right: 1000, bottom: 68 },
+  name: { left: 200, top: 50, right: 320, bottom: 68 },
+  box: { left: 320, top: 50, right: 384, bottom: 68 },
+};
+
+test('고객사용: 고객명 열이 붙일 수 있는 열이고 양옆 열은 덮인다', () => {
+  const a = scopeAreas('business', geo);
+  assert.deepEqual(a?.target, { left: 200, right: 320, top: 50, bottom: 600 });
+  assert.deepEqual(a?.veils, [{ left: 100, right: 200, top: 50, bottom: 600 }, { left: 320, right: 1000, top: 50, bottom: 600 }]);
+});
+
+test('상품 칸용: 박스 열 오른쪽 전체가 붙일 수 있는 열이고 왼쪽 열들은 덮인다', () => {
+  const a = scopeAreas('item', geo);
+  assert.deepEqual(a?.target, { left: 384, right: 1000, top: 50, bottom: 600 });
+  assert.deepEqual(a?.veils, [{ left: 100, right: 384, top: 50, bottom: 600 }]);
+});
+
+test('줄이 본문 상자보다 넓으면 상자 안으로 잘라 그린다', () => {
+  const a = scopeAreas('item', { ...geo, row: { ...geo.row, left: 0, right: 1400 } });
+  assert.deepEqual(a?.target, { left: 384, right: 1000, top: 50, bottom: 600 });
+  assert.deepEqual(a?.veils, [{ left: 100, right: 384, top: 50, bottom: 600 }]);
+});
+
+test('붙일 열이 상자 밖으로 밀려나 안 보이면 null이다(가로 스크롤)', () => {
+  assert.equal(scopeAreas('business', { ...geo, name: { left: 1100, top: 50, right: 1220, bottom: 68 }, box: { left: 1220, top: 50, right: 1284, bottom: 68 } }), null);
+  assert.equal(scopeAreas('item', { ...geo, body: { left: 100, top: 50, right: 1000, bottom: 50 } }), null);
+});
+
+test('덮을 열이 없으면(고객명 열이 맨 왼쪽) 있는 것만 돌려준다', () => {
+  const a = scopeAreas('business', { ...geo, name: { left: 100, top: 50, right: 220, bottom: 68 }, box: { left: 220, top: 50, right: 284, bottom: 68 } });
+  assert.deepEqual(a?.veils, [{ left: 220, right: 1000, top: 50, bottom: 600 }]);
 });

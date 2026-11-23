@@ -4,6 +4,7 @@ import { Delete, X } from 'lucide-react';
 import { resolveColors } from '@/lib/color-palette';
 import { MAX_STICKERS_PER_BUSINESS, appendDigit, checkAddSticker, stickerQuantityError, type BusinessSticker, type ItemSticker, type StickerPresetOption } from '@/lib/stickers';
 import { balloonPosition, pickStickerTarget, type Rect } from '@/lib/sticker-ui';
+import { StickerScopeVeil } from './sticker-scope-veil';
 
 // 칠판의 스티커 붙이기 층. 도구 묶음의 스티커 버튼을 켜면 나타난다. 결정: docs/decisions/2026-11-22-stickers.md
 // 흐름: 아래 띠에서 스티커를 고른다 → 상품 칸을 탭한다(고객사용 스티커는 고객명 칸을 탭한다, 2026-11-23) → 수량을 쓰는 스티커면 칸 아래에 숫자 말풍선(1~10은 누르는 즉시 붙고, 11 이상은 "11+"로 전체 키패드),
@@ -80,7 +81,7 @@ export function StickerLayer({ presets, stickersByItem, businessStickersByDaily,
     if (target.kind === 'name') {
       // 고객명 칸: 고객사용 스티커만 붙는다. 상품 칸 스티커를 골라 둔 채 누르면 알려 준다.
       if (preset.scope !== 'business') {
-        notify(`'${preset.label}'은(는) 상품 칸에 붙이는 스티커입니다. 고객명 칸에는 고객사용 스티커(고객명 칸 표시)를 고르세요.`);
+        notify(`'${preset.label}'은(는) 상품 칸에 붙이는 스티커입니다. 밝게 보이는 상품 칸을 눌러 주세요.`);
         return;
       }
       const nameAnchor = names.find((n) => n.dailyBusinessId === target.dailyBusinessId)?.rect;
@@ -100,7 +101,7 @@ export function StickerLayer({ presets, stickersByItem, businessStickersByDaily,
       return;
     }
     if (preset.scope === 'business') {
-      notify(`'${preset.label}'은(는) 고객사에 붙이는 스티커입니다. 고객명 칸을 눌러 주세요.`);
+      notify(`'${preset.label}'은(는) 고객사에 붙이는 스티커입니다. 밝게 보이는 고객명 칸을 눌러 주세요.`);
       return;
     }
     const anchor = chips.find((c) => c.itemId === target.itemId)?.rect;
@@ -148,6 +149,8 @@ export function StickerLayer({ presets, stickersByItem, businessStickersByDaily,
   return (
     <>
       <div className="absolute inset-0 z-30 cursor-pointer ring-4 ring-inset ring-sky-400/50" style={{ touchAction: 'manipulation' }} onClick={onTap} aria-label="스티커 붙이기 — 상품 칸이나 고객명 칸을 누르세요" />
+      {/* 고른 스티커가 붙는 열만 강조하고 나머지는 연한 막으로 덮는다. */}
+      <StickerScopeVeil scope={preset?.scope ?? null} />
 
       {/* 아래 띠: 붙일 스티커 고르기 */}
       <div className="fixed bottom-3 left-1/2 z-40 flex max-w-[calc(100vw-140px)] -translate-x-1/2 items-center gap-2 rounded-2xl border border-slate-300 bg-white/95 px-3 py-2 shadow-xl">
@@ -174,7 +177,6 @@ export function StickerLayer({ presets, stickersByItem, businessStickersByDaily,
                 >
                   {p.label}
                   {p.usesQuantity ? ' 1' : ''}
-                  {p.scope === 'business' && <span className="ml-1 text-[10px] font-semibold opacity-70">고객명 칸</span>}
                 </button>
               );
             })
