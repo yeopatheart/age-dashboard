@@ -152,7 +152,8 @@ export function StickerLayer({ presets, stickersByItem, businessStickersByDaily,
       {/* 아래 띠: 붙일 스티커 고르기 */}
       <div className="fixed bottom-3 left-1/2 z-40 flex max-w-[calc(100vw-140px)] -translate-x-1/2 items-center gap-2 rounded-2xl border border-slate-300 bg-white/95 px-3 py-2 shadow-xl">
         <span className="shrink-0 text-xs font-bold text-slate-500">붙일 스티커</span>
-        <div className="flex items-center gap-1.5 overflow-x-auto">
+        {/* 선택한 스티커의 테두리 링(바깥 4px)이 스크롤 영역에 잘리지 않게 안쪽 여백을 주고, 바깥 배치는 음수 여백으로 되돌린다. */}
+        <div className="-mx-1.5 -my-1.5 flex items-center gap-1.5 overflow-x-auto px-1.5 py-1.5">
           {presets.length === 0 ? (
             <span className="whitespace-nowrap text-xs text-slate-500">스티커가 없습니다. PC의 &quot;스티커 관리&quot;에서 만들어 주세요.</span>
           ) : (
