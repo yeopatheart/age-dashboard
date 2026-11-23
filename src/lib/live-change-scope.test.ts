@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dailyChangeInScope, itemChangeInScope, type LiveScope } from './realtime/change-scope.ts';
+import { dailyChangeInScope, itemChangeInScope, stickerChangeInScope, type LiveScope } from './realtime/change-scope.ts';
 
 const scope: LiveScope = { orderDate: '2026-11-14', dailyIds: new Set(['d1', 'd2']), itemIds: new Set(['i1', 'i2']) };
 const none = new Set<string>();
@@ -25,4 +25,11 @@ test('판단할 정보가 없으면 새로 받는다', () => {
   assert.equal(dailyChangeInScope(scope, { eventType: 'UPDATE', new: {}, old: {} }), true);
   assert.equal(dailyChangeInScope(scope, { eventType: 'UPDATE', new: { id: 'd9' }, old: {} }), true); // 날짜를 모르는 카드
   assert.equal(itemChangeInScope(scope, { eventType: 'UPDATE', new: {}, old: {} }, none), true);
+});
+
+test('스티커 변경: 이 화면의 카드에 붙은 것만 해당하고, 삭제 신호는 어느 카드인지 몰라 항상 새로 받는다', () => {
+  assert.equal(stickerChangeInScope(scope, { eventType: 'INSERT', new: { id: 's1', daily_business_id: 'd1' }, old: {} }), true);
+  assert.equal(stickerChangeInScope(scope, { eventType: 'UPDATE', new: { id: 's1', daily_business_id: 'd9' }, old: { id: 's1' } }), false);
+  assert.equal(stickerChangeInScope(scope, { eventType: 'DELETE', new: {}, old: { id: 's9' } }), true);
+  assert.equal(stickerChangeInScope(scope, { eventType: 'INSERT', new: { id: 's1' }, old: {} }), true); // 판단할 정보가 없으면 새로 받는다
 });

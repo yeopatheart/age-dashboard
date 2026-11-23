@@ -10,7 +10,7 @@ import { fetchAll, selectAll } from '@/lib/supabase/fetch-all';
 import { missingTable } from '@/lib/supabase/missing-table';
 import { headers } from 'next/headers';
 import { todayKST } from '@/lib/order-date';
-import type { ItemSticker } from '@/lib/stickers';
+import type { ItemSticker, StickerPresetOption } from '@/lib/stickers';
 
 const ORDER_ITEM_COLUMNS = 'id, daily_business_id, product_sequence, product_id, product_name_raw, quantity, unit, secondary_weight_kg, measured_weight_kg, size_request, is_mulbong, has_aerator, is_packed, unshipped_quantity, unshipped_reason, change_status';
 
@@ -44,7 +44,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // 업체(고객사) 전체 목록은 여기서 읽지 않는다: 화면은 이 날짜 카드의 업체 이름만 필요하므로 2단계에서 그 업체만 읽고,
   // "새 주문 추가"의 검색 목록은 그 창을 열 때 따로 받는다(loadBusinessDirectory). 이 페이지는 실시간 변경·안전 새로고침마다
   // 켜진 기기 수만큼 다시 읽히는데, 날짜와 무관한 전체 목록을 매번 싣는 것이 부하였다(2026-11-14). 상품은 1000개를 넘을 수 있어 페이지로 나눠 모두 읽는다.
-  const [, { data: allTerminals, error: terminalError }, { data: dailyBusinesses, error: dailyError }, productRows, settings, { data: highlightRows, error: highlightError }] =
+  const [, { data: allTerminals, error: terminalError }, { data: dailyBusinesses, error: dailyError }, productRows, settings, { data: highlightRows, error: highlightError }, { data: presetRows, error: presetError }] =
     await Promise.all([
       accessCheck,
       supabase.from('terminals').select('id, name, fill_color, border_color, is_separate, is_parcel').order('name'),
@@ -57,9 +57,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       fetchAll((from, to) => supabase.from('products').select('name, fill_color, border_color').order('id').range(from, to), '상품 조회 실패: '),
       loadAppSettings(supabase),
       supabase.from('daily_product_highlights').select('product_name, position').eq('order_date', orderDate).order('position'),
+      // 칠판에서 붙일 수 있는 스티커 목록(0074). 스티커 도구를 쓸 때만 필요하지만 한 줄이라 같은 단계에서 함께 읽는다.
+      supabase.from('sticker_presets').select('id, label, fill_color, border_color, uses_quantity').order('sort_order').order('created_at'),
     ]);
   // 강조 상품은 이름 색만 바꾸는 보조 표시다. 일시적으로 못 읽었다고 주문 목록 전체를 오류 화면으로 바꾸지 않고 강조만 빼고 보여 준다(다음 갱신에 돌아온다).
   // 마이그레이션 0023이 없어서 생기는 오류는 서버 로그에 남겨 알아볼 수 있게 한다.
+  // 스티커 목록도 보조 정보다: 못 읽으면 스티커 도구의 목록만 비고 주문 목록은 그대로 열린다.
+  if (presetError) console.error(`스티커 목록 조회 실패(마이그레이션 0074 미적용이거나 일시 오류): ${presetError.message}`);
+  const stickerPresets: StickerPresetOption[] = (presetRows ?? []).map((p) => ({ id: p.id, label: p.label, fillColor: p.fill_color, borderColor: p.border_color, usesQuantity: p.uses_quantity }));
   if (highlightError) console.error(`강조 상품 조회 실패(마이그레이션 0023 미적용이거나 일시 오류): ${highlightError.message}`);
 
   // 조회 오류(예: 아직 적용 안 된 마이그레이션의 컬럼)를 빈 화면으로 삼키면 "주문이 사라진 것"처럼 보인다.
@@ -200,6 +205,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       allowPast={settings.allowPastOrderEdit}
       highlights={(highlightRows ?? []).map((h) => h.product_name)}
       stickers={stickers}
+      stickerPresets={stickerPresets}
       initialMobile={initialMobile}
       productColors={Object.fromEntries(productRows.map((p) => [p.name, { fill: p.fill_color, border: p.border_color }]))}
       today={today}

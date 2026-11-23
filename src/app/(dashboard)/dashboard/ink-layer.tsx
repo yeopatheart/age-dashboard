@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Eraser, GripHorizontal, PenLine, Trash2, Undo2, X } from 'lucide-react';
+import { Eraser, GripHorizontal, PenLine, Stamp, Trash2, Undo2, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { fetchBoardInk, fetchBoardInkStamp, subscribeBoardInk } from '@/lib/ink/board-ink-client';
 import { clearCanvas, drawPath, endInk, extendInk, fitCanvas, needsFit, redrawLive, startInk, type LiveInk, type Pt } from '@/lib/ink/canvas';
@@ -27,8 +27,9 @@ import { saveBoardInk } from './actions';
 const PALM_PX = 24; // 진단: 손가락·펜 1×1px, 손바닥 52×62px
 // 도구 묶음: 손잡이 + 버튼 지름 40px(예전 플로팅 버튼 45px에서 한 번 더 줄였다 — 버튼이 늘어도 주문 목록을 덜 가리게, 2026-11-22).
 const BAR: BarSpec = { button: 40, gap: 6, handle: 22 };
-const BAR_BUTTONS = 3; // 펜·지우개·되돌리기
-const BAR_SIZE = barLayout({ x: 0, y: 0 }, BAR_BUTTONS, BAR); // 묶음 크기(위치와 상관없다)
+const BAR_TOOL_BUTTONS = 3; // 펜·지우개·되돌리기. 스티커 버튼(stickerTool을 받았을 때만)이 네 번째로 붙는다.
+const BAR_MAX_BUTTONS = BAR_TOOL_BUTTONS + 1;
+const BAR_SIZE = barLayout({ x: 0, y: 0 }, BAR_MAX_BUTTONS, BAR); // 가장 큰 묶음의 크기(저장된 위치를 화면 안에 가둘 때 쓴다)
 const CARD_W = 264;
 const COLORS = [
   { name: '빨강', hex: '#dc2626' },
@@ -192,9 +193,11 @@ interface Props {
   ready?: boolean;
   // 기준 화면(board-stage)에 걸린 배율(PC). 바뀌면 다시 그려서 그림 해상도를 새 크기에 맞춘다. 배율이 없는 곳(칠판·별도 주문 팝업)은 생략한다.
   scale?: number;
+  // 스티커 붙이기 도구(모니터 1·2의 그리는 기기에서만 넘겨 준다). 있으면 도구 묶음에 네 번째 버튼이 생긴다. 켜면 펜·지우개는 꺼진다.
+  stickerTool?: { active: boolean; onToggle: () => void };
 }
 
-export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActiveChange, viewOnly = false, layoutKey = '', chipLayoutKey = '', ready = false, scale: stageScale = 1 }: Props) {
+export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActiveChange, viewOnly = false, layoutKey = '', chipLayoutKey = '', ready = false, scale: stageScale = 1, stickerTool }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<InkState>(() => ({ strokes: [], history: [] }));
@@ -786,6 +789,9 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     setTool((t) => (t === 'eraser' ? 'pen' : 'eraser'));
   };
 
+  // 도구 묶음의 배치: 스티커 버튼이 있으면 버튼이 4개다.
+  const bar = barLayout(pos, BAR_TOOL_BUTTONS + (stickerTool ? 1 : 0), BAR);
+
   // 손잡이를 끌면 묶음 전체가 움직이고, 놓으면 위치를 이 기기에 저장한다.
   const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
     try {
@@ -795,7 +801,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     }
     dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, originX: pos.x, originY: pos.y };
   };
-  const dragTarget = (d: NonNullable<typeof dragRef.current>, e: React.PointerEvent<HTMLDivElement>): Pt => clampBar({ x: d.originX + e.clientX - d.startX, y: d.originY + e.clientY - d.startY }, BAR_SIZE, viewport);
+  const dragTarget = (d: NonNullable<typeof dragRef.current>, e: React.PointerEvent<HTMLDivElement>): Pt => clampBar({ x: d.originX + e.clientX - d.startX, y: d.originY + e.clientY - d.startY }, bar, viewport);
   const handleMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
@@ -814,8 +820,7 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
     }
   };
 
-  // 도구 버튼은 묶음 안에서 위에서 아래로 펜·지우개·되돌리기 순서다. 설정 카드는 길게 눌린 버튼 옆에 둔다.
-  const bar = barLayout(pos, BAR_BUTTONS, BAR);
+  // 도구 버튼은 묶음 안에서 위에서 아래로 펜·지우개·되돌리기(·스티커) 순서다. 설정 카드는 길게 눌린 버튼 옆에 둔다.
   const cardPos = card ? cardPosition(pos, bar.buttons[card === 'pen' ? 0 : 1].y, { width: CARD_W, height: card === 'pen' ? 216 : 236 }, BAR.button, viewport) : { x: 0, y: 0 };
   const canUndo = state.history.length > 0;
   const toolButton = (active: boolean) => `flex h-[40px] w-[40px] select-none items-center justify-center rounded-full border-2 shadow-lg transition-colors ${active ? 'border-[#003057] bg-[#003057] text-white' : 'border-[#003057] bg-white text-[#003057]'}`;
@@ -941,6 +946,24 @@ export function InkLayer({ date, monitor, dry, items, onPack, onUnpack, onActive
         <button type="button" aria-label="되돌리기" title="되돌리기" disabled={!canUndo} onClick={undo} className={`${toolButton(false)} disabled:opacity-40`} style={{ touchAction: 'none' }}>
           <Undo2 className="h-5 w-5" />
         </button>
+        {stickerTool && (
+          <button
+            type="button"
+            aria-label={stickerTool.active ? '스티커 붙이기 끝내기' : '스티커 붙이기 켜기'}
+            aria-pressed={stickerTool.active}
+            title="스티커 붙이기 — 스티커를 고르고 상품 칸을 누릅니다"
+            onClick={() => {
+              // 스티커 붙이기를 켜면 펜·지우개와 설정 카드는 꺼진다(둘은 함께 켤 수 없다). 반대로 펜을 켜면 바깥(dashboard-client)이 스티커 모드를 끈다.
+              setCard(null);
+              setTool(null);
+              stickerTool.onToggle();
+            }}
+            className={toolButton(stickerTool.active)}
+            style={{ touchAction: 'none' }}
+          >
+            <Stamp className="h-5 w-5" />
+          </button>
+        )}
       </div>
     </>
   );
