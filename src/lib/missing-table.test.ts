@@ -23,3 +23,10 @@ test('other errors are not swallowed', () => {
   assert.equal(missingTable('network down'), null);
   assert.equal(missingTable(null), null);
 });
+
+test('sticker_presets.scope 열이 없으면(0076 미적용) 마이그레이션 0076 안내로 본다', () => {
+  assert.equal(missingTable('column sticker_presets.scope does not exist'), 'business_stickers');
+  assert.equal(missingTable("Could not find the 'scope' column of 'sticker_presets' in the schema cache"), 'business_stickers');
+  assert.equal(missingTable("Could not find the table 'public.business_stickers' in the schema cache"), 'business_stickers');
+  assert.deepEqual(migrationsFor(['business_stickers']), ['0076_business_stickers.sql']);
+});

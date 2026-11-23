@@ -1,5 +1,5 @@
 import { resolveColors } from '@/lib/color-palette';
-import { stickerText, type ItemSticker } from '@/lib/stickers';
+import { stickerText, type BusinessSticker, type ItemSticker } from '@/lib/stickers';
 
 // 상품 칸에 붙은 스티커 배지들. 색은 스티커 목록에서 고른 팔레트 색이다.
 export function StickerBadges({ stickers, fontSize }: { stickers: ItemSticker[]; fontSize: string }) {
@@ -33,6 +33,30 @@ export function ChipStickers({ stickers, fontSize }: { stickers: ItemSticker[]; 
   return (
     <div className="pointer-events-none absolute right-[1px] z-20 flex items-center justify-end gap-[2px]" style={{ bottom: `calc(100% - ${OVERLAP_PX}px)` }}>
       <StickerBadges stickers={stickers} fontSize={fontSize} />
+    </div>
+  );
+}
+
+// 고객사 스티커(2026-11-23, 결정: docs/decisions/2026-11-23-business-stickers.md)는 고객명 칸의 오른쪽 위에, 칸의 위쪽 경계에 걸쳐 붙는다(상품 칸 스티커와 같은 규칙).
+// 고객명 칸은 이름이 넘치지 않게 overflow-hidden이라 그 안에 두면 걸친 부분이 잘린다. 그래서 바로 오른쪽 칸(박스 칸, relative)에 놓고 그 칸의 왼쪽 경계 바깥으로 그린다:
+// 박스 칸의 왼쪽 경계 = 고객명 칸의 오른쪽 경계. 열 폭·줄 높이는 건드리지 않는다. 고객명 글자는 줄이거나 옮기지 않는다.
+export function BusinessStickers({ stickers, fontSize }: { stickers: BusinessSticker[]; fontSize: string }) {
+  return (
+    <div className="pointer-events-none absolute z-20 flex items-center justify-end gap-[2px]" style={{ right: 'calc(100% + 1px)', bottom: `calc(100% - ${OVERLAP_PX}px)` }}>
+      {stickers.map((s) => {
+        const c = resolveColors(s.fillColor, s.borderColor);
+        return (
+          <span
+            key={s.id}
+            data-sticker-id={s.id}
+            data-sticker-business={s.dailyBusinessId}
+            className="whitespace-nowrap rounded-[3px] px-[3px] font-semibold"
+            style={{ fontSize, lineHeight: 1.15, background: c.fill, color: c.text, boxShadow: `inset 0 0 0 1px ${c.border}` }}
+          >
+            {s.label}
+          </span>
+        );
+      })}
     </div>
   );
 }

@@ -16,12 +16,31 @@ export interface ItemSticker {
   quantity: number | null;
 }
 
+// 고객사 카드(고객명 칸)에 붙은 스티커 하나(business_stickers, 0076). 수량이 없다. 이름·색은 붙일 당시 값이다.
+export interface BusinessSticker {
+  id: string;
+  dailyBusinessId: string;
+  label: string;
+  fillColor: string;
+  borderColor: string;
+}
+
+// 스티커를 붙이는 곳(2026-11-23): 상품 칸(item)에 붙는 것과 고객사(business, 고객명 칸)에 붙는 것. 스티커 목록에서 스티커마다 정한다.
+export type StickerScope = 'item' | 'business';
+export const STICKER_SCOPE_LABEL: Record<StickerScope, string> = { item: '상품 칸', business: '고객사' };
+export const isStickerScope = (value: unknown): value is StickerScope => value === 'item' || value === 'business';
+// DB에 모르는 값이 있어도 칠판이 죽지 않게 상품 칸으로 본다.
+export const stickerScopeOf = (value: unknown): StickerScope => (value === 'business' ? 'business' : 'item');
+// 고객사용 스티커는 수량을 쓰지 않는다(DB 제약과 같은 규칙).
+export const usesQuantityFor = (scope: StickerScope, usesQuantity: boolean): boolean => (scope === 'business' ? false : usesQuantity);
+
 // 칸에 보이는 글자: 수량이 있으면 "특대 2", 없으면 "냉동실".
 export const stickerText = (s: Pick<ItemSticker, 'label' | 'quantity'>): string => (s.quantity === null ? s.label : `${s.label} ${s.quantity}`);
 
 // 붙이는 규칙(결정 2026-11-22): 한 칸에 최대 2개, 같은 스티커는 한 칸에 한 번만, 수량은 정수(1~9999)이고 수량을 쓰는 스티커에만 붙는다.
 // 서버 동작과 칠판 화면이 같은 검사를 쓴다(DB의 unique·트리거가 마지막으로 막는다).
 export const MAX_STICKERS_PER_ITEM = 2;
+export const MAX_STICKERS_PER_BUSINESS = 2; // 고객사 카드도 2개까지
 export const STICKER_QUANTITY_MAX = 9999;
 
 // 스티커 목록(0074)에서 칠판이 쓰는 값.
@@ -31,6 +50,7 @@ export interface StickerPresetOption {
   fillColor: string;
   borderColor: string;
   usesQuantity: boolean;
+  scope: StickerScope;
 }
 
 export function stickerQuantityError(usesQuantity: boolean, quantity: number | null): string | null {
@@ -42,9 +62,9 @@ export function stickerQuantityError(usesQuantity: boolean, quantity: number | n
 export type AddCheck = { ok: true } | { ok: false; reason: 'duplicate' | 'limit' };
 
 // 이미 붙은 스티커 이름들을 보고 이 이름을 더 붙일 수 있는지 판단한다. 같은 이름이 이미 있으면 "중복"(수정 말풍선으로 안내)이 먼저고, 그다음이 "2개 가득"이다.
-export function checkAddSticker(existingLabels: readonly string[], label: string): AddCheck {
+export function checkAddSticker(existingLabels: readonly string[], label: string, max: number = MAX_STICKERS_PER_ITEM): AddCheck {
   if (existingLabels.includes(label)) return { ok: false, reason: 'duplicate' };
-  if (existingLabels.length >= MAX_STICKERS_PER_ITEM) return { ok: false, reason: 'limit' };
+  if (existingLabels.length >= max) return { ok: false, reason: 'limit' };
   return { ok: true };
 }
 

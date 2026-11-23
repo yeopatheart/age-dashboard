@@ -8,8 +8,8 @@ import { businessIdsInBothRounds, isCardCancelled, prepLabelOf, prepOf, type Pre
 import { terminalBadgeProps, terminalDotProps, type TerminalColorMap } from '@/lib/terminal-color';
 import { resolveColors, softenColors } from '@/lib/color-palette';
 import { fitInRounds } from '@/lib/pill-fit';
-import { stickerQuantityError, type ItemSticker, type StickerPresetOption } from '@/lib/stickers';
-import { ChipStickers } from './sticker-badges';
+import { stickerQuantityError, type BusinessSticker, type ItemSticker, type StickerPresetOption } from '@/lib/stickers';
+import { BusinessStickers, ChipStickers } from './sticker-badges';
 import { StickerLayer } from './sticker-layer';
 import { useCan } from '@/components/permissions-context';
 import { useLocalFlag } from '@/lib/use-local-flag';
@@ -54,6 +54,8 @@ import {
   addItemSticker,
   setItemStickerQuantity,
   removeItemSticker,
+  addBusinessSticker,
+  removeBusinessSticker,
   type ManualItemFields,
 } from './actions';
 
@@ -836,6 +838,7 @@ export function DashboardClient({
   allowPast,
   highlights,
   stickers: serverStickers,
+  businessStickers: serverBusinessStickers,
   stickerPresets,
   initialMobile,
 }: {
@@ -849,6 +852,7 @@ export function DashboardClient({
   allowPast: boolean;
   highlights: string[];
   stickers: ItemSticker[];
+  businessStickers: BusinessSticker[];
   stickerPresets: StickerPresetOption[];
   initialMobile: boolean;
 }) {
@@ -883,6 +887,20 @@ export function DashboardClient({
       return state.map((s) => (s.id === change.id ? { ...s, quantity: change.quantity } : s));
     },
   );
+  // 고객사 스티커(0076)도 같다: 붙이거나 떼면 바로 보여 주고, 서버가 새 화면을 보내면 그 값으로 바뀐다.
+  const [businessStickers, setOptimisticBusinessStickers] = useOptimistic(
+    serverBusinessStickers,
+    (state: BusinessSticker[], change: { type: 'add'; sticker: BusinessSticker } | { type: 'remove'; id: string }) => (change.type === 'add' ? [...state, change.sticker] : state.filter((s) => s.id !== change.id)),
+  );
+  const businessStickersByDaily = useMemo(() => {
+    const map = new Map<string, BusinessSticker[]>();
+    for (const s of businessStickers) {
+      const list = map.get(s.dailyBusinessId);
+      if (list) list.push(s);
+      else map.set(s.dailyBusinessId, [s]);
+    }
+    return map;
+  }, [businessStickers]);
   // 상품 칸별 스티커(붙인 순서). 서버가 이미 붙인 순서로 보낸다. 스티커는 칸의 글자를 조정하지 않고 칸의 오른쪽 위에 걸쳐 붙는다(결정: docs/decisions/2026-11-22-stickers.md).
   const stickersByItem = useMemo(() => {
     const map = new Map<string, ItemSticker[]>();
@@ -1474,6 +1492,21 @@ export function DashboardClient({
     startStickerTransition(async () => {
       setOptimisticStickers({ type: 'remove', id: sticker.id });
       const { error } = await removeItemSticker(sticker.id);
+      if (error) showToast(error);
+    });
+  };
+  // 고객사 스티커: 고객명 칸에 붙이고 뗀다(수량 없음).
+  const handleAddBusinessSticker = (dailyBusinessId: string, preset: StickerPresetOption) => {
+    startStickerTransition(async () => {
+      setOptimisticBusinessStickers({ type: 'add', sticker: { id: `pending-${preset.id}-${dailyBusinessId}`, dailyBusinessId, label: preset.label, fillColor: preset.fillColor, borderColor: preset.borderColor } });
+      const { error } = await addBusinessSticker(dailyBusinessId, preset.id);
+      if (error) showToast(error);
+    });
+  };
+  const handleRemoveBusinessSticker = (sticker: BusinessSticker) => {
+    startStickerTransition(async () => {
+      setOptimisticBusinessStickers({ type: 'remove', id: sticker.id });
+      const { error } = await removeBusinessSticker(sticker.id);
       if (error) showToast(error);
     });
   };
@@ -2102,6 +2135,7 @@ export function DashboardClient({
                       </span>
                     </div>
                     <div
+                      data-name-cell={row.dailyBusinessId}
                       className={`relative border-r border-slate-100 px-2 flex items-center overflow-hidden ${isCardComplete(rowItems) ? 'bg-emerald-50' : isCardCancelled(rowItems) ? 'bg-rose-50' : ''} ${readOnly ? '' : 'cursor-pointer hover:bg-slate-100/70 select-none [-webkit-touch-callout:none]'} ${linkFirst?.dailyBusinessId === row.dailyBusinessId ? 'ring-2 ring-inset ring-violet-600 bg-violet-50' : ''} ${linkFirstCandidate && linkFirst?.dailyBusinessId !== row.dailyBusinessId && linkPairBlockReason(linkFirstCandidate, linkCandidateOf(row)) !== null ? 'opacity-40' : ''}`}
                       {...(readOnly
                         ? {}
@@ -2129,7 +2163,7 @@ export function DashboardClient({
                     </div>
                     {/* 박스 구성을 정한 뒤 주문이 바뀌면 이 칸이 붉게 바뀌고 경고 아이콘이 붙는다. 고객명 칸에는 아무것도 붙이지 않는다(이름은 절대 가려지면 안 된다, 2026-11-14). */}
                     <div
-                      className={`border-r border-slate-100 px-1 flex items-center justify-center gap-1 whitespace-nowrap ${row.packingChanged && !isCardCancelled(rowItems) ? 'bg-rose-100' : 'bg-slate-50/60'} ${canOpenBox && !isCardCancelled(rowItems) ? 'cursor-pointer hover:bg-slate-200/70' : ''}`}
+                      className={`relative border-r border-slate-100 px-1 flex items-center justify-center gap-1 whitespace-nowrap ${row.packingChanged && !isCardCancelled(rowItems) ? 'bg-rose-100' : 'bg-slate-50/60'} ${canOpenBox && !isCardCancelled(rowItems) ? 'cursor-pointer hover:bg-slate-200/70' : ''}`}
                       title={isCardCancelled(rowItems) ? '주문이 모두 취소된 업체 — 박스 할당이 필요 없습니다' : canOpenBox ? (row.packingChanged ? '주문이 바뀌었습니다 — 눌러서 박스 할당을 다시 확인하세요' : '누르면 이 업체의 박스 할당을 고칩니다') : row.packingChanged ? '주문이 바뀌었습니다 — 박스 할당에서 박스 구성을 다시 확인하세요' : undefined}
                       {...(canOpenBox && !isCardCancelled(rowItems)
                         ? {
@@ -2158,6 +2192,8 @@ export function DashboardClient({
                           합{boxLinkInfo.get(row.dailyBusinessId)?.letter}
                         </span>
                       )}
+                      {/* 고객사 스티커: 고객명 칸의 오른쪽 위에 걸쳐 붙는다. 고객명 칸은 overflow-hidden이라 바로 오른쪽인 이 칸에서 왼쪽 경계 바깥으로 그린다(sticker-badges.tsx). */}
+                      {businessStickersByDaily.get(row.dailyBusinessId) && <BusinessStickers stickers={businessStickersByDaily.get(row.dailyBusinessId) as BusinessSticker[]} fontSize={stickerFont} />}
                     </div>
 
                     {Array.from({ length: productSlotCount }).map((_, slotIndex) => {
@@ -2255,9 +2291,12 @@ export function DashboardClient({
             key={`stk|${orderDate}|${effectiveMonitorMode}`}
             presets={stickerPresets}
             stickersByItem={stickersByItem}
+            businessStickersByDaily={businessStickersByDaily}
             onAdd={handleAddSticker}
             onSetQuantity={handleSetStickerQuantity}
             onRemove={handleRemoveSticker}
+            onAddBusiness={handleAddBusinessSticker}
+            onRemoveBusiness={handleRemoveBusinessSticker}
             onExit={() => setStickerMode(false)}
             notify={showToast}
           />
