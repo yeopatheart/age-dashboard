@@ -19,7 +19,7 @@ import { CircleDashed, ClipboardList, Link2, Package, PackageCheck, Printer, Pri
 import type { StoredPlan } from '@/lib/packing/server';
 import type { PackingBoxType as BoxType, PackingBusiness, PackingItem } from '@/lib/packing/types';
 import { summarizeBoxNeeds } from '@/lib/packing/box-needs';
-import { emptyBoxMessage, firstEmptyBoxIndex, removalShiftsPrintedLabels } from '@/lib/packing/box-rules';
+import { emptyBoxesAllowed, emptyBoxMessage, firstEmptyBoxIndex, removalShiftsPrintedLabels } from '@/lib/packing/box-rules';
 import { EXCLUDED_REASON_LABEL } from '@/lib/packing/excluded-items';
 import { submitPacking, assignItemsToBoxes, deletePackingRecord } from './actions';
 import { prepareBatchLabelPrint } from '../labels/actions';
@@ -224,8 +224,10 @@ export function PackingLogClient({
   );
   const hasDeletedBox = !!draft?.boxes.some((b) => b.boxId === null);
   // 빈 박스는 제출할 수 없다(서버도 막는다). 예전에 제출해 둔 빈 박스도 여기서 걸러져 다시 제출할 때 지우게 된다.
-  const emptyBoxAt = draft ? firstEmptyBoxIndex(draft.boxes) : -1;
-  const canSubmit = !readOnly && !!draft && draft.boxes.length > 0 && unplaced.length === 0 && !hasDeletedBox && emptyBoxAt < 0 && !busy && (selected?.items.length ?? 0) > 0 && (!selected?.submitted || modified);
+  // 담을 상품이 없고 수량 미정 상품만 있는 고객사는 빈 박스로 제출할 수 있다(라벨을 붙일 박스는 실제로 있다).
+  const emptyOk = !!selected && emptyBoxesAllowed(selected.items.length, selected.excludedItems.filter((e) => e.reason === 'undecided').length);
+  const emptyBoxAt = draft && !emptyOk ? firstEmptyBoxIndex(draft.boxes) : -1;
+  const canSubmit = !readOnly && !!draft && draft.boxes.length > 0 && unplaced.length === 0 && !hasDeletedBox && emptyBoxAt < 0 && !busy && ((selected?.items.length ?? 0) > 0 || emptyOk) && (!selected?.submitted || modified);
   const submitHint = !draft
     ? ''
     : readOnly
@@ -633,7 +635,7 @@ export function PackingLogClient({
                 {selected.excludedItems.length > 0 && (
                   <div className="pk-rec pk-rec-warn">
                     박스에 담을 수 없는 상품 {selected.excludedItems.length}개가 목록에서 빠져 있습니다:{' '}
-                    {selected.excludedItems.map((e) => `${e.name}(${EXCLUDED_REASON_LABEL[e.reason]})`).join(', ')}. 박스에 담아야 하면 주문 목록에서 수량이나 미출고를 먼저 고쳐 주세요.
+                    {selected.excludedItems.map((e) => `${e.name}(${EXCLUDED_REASON_LABEL[e.reason]})`).join(', ')}. {emptyOk ? '박스만 추가해 제출하면 라벨을 출력할 수 있습니다. 수량을 채우면 박스에 담아 다시 제출하세요.' : '박스에 담아야 하면 주문 목록에서 수량이나 미출고를 먼저 고쳐 주세요.'}
                   </div>
                 )}
                 <div className="pk-rec">
@@ -671,7 +673,7 @@ export function PackingLogClient({
                     <div className="pk-rows">
                       {draft.boxes.length === 0 && <p className="pk-hint">담긴 박스가 없습니다.</p>}
                       {draft.boxes.map((box, idx) => (
-                        <BoxRow key={box.uid} box={box} index={idx + 1} items={selected.items} readOnly />
+                        <BoxRow key={box.uid} box={box} index={idx + 1} items={selected.items} readOnly emptyOk={emptyOk} />
                       ))}
                     </div>
                   </div>
@@ -698,7 +700,7 @@ export function PackingLogClient({
                     <div className="pk-rows">
                       {draft.boxes.length === 0 && <p className="pk-hint">아래 [박스 추가] 버튼으로 박스를 추가한 뒤, 상품을 눌러 박스에 담으세요.</p>}
                       {draft.boxes.map((box, idx) => (
-                        <BoxRow key={box.uid} box={box} index={idx + 1} items={selected.items} boxTypes={boxes} picked={activePick} onPick={(id) => togglePick(id, box.uid)} onChangeType={(boxId) => changeBoxType(box.uid, boxId)} onRemove={() => removeBox(box.uid)} onUnassign={(itemId) => unassign(itemId, box.uid)} />
+                        <BoxRow key={box.uid} box={box} index={idx + 1} items={selected.items} emptyOk={emptyOk} boxTypes={boxes} picked={activePick} onPick={(id) => togglePick(id, box.uid)} onChangeType={(boxId) => changeBoxType(box.uid, boxId)} onRemove={() => removeBox(box.uid)} onUnassign={(itemId) => unassign(itemId, box.uid)} />
                       ))}
                     </div>
                     {draft.boxes.length >= 2 && <MergeBar boxes={draft.boxes} groups={draft.mergeUids} onChange={changeMerge} />}
@@ -1053,6 +1055,7 @@ function BoxRow({
   onRemove,
   onUnassign,
   readOnly = false,
+  emptyOk = false,
 }: {
   box: DraftBox;
   index: number;
@@ -1067,6 +1070,8 @@ function BoxRow({
   onUnassign?: (itemId: string) => void;
   // 수정 중이 아닐 때: 끌어다 놓기·빼기 없이 어떤 상품이 담겼는지만 보여준다.
   readOnly?: boolean;
+  // 수량 미정 상품뿐인 고객사: 빈 박스로 제출할 수 있다는 안내를 보인다.
+  emptyOk?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `box:${box.uid}`, disabled: readOnly });
   const itemById = new Map(items.map((i) => [i.id, i]));
@@ -1090,7 +1095,7 @@ function BoxRow({
         </span>
       </div>
       <div className="pk-row-chips">
-        {box.items.length === 0 && <span className="pk-slot-empty">{readOnly ? '담긴 상품 없음' : '비어 있음 · 상품을 눌러 이 박스로 옮기세요'}</span>}
+        {box.items.length === 0 && <span className="pk-slot-empty">{emptyOk ? '수량 미정 상품만 있어 비어 있어도 제출할 수 있습니다' : readOnly ? '담긴 상품 없음' : '비어 있음 · 상품을 눌러 이 박스로 옮기세요'}</span>}
         {box.items.map((bi) => {
           const item = itemById.get(bi.orderItemId);
           if (!item) return null;
