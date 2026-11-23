@@ -4,19 +4,23 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { requirePermission } from '@/lib/permissions/access';
 import { isHueKey } from '@/lib/color-palette';
-import { STICKER_DEFAULT_COLOR, movedOrder, normalizeStickerLabel } from '@/lib/stickers';
+import { STICKER_DEFAULT_COLOR, isStickerScope, movedOrder, normalizeStickerLabel, usesQuantityFor, type StickerScope } from '@/lib/stickers';
 
 // 같은 이름이 이미 있으면 DB의 unique 인덱스(sticker_presets_label_key)가 막는다(23505).
 const DUPLICATE = '같은 이름의 스티커가 이미 있습니다.';
 const isDuplicate = (error: { code?: string }) => error.code === '23505';
+// 고객사용 스티커는 수량을 쓰지 않는다(DB 제약 sticker_presets_business_no_quantity, 23514).
+const NO_QUANTITY = '고객사용 스티커는 수량을 쓰지 않습니다.';
+const isCheckViolation = (error: { code?: string }) => error.code === '23514';
 
 function refresh() {
   revalidatePath('/stickers');
   revalidatePath('/dashboard');
 }
 
-export async function createSticker(label: string, usesQuantity: boolean): Promise<{ error: string | null }> {
+export async function createSticker(label: string, usesQuantity: boolean, scope: StickerScope): Promise<{ error: string | null }> {
   await requirePermission('stickers:edit');
+  if (!isStickerScope(scope)) return { error: '붙이는 곳을 고를 수 없습니다.' };
   const normalized = normalizeStickerLabel(label);
   if (!normalized.ok) return { error: normalized.error };
   const supabase = await createClient();
@@ -26,7 +30,7 @@ export async function createSticker(label: string, usesQuantity: boolean): Promi
   const sortOrder = (last?.[0]?.sort_order ?? 0) + 1;
   const { error } = await supabase
     .from('sticker_presets')
-    .insert({ label: normalized.label, uses_quantity: usesQuantity, sort_order: sortOrder, fill_color: STICKER_DEFAULT_COLOR, border_color: STICKER_DEFAULT_COLOR });
+    .insert({ label: normalized.label, uses_quantity: usesQuantityFor(scope, usesQuantity), scope, sort_order: sortOrder, fill_color: STICKER_DEFAULT_COLOR, border_color: STICKER_DEFAULT_COLOR });
   if (error) return { error: isDuplicate(error) ? DUPLICATE : error.message };
   refresh();
   return { error: null };
@@ -38,7 +42,19 @@ export async function updateSticker(id: string, label: string, usesQuantity: boo
   if (!normalized.ok) return { error: normalized.error };
   const supabase = await createClient();
   const { error } = await supabase.from('sticker_presets').update({ label: normalized.label, uses_quantity: usesQuantity }).eq('id', id);
-  if (error) return { error: isDuplicate(error) ? DUPLICATE : error.message };
+  if (error) return { error: isDuplicate(error) ? DUPLICATE : isCheckViolation(error) ? NO_QUANTITY : error.message };
+  refresh();
+  return { error: null };
+}
+
+// 붙이는 곳(상품 칸 / 고객사)을 바꾼다. 고객사용이 되면 수량 입력은 함께 꺼진다. 이미 붙은 스티커는 붙을 당시의 자리에 그대로 남는다.
+export async function setStickerScope(id: string, scope: StickerScope): Promise<{ error: string | null }> {
+  await requirePermission('stickers:edit');
+  if (!isStickerScope(scope)) return { error: '붙이는 곳을 고를 수 없습니다.' };
+  const supabase = await createClient();
+  const update = scope === 'business' ? { scope, uses_quantity: false } : { scope };
+  const { error } = await supabase.from('sticker_presets').update(update).eq('id', id);
+  if (error) return { error: error.message };
   refresh();
   return { error: null };
 }

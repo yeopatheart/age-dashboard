@@ -14,7 +14,7 @@ export default async function StickersPage() {
       (async () => {
         const { data, error } = await supabase
           .from('sticker_presets')
-          .select('id, label, fill_color, border_color, uses_quantity, sort_order, created_at')
+          .select('id, label, fill_color, border_color, uses_quantity, scope, sort_order, created_at')
           .order('sort_order')
           .order('created_at');
         if (error) throw new Error(error.message);

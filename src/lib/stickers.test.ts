@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { STICKER_DEFAULT_COLOR, STICKER_LABEL_MAX, appendDigit, checkAddSticker, movedOrder, normalizeStickerLabel, stickerColorKey, stickerQuantityError, stickerText } from './stickers.ts';
+import { MAX_STICKERS_PER_BUSINESS, STICKER_DEFAULT_COLOR, STICKER_LABEL_MAX, appendDigit, checkAddSticker, isStickerScope, movedOrder, normalizeStickerLabel, stickerColorKey, stickerQuantityError, stickerScopeOf, stickerText, usesQuantityFor } from './stickers.ts';
 
 test('칸에 보이는 글자는 수량이 있을 때만 숫자가 붙는다', () => {
   assert.equal(stickerText({ label: '특대', quantity: 2 }), '특대 2');
@@ -63,4 +63,29 @@ test('전체 키패드는 4자리까지, 맨 앞 0은 받지 않는다', () => {
   assert.equal(appendDigit('999', '9'), '9999');
   assert.equal(appendDigit('9999', '1'), '9999');
   assert.equal(appendDigit('12', 'x'), '12');
+});
+
+test('스티커를 붙이는 곳은 상품 칸과 고객사 둘뿐이고, 모르는 값은 상품 칸으로 본다', () => {
+  assert.equal(isStickerScope('item'), true);
+  assert.equal(isStickerScope('business'), true);
+  assert.equal(isStickerScope('card'), false);
+  assert.equal(isStickerScope(null), false);
+  assert.equal(stickerScopeOf('business'), 'business');
+  assert.equal(stickerScopeOf('item'), 'item');
+  assert.equal(stickerScopeOf(undefined), 'item');
+  assert.equal(stickerScopeOf('card'), 'item');
+});
+
+test('고객사용 스티커는 수량을 쓰지 않는다', () => {
+  assert.equal(usesQuantityFor('business', true), false);
+  assert.equal(usesQuantityFor('business', false), false);
+  assert.equal(usesQuantityFor('item', true), true);
+  assert.equal(usesQuantityFor('item', false), false);
+});
+
+test('고객사 카드도 스티커는 2개까지, 같은 이름은 한 번만 붙는다', () => {
+  assert.equal(MAX_STICKERS_PER_BUSINESS, 2);
+  assert.deepEqual(checkAddSticker([], '냉동실', MAX_STICKERS_PER_BUSINESS), { ok: true });
+  assert.deepEqual(checkAddSticker(['냉동실'], '냉동실', MAX_STICKERS_PER_BUSINESS), { ok: false, reason: 'duplicate' });
+  assert.deepEqual(checkAddSticker(['냉동실', '냉장'], '대기', MAX_STICKERS_PER_BUSINESS), { ok: false, reason: 'limit' });
 });

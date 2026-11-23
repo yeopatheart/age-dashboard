@@ -1,10 +1,11 @@
 'use client';
 import { useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Plus, Stamp, Trash2 } from 'lucide-react';
-import { createSticker, updateSticker, setStickerColor, moveSticker, deleteSticker } from './actions';
+import { createSticker, updateSticker, setStickerScope, setStickerColor, moveSticker, deleteSticker } from './actions';
 import { ColorPicker } from '@/components/color-picker';
 import { resolveColors } from '@/lib/color-palette';
-import { STICKER_DEFAULT_COLOR, STICKER_LABEL_MAX } from '@/lib/stickers';
+import { STICKER_DEFAULT_COLOR, STICKER_LABEL_MAX, STICKER_SCOPE_LABEL, stickerScopeOf, type StickerScope } from '@/lib/stickers';
+import { Segmented } from '@/components/segmented';
 import { useCan } from '@/components/permissions-context';
 import { AdminHeader, DataTable, SidePanel, Toggle, DeleteFooter, type Column } from '@/components/admin/admin-kit';
 
@@ -14,9 +15,12 @@ interface Sticker {
   fill_color: string;
   border_color: string;
   uses_quantity: boolean;
+  scope: string; // 붙이는 곳: 'item'(상품 칸) | 'business'(고객사). 화면에서는 stickerScopeOf로 읽는다.
   sort_order: number;
   created_at: string;
 }
+
+const SCOPE_ITEMS = (['item', 'business'] as const).map((key) => ({ key, label: STICKER_SCOPE_LABEL[key] }));
 
 // 칠판에 붙는 모양 그대로의 견본. 수량을 쓰는 스티커는 "이름 1"처럼 보인다.
 function StickerPreview({ label, fill, border, usesQuantity }: { label: string; fill: string; border: string; usesQuantity: boolean }) {
@@ -35,6 +39,7 @@ export function StickersClient({ presets }: { presets: Sticker[] }) {
   const canDelete = can('stickers:delete');
   const [newLabel, setNewLabel] = useState('');
   const [newUsesQuantity, setNewUsesQuantity] = useState(false);
+  const [newScope, setNewScope] = useState<StickerScope>('item');
   const [openId, setOpenId] = useState<string | null>(null);
   const [labelDraft, setLabelDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -65,9 +70,21 @@ export function StickersClient({ presets }: { presets: Sticker[] }) {
       addInputRef.current?.focus();
       return;
     }
-    if (await run(() => createSticker(newLabel, newUsesQuantity))) {
+    if (await run(() => createSticker(newLabel, newUsesQuantity, newScope))) {
       setNewLabel('');
       setNewUsesQuantity(false);
+      setNewScope('item');
+    }
+  };
+  // 붙이는 곳도 누르는 즉시 저장한다. 고객사용으로 바꾸면 수량 입력은 함께 꺼진다(서버·DB도 같은 규칙).
+  const changeScope = async (s: Sticker, scope: StickerScope) => {
+    if (stickerScopeOf(s.scope) === scope) return;
+    const previous = { scope: s.scope, uses_quantity: s.uses_quantity };
+    setLocal((p) => ({ ...p, [s.id]: { ...p[s.id], scope, ...(scope === 'business' ? { uses_quantity: false } : {}) } }));
+    const result = await setStickerScope(s.id, scope).catch(() => ({ error: '저장하지 못했습니다. 권한이나 연결을 확인한 뒤 다시 시도해주세요.' }));
+    if (result.error) {
+      setLocal((p) => ({ ...p, [s.id]: { ...p[s.id], ...previous } }));
+      setError(result.error);
     }
   };
   const setUsesQuantity = async (s: Sticker, value: boolean) => {
@@ -124,12 +141,22 @@ export function StickersClient({ presets }: { presets: Sticker[] }) {
       render: (s) => <StickerPreview label={s.label} fill={s.fill_color} border={s.border_color} usesQuantity={s.uses_quantity} />,
     },
     {
+      key: 'scope',
+      label: '붙이는 곳',
+      hideable: false,
+      render: (s) => (
+        <span onClick={(e) => e.stopPropagation()}>
+          <Segmented items={SCOPE_ITEMS} value={stickerScopeOf(s.scope)} onSelect={canEdit ? (key) => void changeScope(s, key) : undefined} label={`${s.label} 붙이는 곳`} />
+        </span>
+      ),
+    },
+    {
       key: 'quantity',
       label: '수량 입력',
       hideable: false,
       render: (s) => (
         <span onClick={(e) => e.stopPropagation()}>
-          <Toggle checked={s.uses_quantity} onChange={(v) => setUsesQuantity(s, v)} label={`${s.label} 수량 입력`} disabled={!canEdit} />
+          <Toggle checked={s.uses_quantity} onChange={(v) => setUsesQuantity(s, v)} label={`${s.label} 수량 입력`} disabled={!canEdit || stickerScopeOf(s.scope) === 'business'} />
         </span>
       ),
     },
@@ -137,7 +164,7 @@ export function StickersClient({ presets }: { presets: Sticker[] }) {
 
   return (
     <div className="ak-page">
-      <AdminHeader icon={<Stamp size={20} />} title="스티커 관리" sub="칠판의 상품 칸에 붙이는 스티커 목록입니다. 행을 누르면 이름과 색을 바꿀 수 있습니다." />
+      <AdminHeader icon={<Stamp size={20} />} title="스티커 관리" sub="칠판에 붙이는 스티커 목록입니다. 스티커마다 상품 칸에 붙일지 고객사(고객명 칸)에 붙일지 정합니다. 행을 누르면 이름과 색을 바꿀 수 있습니다." />
 
       <div className="ak-toolbar">
         <span className="ak-count">{rows.length}개</span>
@@ -152,9 +179,10 @@ export function StickersClient({ presets }: { presets: Sticker[] }) {
               onChange={(e) => setNewLabel(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleAdd()}
             />
+            <Segmented items={SCOPE_ITEMS} value={newScope} onSelect={(key) => { setNewScope(key); if (key === 'business') setNewUsesQuantity(false); }} label="새 스티커 붙이는 곳" />
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <span className="ak-sub">수량 입력</span>
-              <Toggle checked={newUsesQuantity} onChange={setNewUsesQuantity} label="새 스티커 수량 입력" />
+              <Toggle checked={newUsesQuantity} onChange={setNewUsesQuantity} label="새 스티커 수량 입력" disabled={newScope === 'business'} />
             </label>
             <button className="ak-btn ak-btn-primary" onClick={handleAdd} disabled={busy}>
               <Plus size={14} /> 추가
@@ -185,7 +213,7 @@ export function StickersClient({ presets }: { presets: Sticker[] }) {
             confirmDelete ? (
               <DeleteFooter
                 name={open.label}
-                consequence="이미 상품 칸에 붙은 스티커는 그대로 남습니다."
+                consequence="이미 칠판에 붙은 스티커는 그대로 남습니다."
                 busy={busy}
                 onCancel={() => setConfirmDelete(false)}
                 onConfirm={async () => {
@@ -219,12 +247,17 @@ export function StickersClient({ presets }: { presets: Sticker[] }) {
             <label>스티커 이름</label>
             <input className="ak-input" value={labelDraft} maxLength={STICKER_LABEL_MAX * 2} onChange={(e) => setLabelDraft(e.target.value)} disabled={!canEdit} />
           </div>
+          <div className="ak-field">
+            <span className="ak-field-label">붙이는 곳</span>
+            <Segmented items={SCOPE_ITEMS} value={stickerScopeOf(open.scope)} onSelect={canEdit ? (key) => void changeScope(open, key) : undefined} label="붙이는 곳" />
+            <small className="ak-sub">상품 칸: 칠판의 상품 칸 오른쪽 위에 붙습니다. 고객사: 칠판의 고객명 칸 오른쪽 위에 붙고 수량을 쓰지 않습니다(예: 냉동실). 이미 붙은 스티커는 그 자리에 그대로 남습니다.</small>
+          </div>
           <div className="ak-setting">
             <span>
               수량 입력
-              <small>켜면 칠판에서 붙일 때 숫자 키패드가 떠서 &apos;특대 1&apos;처럼 수량을 함께 적습니다. 끄면 바로 붙습니다(예: 냉동실)</small>
+              <small>{stickerScopeOf(open.scope) === 'business' ? '고객사용 스티커는 수량을 쓰지 않습니다.' : "켜면 칠판에서 붙일 때 숫자 키패드가 떠서 '특대 1'처럼 수량을 함께 적습니다. 끄면 바로 붙습니다."}</small>
             </span>
-            <Toggle checked={open.uses_quantity} onChange={(v) => setUsesQuantity(open, v)} label="수량 입력" disabled={!canEdit} />
+            <Toggle checked={open.uses_quantity} onChange={(v) => setUsesQuantity(open, v)} label="수량 입력" disabled={!canEdit || stickerScopeOf(open.scope) === 'business'} />
           </div>
           <div className="ak-field">
             <span className="ak-field-label">색상</span>

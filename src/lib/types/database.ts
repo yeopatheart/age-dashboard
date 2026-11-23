@@ -38,13 +38,25 @@ type OrderItemSticker = {
   created_at: string;
 };
 
-// 칠판 상품 칸에 붙이는 스티커의 종류(0074). 색은 color-palette의 key.
+// 고객사 카드(고객명 칸)에 붙은 스티커(0076). 수량이 없다. 이름·색은 붙일 당시 값이다.
+type BusinessSticker = {
+  id: string;
+  daily_business_id: string;
+  preset_id: string | null;
+  label: string;
+  fill_color: string;
+  border_color: string;
+  created_at: string;
+};
+
+// 칠판에 붙이는 스티커의 종류(0074). 색은 color-palette의 key. scope(0076): 붙이는 곳(item = 상품 칸, business = 고객사).
 type StickerPreset = {
   id: string;
   label: string;
   fill_color: string;
   border_color: string;
   uses_quantity: boolean;
+  scope: string;
   sort_order: number;
   created_at: string;
 };
@@ -483,9 +495,13 @@ export type Database = {
         OrderItemSticker,
         Pick<OrderItemSticker, "order_item_id" | "daily_business_id" | "label" | "fill_color" | "border_color"> & { id?: string; preset_id?: string | null; quantity?: number | null; created_at?: string }
       >;
+      business_stickers: TableDef<
+        BusinessSticker,
+        Pick<BusinessSticker, "daily_business_id" | "label" | "fill_color" | "border_color"> & { id?: string; preset_id?: string | null; created_at?: string }
+      >;
       sticker_presets: TableDef<
         StickerPreset,
-        Pick<StickerPreset, "label"> & { id?: string; fill_color?: string; border_color?: string; uses_quantity?: boolean; sort_order?: number; created_at?: string }
+        Pick<StickerPreset, "label"> & { id?: string; fill_color?: string; border_color?: string; uses_quantity?: boolean; scope?: string; sort_order?: number; created_at?: string }
       >;
       terminals: TableDef<
         Terminal,

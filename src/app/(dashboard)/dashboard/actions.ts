@@ -12,7 +12,7 @@ import { inkCutoffTime, parseInkStrokes } from '@/lib/ink/store';
 import { missingTable, migrationsFor } from '@/lib/supabase/missing-table';
 import { parseBoardEnv } from '@/lib/board-env';
 import { isIsoDate, nonNegativeNumberError, positiveNumberError, textError } from '@/lib/validate';
-import { stickerQuantityError } from '@/lib/stickers';
+import { stickerQuantityError, stickerScopeOf } from '@/lib/stickers';
 import { fetchAll } from '@/lib/supabase/fetch-all';
 import { loadSubmittedBoxCounts } from '@/lib/scan-boxes';
 import type { OrderDeleteImpact } from '@/lib/order-delete-warning';
@@ -435,6 +435,7 @@ export async function reportBoardEnv(value: unknown): Promise<void> {
 
 function stickerWriteError(error: { code?: string; message: string }): string {
   if (error.code === '23505') return '이 상품에는 같은 스티커가 이미 붙어 있습니다.';
+  if (/business card can hold at most 2 stickers/.test(error.message)) return '한 고객사에는 스티커를 2개까지 붙일 수 있습니다.';
   if (error.code === '23514' || /at most 2 stickers/.test(error.message)) return '한 칸에는 스티커를 2개까지 붙일 수 있습니다.';
   const table = missingTable(error.message);
   if (table) return `스티커 테이블이 없습니다. 마이그레이션 ${migrationsFor([table]).join(', ') || '0075_order_item_stickers.sql'}을 먼저 적용해 주세요.`;
@@ -447,9 +448,10 @@ export async function addItemSticker(orderItemId: string, presetId: string, quan
   const supabase = await createClient();
   const guard = await itemDateError(supabase, orderItemId);
   if (guard) return { error: guard };
-  const { data: preset, error: presetError } = await supabase.from('sticker_presets').select('id, label, fill_color, border_color, uses_quantity').eq('id', presetId).maybeSingle();
+  const { data: preset, error: presetError } = await supabase.from('sticker_presets').select('id, label, fill_color, border_color, uses_quantity, scope').eq('id', presetId).maybeSingle();
   if (presetError) return { error: stickerWriteError(presetError) };
   if (!preset) return { error: '스티커를 찾지 못했습니다. 스티커 목록이 바뀌었을 수 있으니 화면을 새로 열어 주세요.' };
+  if (stickerScopeOf(preset.scope) === 'business') return { error: '이 스티커는 고객명 칸에 붙입니다.' };
   const quantityProblem = stickerQuantityError(preset.uses_quantity, quantity);
   if (quantityProblem) return { error: quantityProblem };
   const { data: item } = await supabase.from('order_items').select('daily_business_id').eq('id', orderItemId).maybeSingle();
@@ -495,6 +497,43 @@ export async function removeItemSticker(stickerId: string): Promise<{ error: str
   const guard = await itemDateError(supabase, sticker.order_item_id);
   if (guard) return { error: guard };
   const { error } = await supabase.from('order_item_stickers').delete().eq('id', stickerId);
+  if (error) return { error: stickerWriteError(error) };
+  revalidatePath('/dashboard');
+  return { error: null };
+}
+
+// ── 고객사 스티커(0076). 결정: docs/decisions/2026-11-23-business-stickers.md ─────────────────────────────────────
+// 고객사 카드(고객명 칸)에 붙는 스티커. 상품 칸 스티커와 같은 권한·날짜 규칙이고 수량이 없다.
+export async function addBusinessSticker(dailyBusinessId: string, presetId: string): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
+  const supabase = await createClient();
+  const guard = await dailyDateError(supabase, dailyBusinessId);
+  if (guard) return { error: guard };
+  const { data: preset, error: presetError } = await supabase.from('sticker_presets').select('id, label, fill_color, border_color, scope').eq('id', presetId).maybeSingle();
+  if (presetError) return { error: stickerWriteError(presetError) };
+  if (!preset) return { error: '스티커를 찾지 못했습니다. 스티커 목록이 바뀌었을 수 있으니 화면을 새로 열어 주세요.' };
+  if (stickerScopeOf(preset.scope) !== 'business') return { error: '이 스티커는 상품 칸에 붙입니다.' };
+  const { error } = await supabase.from('business_stickers').insert({
+    daily_business_id: dailyBusinessId,
+    preset_id: preset.id,
+    label: preset.label,
+    fill_color: preset.fill_color,
+    border_color: preset.border_color,
+  });
+  if (error) return { error: error.code === '23505' ? '이 고객사에는 같은 스티커가 이미 붙어 있습니다.' : stickerWriteError(error) };
+  revalidatePath('/dashboard');
+  return { error: null };
+}
+
+export async function removeBusinessSticker(stickerId: string): Promise<{ error: string | null }> {
+  await requirePermission('dashboard:edit');
+  const supabase = await createClient();
+  const { data: sticker, error: readError } = await supabase.from('business_stickers').select('daily_business_id').eq('id', stickerId).maybeSingle();
+  if (readError) return { error: stickerWriteError(readError) };
+  if (!sticker) return { error: null }; // 이미 떼어졌다(다른 기기에서)
+  const guard = await dailyDateError(supabase, sticker.daily_business_id);
+  if (guard) return { error: guard };
+  const { error } = await supabase.from('business_stickers').delete().eq('id', stickerId);
   if (error) return { error: stickerWriteError(error) };
   revalidatePath('/dashboard');
   return { error: null };

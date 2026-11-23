@@ -43,3 +43,32 @@ test('말풍선은 칸 바로 아래, 자리가 없으면 위, 화면 안에 가
   assert.equal(balloonPosition({ left: 1200, top: 100, right: 1270, bottom: 118 }, size, view).left, 1280 - 232 - 8);
   assert.equal(balloonPosition({ left: -20, top: 100, right: 40, bottom: 118 }, size, view).left, 8);
 });
+
+const nameCell = (dailyBusinessId: string, left: number, top: number, w = 90, h = 18) => ({ dailyBusinessId, rect: { left, top, right: left + w, bottom: top + h } });
+const bizBadge = (stickerId: string, dailyBusinessId: string, left: number, top: number, w = 30, h = 11) => ({ stickerId, dailyBusinessId, rect: { left, top, right: left + w, bottom: top + h } });
+
+test('고객명 칸을 누르면 그 고객사', () => {
+  assert.deepEqual(pickStickerTarget(40, 30, [], [chip('a', 100, 18)], [nameCell('d1', 0, 0), nameCell('d2', 0, 18)]), { kind: 'name', dailyBusinessId: 'd2' });
+});
+
+test('고객명 칸과 상품 칸은 서로 다른 열이라 눌린 곳에 맞는 쪽이 골라진다', () => {
+  const names = [nameCell('d1', 0, 0)];
+  const chips = [chip('a', 100, 0)];
+  assert.deepEqual(pickStickerTarget(10, 5, [], chips, names), { kind: 'name', dailyBusinessId: 'd1' });
+  assert.deepEqual(pickStickerTarget(120, 5, [], chips, names), { kind: 'chip', itemId: 'a' });
+  assert.equal(pickStickerTarget(95, 5, [], chips, names), null); // 두 칸 사이
+});
+
+test('고객사 스티커가 윗줄 고객명 칸에 걸쳐 있어도 그 자리를 누르면 스티커가 먼저 맞는다', () => {
+  // 윗줄 고객명 칸(0~18)의 아래쪽 끝에 걸친 고객사 스티커(아랫줄 d2 소속, y 10~21)
+  const names = [nameCell('d1', 0, 0), nameCell('d2', 0, 18)];
+  const badges = [bizBadge('s9', 'd2', 55, 10)];
+  assert.deepEqual(pickStickerTarget(70, 14, badges, [], names), { kind: 'business-badge', stickerId: 's9', dailyBusinessId: 'd2' });
+  assert.deepEqual(pickStickerTarget(20, 14, badges, [], names), { kind: 'name', dailyBusinessId: 'd1' }); // 스티커 밖은 윗줄 고객명 칸
+});
+
+test('고객사 스티커와 상품 칸 스티커가 겹치지 않으면 각자 맞는다', () => {
+  const badges = [bizBadge('b1', 'd1', 55, 3), badge('i1', 'a', 150, 3)];
+  assert.deepEqual(pickStickerTarget(60, 5, badges, [chip('a', 100, 0)], [nameCell('d1', 0, 0)]), { kind: 'business-badge', stickerId: 'b1', dailyBusinessId: 'd1' });
+  assert.deepEqual(pickStickerTarget(160, 5, badges, [chip('a', 100, 0)], [nameCell('d1', 0, 0)]), { kind: 'badge', stickerId: 'i1', itemId: 'a' });
+});

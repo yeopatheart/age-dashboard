@@ -138,7 +138,7 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
       if (current && !itemChangeInScope(current, change, incomingDailyIds)) return;
       refreshSoon();
     };
-    // 스티커(order_item_stickers)가 붙거나 바뀌거나 떼어지면 다른 기기도 화면을 새로 받는다. 소리는 내지 않는다(주문 줄 변경만 소리 대상).
+    // 스티커(order_item_stickers, 고객사용 business_stickers)가 붙거나 바뀌거나 떼어지면 다른 기기도 화면을 새로 받는다. 소리는 내지 않는다(주문 줄 변경만 소리 대상).
     const onStickerChange = (change: RowChange) => {
       const current = scopeRef.current;
       if (current && !stickerChangeInScope(current, change)) return;
@@ -161,6 +161,7 @@ export function useLiveRefresh(enabled: boolean, onItemChange?: (change: ItemCha
           .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, (payload) => onItemRowChange({ eventType: payload.eventType, new: payload.new, old: payload.old }))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_businesses' }, (payload) => onDailyChange({ eventType: payload.eventType, new: payload.new, old: payload.old }))
           .on('postgres_changes', { event: '*', schema: 'public', table: 'order_item_stickers' }, (payload) => onStickerChange({ eventType: payload.eventType, new: payload.new, old: payload.old }))
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'business_stickers' }, (payload) => onStickerChange({ eventType: payload.eventType, new: payload.new, old: payload.old }))
           .subscribe((s) => {
             if (cancelled || channel !== mine) return; // 이미 지운 옛 채널의 닫힘 신호가 새 채널의 상태를 덮어쓰지 않게 한다
             if (s === 'SUBSCRIBED') {
