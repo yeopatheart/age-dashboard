@@ -16,6 +16,7 @@ import { stickerQuantityError, stickerScopeOf } from '@/lib/stickers';
 import { fetchAll } from '@/lib/supabase/fetch-all';
 import { loadSubmittedBoxCounts } from '@/lib/scan-boxes';
 import type { OrderDeleteImpact } from '@/lib/order-delete-warning';
+import { nextHighlightPosition } from '@/lib/highlight-colors';
 import type { Database } from '@/lib/types/database';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -388,7 +389,7 @@ export async function deleteOrderItem(orderItemId: string): Promise<{ error: str
 }
 
 // 대시보드 주문표에서 상품명을 강조할 상품을 날짜별로 켜고 끈다. 보기 설정이라 과거 날짜 편집 설정과 무관하게 항상 쓸 수 있다.
-// 켤 때는 그날 이미 고른 개수 다음 순서를 준다(색은 이 순서로 다르게 나눠 준다).
+// position이 곧 색 자리다(src/lib/highlight-colors.ts): 켤 때는 비어 있는 색의 번호를 주고, 이미 켜진 상품은 그대로 둔다(색이 바뀌지 않게).
 export async function setProductHighlight(orderDate: string, productName: string, on: boolean): Promise<{ error: string | null }> {
   await requirePermission('dashboard:edit');
   const supabase = await createClient();
@@ -396,16 +397,14 @@ export async function setProductHighlight(orderDate: string, productName: string
     const { error } = await supabase.from('daily_product_highlights').delete().eq('order_date', orderDate).eq('product_name', productName);
     if (error) return { error: error.message };
   } else {
-    const { data: last } = await supabase
-      .from('daily_product_highlights')
-      .select('position')
-      .eq('order_date', orderDate)
-      .order('position', { ascending: false })
-      .limit(1);
-    const { error } = await supabase
-      .from('daily_product_highlights')
-      .upsert({ order_date: orderDate, product_name: productName, position: (last?.[0]?.position ?? -1) + 1 }, { onConflict: 'order_date,product_name' });
-    if (error) return { error: error.message };
+    const { data: current, error: readError } = await supabase.from('daily_product_highlights').select('product_name, position').eq('order_date', orderDate);
+    if (readError) return { error: readError.message };
+    if (!current.some((h) => h.product_name === productName)) {
+      const { error } = await supabase
+        .from('daily_product_highlights')
+        .upsert({ order_date: orderDate, product_name: productName, position: nextHighlightPosition(current.map((h) => h.position)) }, { onConflict: 'order_date,product_name', ignoreDuplicates: true });
+      if (error) return { error: error.message };
+    }
   }
   revalidatePath('/dashboard');
   return { error: null };

@@ -24,6 +24,7 @@ import { hiddenRowCount, rowLayout } from '@/lib/monitor-rows';
 import { chromeFor } from '@/lib/compact-chrome';
 import { nameColumnWidth, terminalChipFontPx, terminalColumnWidth, type NameColumnEntry } from '@/lib/name-column';
 import { cardNumberLabels } from '@/lib/card-number';
+import { highlightColorOf, nextHighlightPosition, type DailyHighlight } from '@/lib/highlight-colors';
 import { BoardStage, type StageInfo } from './board-stage';
 import { BoardEnvReporter } from './board-env-reporter';
 import { useTouchDesktop } from '@/lib/use-touch-desktop';
@@ -339,9 +340,7 @@ const SUMMARY_COLLAPSED_KEY = 'dash-summary-collapsed';
 // PC 등 펜이 없는 기기에서 칠판의 펜 그림을 숨겼는지(이 브라우저에만 저장). 기본은 보인다.
 const INK_HIDDEN_KEY = 'board-ink-hidden';
 
-// 오늘 강조한 상품의 상품명 글자색. 첫 번째는 빨강이고, 두 개 이상 고르면 고른 순서대로 서로 다른 색을 쓴다.
-// 상태 색(신규 초록, 수정 노랑, 취소 빨강)과 헷갈리지 않게 파랑·보라·분홍·청록·갈색 계열로 이어 간다.
-const HIGHLIGHT_COLORS = ['#dc2626', '#2563eb', '#9333ea', '#db2777', '#0e7490', '#a16207'];
+// 오늘 강조한 상품의 상품명 글자색(색 목록·배정은 src/lib/highlight-colors.ts). 칩 바탕·테두리는 상태 표시가 그대로 쓴다.
 
 function getItemStyle(status: ChangeStatus, isPacked: boolean, unshipped = 0, quantity = 0) {
   // 미출고(주문은 유효하지만 출고하지 못함)는 취소와 구분되도록 취소선 없이 호박색 점선으로 표시한다.
@@ -850,7 +849,7 @@ export function DashboardClient({
   productColors: Record<string, { fill: string | null; border: string | null }>;
   unshippedReasons: string[];
   allowPast: boolean;
-  highlights: string[];
+  highlights: DailyHighlight[];
   stickers: ItemSticker[];
   businessStickers: BusinessSticker[];
   stickerPresets: StickerPresetOption[];
@@ -1428,10 +1427,14 @@ export function DashboardClient({
   const [, startHlTransition] = useTransition();
   const [hlList, setHlOptimistic] = useOptimistic(
     highlights,
-    (state: string[], action: { name: string | null; on: boolean }) =>
-      action.name === null ? [] : action.on ? [...state.filter((n) => n !== action.name), action.name] : state.filter((n) => n !== action.name),
+    (state: DailyHighlight[], action: { name: string | null; on: boolean }) => {
+      if (action.name === null) return [];
+      if (!action.on) return state.filter((h) => h.name !== action.name);
+      if (state.some((h) => h.name === action.name)) return state;
+      return [...state, { name: action.name, position: nextHighlightPosition(state.map((h) => h.position)) }];
+    },
   );
-  const hlColor = new Map(hlList.map((name, i) => [name, HIGHLIGHT_COLORS[i % HIGHLIGHT_COLORS.length]]));
+  const hlColor = new Map(hlList.map((h) => [h.name, highlightColorOf(h.position)]));
   const hlProducts = (() => {
     const counts = new Map<string, number>();
     // 강조 색은 일반 주문 표에만 적용되므로 일반 주문 상품만 고르게 한다.

@@ -207,7 +207,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       orderDate={orderDate}
       unshippedReasons={settings.unshippedReasons}
       allowPast={settings.allowPastOrderEdit}
-      highlights={(highlightRows ?? []).map((h) => h.product_name)}
+      highlights={(highlightRows ?? []).map((h) => ({ name: h.product_name, position: h.position }))}
       stickers={stickers}
       businessStickers={businessStickers}
       stickerPresets={stickerPresets}
